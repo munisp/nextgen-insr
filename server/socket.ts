@@ -110,11 +110,19 @@ async function authenticateAgentSocket(
             )
           : false;
       if (!blacklisted && !revoked) {
-        // Identity comes ONLY from the verified token — never from client
-        // input on individual events (AUTH-2/4).
-        socket.data.agentId = Number(payload.sub);
-        socket.data.agentName = payload.name;
-        return next();
+        // G3 (audit #14): a still-unexpired JWT must not keep a SUSPENDED
+        // agent's socket alive. Re-check isActive from the DB at connection
+        // time (same enforcement leg as requireAgent on HTTP). Fail-closed:
+        // if the agent row cannot be loaded, the connection is denied.
+        const agentPk = Number(payload.sub);
+        const agent = await getAgentById(agentPk);
+        if (agent && agent.isActive && !agent.deletedAt) {
+          // Identity comes ONLY from the verified token — never from client
+          // input on individual events (AUTH-2/4).
+          socket.data.agentId = agentPk;
+          socket.data.agentName = payload.name;
+          return next();
+        }
       }
     } catch {
       // fall through to deny

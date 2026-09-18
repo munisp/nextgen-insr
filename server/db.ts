@@ -642,7 +642,8 @@ export async function getChatMessages(sessionId: number) {
  * See server/lib/auditChain.ts for the hash format and honest limits.
  */
 export async function writeAuditLog(data: {
-  agentId?: number;
+  // G3: nullable — system/admin actions may have no agent actor.
+  agentId?: number | null;
   action: string;
   resource: string;
   resourceId?: string;

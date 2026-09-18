@@ -13,8 +13,10 @@ import {
   kycSessions,
   premiumTopUpRequests,
 } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb , writeAuditLog } from "../db";
+import { resolveAgentScope } from "../middleware/agentAuth";
+import { assertAgentActivationEligible } from "../lib/agentLifecycle";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 
 export const agentOnboardingRouter = router({
@@ -40,15 +42,24 @@ export const agentOnboardingRouter = router({
           .limit(1);
 
         if (!progress) {
-          // Auto-create progress record
-          const [created] = await db
+          // Auto-create progress record (race-safe: migration 0079 adds a
+          // unique index on agent_onboarding_progress.agentId; a concurrent
+          // insert wins and we fall back to the winner's row).
+          const created = await db
             .insert(agentOnboardingProgress)
             .values({
               agentId: input.agentId,
               currentStep: "profile",
             })
+            .onConflictDoNothing()
             .returning();
-          return { ...created, agent };
+          if (created.length > 0) return { ...created[0], agent };
+          const [winner] = await db
+            .select()
+            .from(agentOnboardingProgress)
+            .where(eq(agentOnboardingProgress.agentId, agent.agentId))
+            .limit(1);
+          return winner ? { ...winner, agent } : null;
         }
 
         return { ...progress, agent };
@@ -73,7 +84,7 @@ export const agentOnboardingRouter = router({
         location: z.string().max(128).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -84,6 +95,30 @@ export const agentOnboardingRouter = router({
           .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+
+        // G3 (audit #23): the profile being rewritten must belong to the
+        // caller — an agent session edits only its own record; an admin may
+        // edit any (impersonation-audited). Phone is the USSD identity, so
+        // this check is what stands between an attacker and an identity
+        // hijack.
+        const scope = await resolveAgentScope(ctx.req, ctx.user?.role, agent.id);
+        if (!scope.ok) {
+          throw new TRPCError({ code: scope.code, message: scope.message });
+        }
+        // Keep one-identity-per-MSISDN when the phone changes (audit #26).
+        if (input.phone !== agent.phone) {
+          const [phoneTaken] = await db
+            .select({ id: agents.id })
+            .from(agents)
+            .where(eq(agents.phone, input.phone))
+            .limit(1);
+          if (phoneTaken && phoneTaken.id !== agent.id) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Another agent already uses this phone number",
+            });
+          }
+        }
 
         // Update agent profile
         await db
@@ -143,14 +178,32 @@ export const agentOnboardingRouter = router({
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
-        // Check if KYC session exists and is approved
+        // G3 (audit #7): steps are ordered — KYC cannot complete before the
+        // profile step genuinely completed.
+        const [prog0] = await db
+          .select()
+          .from(agentOnboardingProgress)
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
+          .limit(1);
+        if (!prog0?.profileComplete) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Profile step must be completed before KYC",
+          });
+        }
+
+        // Check if KYC session exists and is approved.
+        // G3 (audit #25): approveSession sets status "approved" — the gate
+        // previously checked "completed", a value NO writer produces, making
+        // the honest path unsatisfiable and pushing operators to the
+        // advanceStep bypass. Accept only the real approval signal.
         const [kycSession] = await db
           .select()
           .from(kycSessions)
           .where(
             and(
               eq(kycSessions.agentId, agent.id),
-              eq(kycSessions.status, "completed")
+              eq(kycSessions.status, "approved")
             )
           )
           .limit(1);
@@ -198,6 +251,20 @@ export const agentOnboardingRouter = router({
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
+        // G3 (audit #7): float funding requires a genuinely completed KYC
+        // step (itself backed by an approved KYC session).
+        const [progF] = await db
+          .select()
+          .from(agentOnboardingProgress)
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
+          .limit(1);
+        if (!progF?.kycComplete) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "KYC step must be completed before float funding",
+          });
+        }
+
         const premiumReserve = parseFloat(agent.premiumReserve as string);
         if (premiumReserve < 10000) {
           throw new TRPCError({
@@ -228,7 +295,9 @@ export const agentOnboardingRouter = router({
     }),
 
   // ── Complete terminal assignment step ─────────────────────────────────────
-  completeTerminal: protectedProcedure
+  // G3 (audit #6): hardware assignment is staff-only, requires the float
+  // step (which requires approved KYC), and enforces serial uniqueness.
+  completeTerminal: adminProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -236,10 +305,42 @@ export const agentOnboardingRouter = router({
         terminalModel: z.string().max(64).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        const [agentT] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.agentId, input.agentId))
+          .limit(1);
+        if (!agentT) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const [progT] = await db
+          .select()
+          .from(agentOnboardingProgress)
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
+          .limit(1);
+        if (!progT?.floatFunded) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Float step must be completed before terminal assignment",
+          });
+        }
+
+        // Serial uniqueness (app-layer; DB unique index in migration 0079).
+        const [serialTaken] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.terminalSerial, input.terminalSerial))
+          .limit(1);
+        if (serialTaken && serialTaken.id !== agentT.id) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Terminal serial already assigned to another agent",
+          });
+        }
 
         await db
           .update(agents)
@@ -273,9 +374,12 @@ export const agentOnboardingRouter = router({
     }),
 
   // ── Complete training step and activate agent ─────────────────────────────
-  completeTraining: protectedProcedure
+  // G3 (audit #4): activation is a staff decision gated on ALL prior steps
+  // genuinely complete plus durable verification evidence — previously any
+  // authenticated caller could activate any agent with zero prior steps.
+  completeTraining: adminProcedure
     .input(z.object({ agentId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -287,11 +391,46 @@ export const agentOnboardingRouter = router({
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
+        const [prog] = await db
+          .select()
+          .from(agentOnboardingProgress)
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
+          .limit(1);
+        if (
+          !prog?.profileComplete ||
+          !prog.kycComplete ||
+          !prog.floatFunded ||
+          !prog.terminalAssigned
+        ) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "All prior onboarding steps (profile, KYC, float, terminal) must be complete before activation",
+          });
+        }
+
+        // Durable verification evidence (phone OTP or approved KYC) —
+        // fail-closed.
+        const evidence = await assertAgentActivationEligible(agent.id);
+
         // Activate the agent
         await db
           .update(agents)
           .set({ isActive: true, updatedAt: new Date() })
           .where(eq(agents.agentId, input.agentId));
+
+        await writeAuditLog({
+          agentId: agent.id,
+          metadata: {
+            agentCode: input.agentId,
+            actor: `user:${ctx.user?.id}`,
+            evidence,
+          },
+          action: "onboarding_agent_activated",
+          resource: "agent_onboarding",
+          resourceId: String(agent.id),
+          status: "success",
+        });
 
         const [progress] = await db
           .update(agentOnboardingProgress)
@@ -565,7 +704,13 @@ export const agentOnboardingRouter = router({
   }),
 
   // ── Advance a step ────────────────────────────────────────────────────────
-  advanceStep: protectedProcedure
+  // G3 (audit #5): advanceStep used to flip kycComplete/floatFunded/
+  // terminalAssigned/trainingComplete by step NUMBER with zero verification —
+  // a complete bypass of every real gate. Those flags are now ONLY settable
+  // by their evidence-backed completion endpoints. advanceStep survives as a
+  // staff notes/profile-step utility (admin-only) and refuses to forge
+  // verified steps.
+  advanceStep: adminProcedure
     .input(
       z.object({
         agentId: z.number(),
@@ -573,26 +718,21 @@ export const agentOnboardingRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const stepFields: Record<
-          number,
-          Partial<typeof agentOnboardingProgress.$inferInsert>
-        > = {
-          1: { profileComplete: true, currentStep: "kyc" },
-          2: { kycComplete: true, currentStep: "float" },
-          3: { floatFunded: true, currentStep: "terminal" },
-          4: { terminalAssigned: true, currentStep: "training" },
-          5: { trainingComplete: true, activatedAt: new Date() },
-        };
-        const update = stepFields[input.stepNumber];
-        if (!update)
+        if (input.stepNumber !== 1) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid step number",
+            message:
+              "Steps 2-5 require evidence: use completeKyc / completeFloat / completeTerminal / completeTraining — advanceStep cannot mark verified steps complete",
           });
+        }
+        const update: Partial<typeof agentOnboardingProgress.$inferInsert> = {
+          profileComplete: true,
+          currentStep: "kyc",
+        };
         if (input.notes) update.notes = input.notes;
         update.updatedAt = new Date();
         const [updated] = await db
@@ -600,6 +740,13 @@ export const agentOnboardingRouter = router({
           .set(update)
           .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
+        await writeAuditLog({
+          metadata: { agentCode: String(input.agentId), actor: `user:${ctx.user?.id}`, step: input.stepNumber },
+          action: "onboarding_step_advanced",
+          resource: "agent_onboarding",
+          resourceId: String(input.agentId),
+          status: "success",
+        });
         return updated;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -624,24 +771,35 @@ export const agentOnboardingRouter = router({
           .where(eq(agents.id, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+        // G3 (audit #22): the duplicate check previously queried the NUMERIC
+        // PK string while the insert wrote the agent CODE — different
+        // keyspaces, so the CONFLICT guard could never fire. Check the same
+        // key we insert; the DB unique index (migration 0079) is the race-safe
+        // backstop.
         const [existing] = await db
           .select()
           .from(agentOnboardingProgress)
-          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
+          .where(eq(agentOnboardingProgress.agentId, agent.agentId))
           .limit(1);
         if (existing)
           throw new TRPCError({
             code: "CONFLICT",
             message: "Onboarding already initiated",
           });
-        const [record] = await db
+        const inserted = await db
           .insert(agentOnboardingProgress)
           .values({
             agentId: agent.agentId,
             currentStep: "profile",
           })
+          .onConflictDoNothing()
           .returning();
-        return record;
+        if (inserted.length === 0)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Onboarding already initiated",
+          });
+        return inserted[0];
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -9,9 +9,10 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { kycSessions, kycDocuments, auditLog } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
+import { kycSessions, kycDocuments, auditLog, agents } from "../../drizzle/schema";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { resolveAgentScope } from "../middleware/agentAuth";
 
 
 // MOCKWARE FIX: The Sprint 78 endpoints previously returned 12 fabricated
@@ -81,14 +82,22 @@ export const agentKycRouter = router({
     .input(
       z.object({ agentId: z.number(), type: z.string().default("standard") })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // G3 (audit #24): the KYC agentId must come from the caller's
+        // identity — an agent session can only open sessions for itself;
+        // platform admins may open for an explicit agentId (impersonation
+        // audit inside resolveAgentScope).
+        const scope = await resolveAgentScope(ctx.req, ctx.user?.role, input.agentId);
+        if (!scope.ok) {
+          throw new TRPCError({ code: scope.code, message: scope.message });
+        }
         const [session] = await db
           .insert(kycSessions)
           .values({
-            agentId: input.agentId,
+            agentId: scope.agentId,
             type: input.type,
             status: "pending",
           })
@@ -110,17 +119,57 @@ export const agentKycRouter = router({
         });
       }
     }),
-  approveSession: protectedProcedure
+  // G3 (audit #2): KYC approval is an ADMIN/SUPERVISOR decision — never the
+  // agent's own. The approver identity is durably recorded (reviewedBy +
+  // auditLog metadata), and an approver may not approve a session belonging
+  // to an agent record that shares their own email (separation of duties).
+  approveSession: adminProcedure
     .input(
       z.object({ sessionId: z.number(), reviewNotes: z.string().optional() })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        const [session] = await db
+          .select()
+          .from(kycSessions)
+          .where(eq(kycSessions.id, input.sessionId))
+          .limit(1);
+        if (!session) throw new TRPCError({ code: "NOT_FOUND" });
+        if (session.status === "approved") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Session already approved",
+          });
+        }
+        // SoD: block approval when the KYC subject appears to BE the approver
+        // (same email on the agent record and the platform user account).
+        if (session.agentId != null) {
+          const [subject] = await db
+            .select({ email: agents.email })
+            .from(agents)
+            .where(eq(agents.id, session.agentId))
+            .limit(1);
+          if (
+            subject?.email &&
+            ctx.user?.email &&
+            subject.email.toLowerCase() === ctx.user.email.toLowerCase()
+          ) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Separation of duties: you cannot approve your own KYC session",
+            });
+          }
+        }
         const [updated] = await db
           .update(kycSessions)
-          .set({ status: "approved", reviewedAt: new Date() })
+          .set({
+            status: "approved",
+            reviewedBy: String(ctx.user?.id ?? "unknown"),
+            reviewNote: input.reviewNotes ?? null,
+            reviewedAt: new Date(),
+          })
           .where(eq(kycSessions.id, input.sessionId))
           .returning();
         await db.insert(auditLog).values({
@@ -128,6 +177,11 @@ export const agentKycRouter = router({
           resource: "kyc_sessions",
           resourceId: String(input.sessionId),
           status: "success",
+          metadata: {
+            approverUserId: ctx.user?.id,
+            approverEmail: ctx.user?.email,
+            agentId: session.agentId,
+          },
         });
         return { success: true, session: updated };
       } catch (error) {
@@ -260,13 +314,20 @@ export const agentKycRouter = router({
         country: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db)
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
       const agentPk = Number(input.agentId);
       if (!Number.isFinite(agentPk)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid agentId" });
+      }
+      // G3 (audit #24): documents attach only to the caller's own agent
+      // record (session identity) or, for admins, to the explicit agentId
+      // with an impersonation audit row.
+      const scope = await resolveAgentScope(ctx.req, ctx.user?.role, agentPk);
+      if (!scope.ok) {
+        throw new TRPCError({ code: scope.code, message: scope.message });
       }
       // DD-TSSEC (A7-14): HONEST SEMANTICS — the only automated check that
       // exists is a FORMAT check. There is no NIMC/BVN registry call anywhere

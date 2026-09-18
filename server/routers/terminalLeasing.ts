@@ -34,11 +34,57 @@ export const terminalLeasingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
-
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // G3 (audit #21): previously ANY agent session could lease ANY
+        // terminal to ANY agent — terminal hijack. Now: platform admins may
+        // lease to any agent; an agent session may only lease to ITSELF.
+        const session = await getAgentFromCookie(ctx.req);
+        const isAdmin = ctx.user?.role === "admin";
+        if (!isAdmin) {
+          if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+          if (session.id !== input.agentId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Agents may only create leases for their own account",
+            });
+          }
+        }
+
+        // The target agent must exist and be active (KYC-gated activation
+        // is the approval signal for hardware).
+        const [targetAgent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.id, input.agentId))
+          .limit(1);
+        if (!targetAgent || targetAgent.deletedAt) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        }
+        if (!targetAgent.isActive) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Cannot lease a terminal to an inactive/unapproved agent",
+          });
+        }
+
+        // The terminal must exist and be unassigned — never silently
+        // overwrite another agent's assignment.
+        const [terminal] = await db
+          .select()
+          .from(posTerminals)
+          .where(eq(posTerminals.id, input.terminalId))
+          .limit(1);
+        if (!terminal) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Terminal not found" });
+        }
+        if (terminal.agentId != null && terminal.agentId !== input.agentId) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Terminal is already assigned to another agent",
+          });
+        }
 
         const leaseId = `LSE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
         const startDate = new Date();
@@ -65,23 +111,37 @@ export const terminalLeasingRouter = router({
           .insert(platformSettings)
           .values({ key, value: JSON.stringify(lease) });
 
-        await db
+        // Guarded assignment: only assign while the terminal is still
+        // unassigned (or already ours) — concurrent leases cannot steal it.
+        const assigned = await db
           .update(posTerminals)
           .set({
             agentId: input.agentId,
             status: "active",
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(
+            sql`${posTerminals.id} = ${input.terminalId} AND (${posTerminals.agentId} IS NULL OR ${posTerminals.agentId} = ${input.agentId})`
+          )
+          .returning({ id: posTerminals.id });
+        if (assigned.length === 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Terminal was assigned to another agent concurrently",
+          });
+        }
 
         await writeAuditLog({
-          agentId: session.id,
+          // G3: session is null on the admin path — record the actor
+          // honestly instead of crashing on session.id.
+          agentId: session?.id ?? null,
           action: "TERMINAL_LEASE_CREATED",
           resource: "terminal_lease",
           resourceId: leaseId,
           status: "success",
           metadata: {
-            agentCode: session.agentId,
+            agentCode: session?.agentId ?? "admin",
+            actorUserId: ctx.user?.id ?? null,
             terminalId: input.terminalId,
             monthlyRate: input.monthlyRate,
             duration: input.durationMonths,
@@ -166,12 +226,12 @@ export const terminalLeasingRouter = router({
           .where(eq(platformSettings.key, key));
 
         await writeAuditLog({
-          agentId: session.id,
+          agentId: session?.id ?? null,
           action: "TERMINAL_LEASE_TERMINATED",
           resource: "terminal_lease",
           resourceId: input.leaseId,
           status: "success",
-          metadata: { agentCode: session.agentId, reason: input.reason },
+          metadata: { agentCode: session?.agentId ?? "admin", reason: input.reason },
         });
 
         return { leaseId: input.leaseId, status: "terminated" };

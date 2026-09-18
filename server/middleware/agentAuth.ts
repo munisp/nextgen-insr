@@ -123,7 +123,19 @@ export async function getAgentFromCookie(
 ): Promise<AgentSession | null> {
   const token = extractAgentSessionToken(req);
   if (!token) return null;
-  return verifyAgentSessionToken(token);
+  const session = await verifyAgentSessionToken(token);
+  if (!session) return null;
+  // G3 (audit #14/#16): a suspended/deleted agent's still-unexpired JWT must
+  // not resolve to a live session on cookie-scope paths (settlement account
+  // changes, leases, top-up requests). requireAgent already enforced this
+  // for its callers; the cookie resolver is the choke point for the rest.
+  try {
+    const agent = await getAgentById(session.id);
+    if (!agent || !agent.isActive || agent.deletedAt) return null;
+  } catch {
+    return null; // fail-closed when the identity store is unreachable
+  }
+  return session;
 }
 
 export type AgentScopeResult =

@@ -658,6 +658,16 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 				Action:       "continue",
 			}, nil
 		}
+		// G3 (audit #9): only APPROVED (active) agents may reach financial ops.
+		// A pending/suspended agent holding a valid MSISDN (or even a valid
+		// PIN) must not cash out.
+		if agent.Status != models.AgentStatusActive {
+			return models.USSDResponse{
+				Text:         "Your agent account is " + agent.Status + ". Float services are available once your account is approved.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
 		sess.Data["agent_id"] = agent.ID
 		// USSD identity: float claim (cash-out) requires PIN verification.
 		pinState, err := app.pg.GetAgentPINState(context.Background(), agent.ID)
@@ -772,25 +782,37 @@ func (app *Application) stateAgentRegisterLGA(sess *models.SessionData, input st
 
 func (app *Application) stateAgentRegisterBank(sess *models.SessionData, input string) (models.USSDResponse, error) {
 	input = strings.TrimSpace(input)
-	if len(input) < 10 {
+	// G3 (audit #11): strict NUBAN format — exactly 10 digits. Previously ANY
+	// numeric string was accepted ("here we accept any numeric input"), so an
+	// attacker-controlled settlement destination was stored from day one.
+	// Format validation is the only automated check available in-band; the
+	// account stays UNVERIFIED and the agent remains pending until back-office
+	// name-enquiry confirms ownership before activation.
+	if !nubanFormat(input) {
 		return models.USSDResponse{
-			Text:         "Please enter a valid bank account number (min 10 digits):",
+			Text:         "Invalid account number. Enter your 10-digit NUBAN account number:",
 			CloseSession: false,
 			Action:       "continue",
 		}, nil
 	}
-	// Try to look up bank name by account number (in production this would
-	// call a bank verification API; here we accept any numeric input).
 	sess.Data["agent_bank_account"] = input
-	if _, err := strconv.Atoi(input); err == nil {
-		// Best-effort bank name lookup from a small mapping; fallback to generic.
-		bankName := lookupBankByNumber(input)
-		sess.Data["agent_bank_name"] = bankName
-	} else {
-		sess.Data["agent_bank_name"] = "Unknown"
-	}
+	// Best-effort bank name lookup from a small mapping; fallback to generic.
+	sess.Data["agent_bank_name"] = lookupBankByNumber(input)
 	sess.State = "agent_register_confirm"
 	return app.renderAgentRegisterConfirm(sess), nil
+}
+
+// nubanFormat reports whether s is exactly 10 ASCII digits (NUBAN length).
+func nubanFormat(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
@@ -809,6 +831,18 @@ func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, inpu
 			Text:         "Invalid input. Reply 1 to Confirm or 0 to Cancel.",
 			CloseSession: false,
 			Action:       "confirm",
+		}, nil
+	}
+
+	// G3 (audit #9/#12): enrollment requires a PIN (F4 salted+peppered infra),
+	// so fail BEFORE persisting anything when PIN hashing is impossible.
+	if app.cfg.PINPepper == "" {
+		app.log.Error("agent enrollment aborted: PIN_PEPPER not configured")
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Registration is temporarily unavailable. Please try again later.",
+			CloseSession: true,
+			Action:       "end",
 		}, nil
 	}
 
@@ -837,19 +871,20 @@ func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, inpu
 		}, nil
 	}
 
-	// Activate the agent immediately (in production this would be verified).
-	agent.Status = models.AgentStatusActive
-	_ = app.pg.UpdateAgentStatus(ctx, agent.ID, models.AgentStatusActive)
-
+	// G3 (audit #9): NO immediate activation. The agent stays PENDING until
+	// back-office verification (bank name-enquiry + KYC) approves it; a USSD
+	// session must never be able to self-activate. Activation happens only
+	// through the gated admin paths on the platform side.
 	sess.Data["agent_id"] = agent.ID
 	sess.Data["agent_phone"] = agent.PhoneNumber
-	sess.State = "agent_register_complete"
 	sess.Data["reference"] = "AGT-" + agent.ID[:8]
 
+	sess.Data["pin_context"] = "enroll"
+	sess.State = "agent_pin_set"
 	return models.USSDResponse{
-		Text:         "Welcome, " + agent.Name + "! You are now a registered agent. Reference: " + sess.Data["reference"].(string) + "\nYou can now use Agent Services.",
-		CloseSession: true,
-		Action:       "end",
+		Text:         "Almost done. Set a 4-6 digit PIN to secure your agent account.\nEnter new PIN:",
+		CloseSession: false,
+		Action:       "continue",
 	}, nil
 }
 
@@ -1733,6 +1768,21 @@ func (app *Application) stateAgentPINSetConfirm(sess *models.SessionData, input 
 	}
 	delete(sess.Data, "pin_pending")
 	sess.Data["pin_verified"] = true
+
+	// G3: when the PIN was set as part of ENROLLMENT, the flow ends here —
+	// the account remains pending verification; it does NOT drop into a float
+	// claim for an unapproved agent.
+	if ctx2, _ := sess.Data["pin_context"].(string); ctx2 == "enroll" {
+		delete(sess.Data, "pin_context")
+		sess.State = "end"
+		ref, _ := sess.Data["reference"].(string)
+		return models.USSDResponse{
+			Text:         "PIN set successfully.\nRegistration received. Reference: " + ref + "\nYour agent account is PENDING verification. You will be notified once approved.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+
 	sess.State = "agent_float_input"
 	balance, _ := app.pg.GetAgentBalance(ctx, agentID)
 	return models.USSDResponse{

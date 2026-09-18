@@ -748,6 +748,23 @@ export async function registerAgent(input: {
   const d = await db();
   const agentCode = `AGT-${Date.now().toString(36).toUpperCase()}`;
 
+  // G3 (audit #20): the hierarchy parent must be server-validated — it
+  // drives commission cascade payouts. Require an existing, non-deleted,
+  // active parent; reject anything else (fail-closed) instead of silently
+  // storing an arbitrary FK.
+  if (input.supervisorId != null) {
+    const [parent] = await d
+      .select({ id: agents.id, isActive: agents.isActive, deletedAt: agents.deletedAt })
+      .from(agents)
+      .where(eq(agents.id, input.supervisorId))
+      .limit(1);
+    if (!parent || parent.deletedAt || !parent.isActive) {
+      throw new Error(
+        `Invalid supervisorId ${input.supervisorId}: parent agent must exist and be active`
+      );
+    }
+  }
+
   const [agent] = await d.insert(agents).values({
     name: input.name,
     phone: input.phone,

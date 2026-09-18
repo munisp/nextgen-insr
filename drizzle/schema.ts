@@ -346,7 +346,10 @@ export const agents = pgTable(
     loyaltyPoints: integer("loyaltyPoints").default(0).notNull(),
     streak: integer("streak").default(0).notNull(),
     rank: integer("rank").default(0),
-    isActive: boolean("isActive").default(true).notNull(),
+    // G3 (audit #1): default was true, making EVERY unhardened insert path
+    // an instant-activation bug. Agents are PENDING by default; activation
+    // is an explicit, gated decision (assertAgentActivationEligible).
+    isActive: boolean("isActive").default(false).notNull(),
     floatLocked: boolean("floatLocked").default(false).notNull(),
     terminalEnabled: boolean("terminalEnabled").default(true).notNull(),
     terminalDisabledReason: text("terminalDisabledReason"),

@@ -15,6 +15,7 @@
  *   - Supervisor approval required for top-ups > ₦500,000
  *   - All float movements must have TigerBeetle double-entry
  */
+import { verifySupervisorApproval } from "../lib/agentLifecycle";
 import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte, sum } from "drizzle-orm";
 import { z } from "zod";
@@ -105,11 +106,29 @@ export const floatManagementRouter = router({
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
 
-      // Business rule: supervisor approval required for large top-ups
-      if (input.amountNGN > SUPERVISOR_APPROVAL_THRESHOLD && !input.supervisorApproval) {
+      // G3 (audit #18): never load float onto a suspended/deleted agent.
+      if (agent.deletedAt || !agent.isActive) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: `Top-ups > ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} require supervisor approval code`,
+          message: "Cannot top up an inactive or deleted agent",
+        });
+      }
+
+      // Business rule: supervisor approval required for large top-ups.
+      // G3 (audit #19): the "approval code" is now a VERIFIED supervisor
+      // identity (active supervisor/admin agent code, never self) — not an
+      // unverified free-text string.
+      let supervisorIdentity: { supervisorPk: number; supervisorCode: string } | null = null;
+      if (input.amountNGN > SUPERVISOR_APPROVAL_THRESHOLD) {
+        if (!input.supervisorApproval) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Top-ups > ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} require supervisor approval code`,
+          });
+        }
+        supervisorIdentity = await verifySupervisorApproval({
+          code: input.supervisorApproval,
+          contextAgentPk: input.agentId,
         });
       }
 
@@ -209,7 +228,8 @@ export const floatManagementRouter = router({
               tbSyncStatus: tbResult ? "synced" : "pending",
               source: input.source,
               tbTransferId: tbResult?.id ?? null,
-              supervisorApproval: input.supervisorApproval ?? null,
+              // G3: record the VERIFIED supervisor identity, not raw input.
+              supervisorApprovedBy: supervisorIdentity?.supervisorCode ?? null,
             },
           }).returning();
 
@@ -223,6 +243,7 @@ export const floatManagementRouter = router({
               newBalance: Number(credited[0]!.balance),
               ref: input.reference,
               tbTransferId: tbResult?.id ?? null,
+              supervisorApprovedBy: supervisorIdentity?.supervisorCode ?? null,
             },
           });
           return { txRow, newBalance: Number(credited[0]!.balance) };

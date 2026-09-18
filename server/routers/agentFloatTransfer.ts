@@ -15,6 +15,7 @@
  *   - Sender must have sufficient float (balance - amount >= MIN_FLOAT)
  *   - Supervisor approval required for transfers > ₦100,000
  */
+import { verifySupervisorApproval } from "../lib/agentLifecycle";
 import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
@@ -91,11 +92,20 @@ export const agentFloatTransferRouter = router({
         });
       }
 
-      // Supervisor approval for large transfers
-      if (input.amountNGN > SUPERVISOR_THRESHOLD && !input.supervisorCode) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `Transfers > ₦${SUPERVISOR_THRESHOLD.toLocaleString()} require supervisor approval code`,
+      // Supervisor approval for large transfers.
+      // G3 (audit #19): verified supervisor identity — an active
+      // supervisor/admin agent code, never the sender — not free text.
+      let supervisorIdentity: { supervisorPk: number; supervisorCode: string } | null = null;
+      if (input.amountNGN > SUPERVISOR_THRESHOLD) {
+        if (!input.supervisorCode) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Transfers > ₦${SUPERVISOR_THRESHOLD.toLocaleString()} require supervisor approval code`,
+          });
+        }
+        supervisorIdentity = await verifySupervisorApproval({
+          code: input.supervisorCode,
+          contextAgentPk: input.senderAgentId,
         });
       }
 
@@ -257,6 +267,8 @@ export const agentFloatTransferRouter = router({
                 senderAgentId: input.senderAgentId,
                 receiverAgentId: input.receiverAgentId,
                 tbTransferId: tbResult?.id ?? null,
+                // G3: VERIFIED supervisor identity (never raw free text).
+                supervisorApprovedBy: supervisorIdentity?.supervisorCode ?? null,
               },
             });
 
