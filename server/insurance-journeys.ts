@@ -123,11 +123,16 @@ export async function J01_CustomerOnboardingWorkflow(input: J01_CustomerOnboardi
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const steps: SagaStep[] = [
-    { name: "create_customer", fn: () => acts.createOrFetchCustomer({ fullName: input.fullName, phone: input.phone, email: input.email, nin: input.nin, bvn: input.bvn, agentId: input.agentId }) },
+    { name: "create_customer",
+      fn: () => acts.createOrFetchCustomer({ fullName: input.fullName, phone: input.phone, email: input.email, nin: input.nin, bvn: input.bvn, agentId: input.agentId }),
+      // G2 #22: compensate partial onboarding — remove the customer row only
+      // when this journey created it and it never reached verification.
+      compensate: async (result: any) => { await acts.compensateOnboardingStep({ step: "create_customer", customerId: result?.customerId, isNew: result?.isNew === true }); } },
     { name: "initiate_kyc", fn: async () => {
       const customerResult = (await acts.createOrFetchCustomer({ fullName: input.fullName, phone: input.phone, email: input.email, nin: input.nin, bvn: input.bvn, agentId: input.agentId }));
       return acts.initiateKycVerification({ customerId: customerResult.customerId, nin: input.nin, bvn: input.bvn, documentType: "nin", documentNumber: input.nin ?? input.bvn ?? "UNKNOWN" });
-    }},
+    },
+      compensate: async (result: any) => { await acts.compensateOnboardingStep({ step: "initiate_kyc", kycId: result?.kycId }); } },
     { name: "verify_kyc_nibss", fn: async () => {
       const customerResult = await acts.createOrFetchCustomer({ fullName: input.fullName, phone: input.phone, email: input.email, nin: input.nin, bvn: input.bvn, agentId: input.agentId });
       const kycResult = await acts.initiateKycVerification({ customerId: customerResult.customerId, nin: input.nin, bvn: input.bvn, documentType: "nin", documentNumber: input.nin ?? input.bvn ?? "UNKNOWN" });
@@ -151,9 +156,16 @@ export async function J01_CustomerOnboardingWorkflow(input: J01_CustomerOnboardi
 // ═══════════════════════════════════════════════════════════════════════════
 export interface J02_PolicyPurchaseInput {
   customerId: number;
+  /** REQUIRED (G2 #5/#6): the purchase binds to a real pending quote. */
+  quoteId: number;
   productId: number;
-  sumInsured: number;
-  premiumAmount: number;
+  /**
+   * DEPRECATED as trust inputs (G2 audit 2026-02, #6): premium and sum
+   * insured are SERVER-COMPUTED from the persisted quote. If supplied, a
+   * premiumAmount is treated as an assertion that must match the quote.
+   */
+  sumInsured?: number;
+  premiumAmount?: number;
   durationMonths: number;
   paymentRef: string;
   agentId?: number;
@@ -164,53 +176,81 @@ export async function J02_PolicyPurchaseWorkflow(input: J02_PolicyPurchaseInput)
   let currentStep = "initializing";
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
-  // Step 1: Create quote
-  currentStep = "create_quote";
-  const quoteResult = await acts.validateInsuranceQuote({ quoteId: 0, customerId: input.customerId, productId: input.productId, premiumAmount: input.premiumAmount }).catch(async () => {
-    // Create a new quote if none exists
-    return { valid: true, quote: { id: 0 } };
+  // Step 0: KYC/tier gate (G2 #6) — fail-closed; KYC_REQUIRED is non-retryable.
+  currentStep = "kyc_gate";
+  await acts.assertCustomerKycVerified({ customerId: input.customerId });
+
+  // Step 1: Validate the quote — FAIL-CLOSED (G2 #5). The previous
+  // `.catch(() => ({valid:true}))` let any quote error (expired, mismatched,
+  // DB down) proceed to payment. Any failure now aborts the purchase.
+  currentStep = "validate_quote";
+  const quoteResult = await acts.validateInsuranceQuote({
+    quoteId: input.quoteId,
+    customerId: input.customerId,
+    productId: input.productId,
+    premiumAmount: input.premiumAmount ?? 0,
   });
+
+  // Server-computed pricing (G2 #6): premium / sum insured / duration come
+  // from the validated quote row, never from client-supplied workflow input.
+  const quote = quoteResult.quote as { premiumAmount?: unknown; sumInsured?: unknown; durationMonths?: unknown; productId?: unknown };
+  const premiumAmount = Number(quote.premiumAmount);
+  const sumInsured = Number(quote.sumInsured);
+  if (!(premiumAmount > 0) || !(sumInsured > 0)) {
+    return { success: false, error: `Quote ${input.quoteId} has no usable premium/sum insured — cannot bind` };
+  }
+  const productId = Number(quote.productId ?? input.productId);
+  const durationMonths = Number(quote.durationMonths ?? input.durationMonths);
 
   // Step 2: Underwriting
   currentStep = "run_underwriting";
-  const underwriting = await acts.runUnderwritingCheck({ customerId: input.customerId, productId: input.productId, sumInsured: input.sumInsured, agentId: input.agentId });
+  const underwriting = await acts.runUnderwritingCheck({ customerId: input.customerId, productId, sumInsured, agentId: input.agentId });
   if (!underwriting.approved) {
     return { success: false, error: `Underwriting declined: ${underwriting.conditions.join("; ")}`, riskCategory: underwriting.riskCategory };
   }
 
-  // Step 3: Collect premium (with compensation)
+  // Step 3: Collect premium (compensated on any later failure)
   currentStep = "collect_premium";
-  const payment = await acts.collectInsurancePremium({ customerId: input.customerId, agentId: input.agentId, productId: input.productId, premiumAmount: input.premiumAmount, paymentRef: input.paymentRef });
-
-  // Step 4: Create policy
-  currentStep = "create_policy";
-  let policy;
+  let payment;
   try {
-    policy = await acts.createInsurancePolicy({ quoteId: 0, customerId: input.customerId, agentId: input.agentId, productId: input.productId, sumInsured: input.sumInsured, premiumAmount: input.premiumAmount, durationMonths: input.durationMonths, coverageStartDate: new Date().toISOString(), paymentRef: input.paymentRef, beneficiaryName: input.beneficiaryName });
+    payment = await acts.collectInsurancePremium({ customerId: input.customerId, agentId: input.agentId, productId, premiumAmount, paymentRef: input.paymentRef });
   } catch (err) {
-    // Compensate: refund premium
-    await acts.compensatePolicyBindingStep({ step: "collect_premium", quoteId: 0, paymentRef: input.paymentRef, customerId: input.customerId, premiumAmount: input.premiumAmount });
     return { success: false, error: (err as Error).message };
   }
 
-  // Step 5: Issue certificate
-  currentStep = "issue_certificate";
-  const certificate = await acts.issuePolicyCertificate({ policyId: policy.policyId, customerId: input.customerId });
+  // Steps 4+: create policy → certificate → commission → notify → lakehouse.
+  // ANY failure after premium collection compensates: cancel policy (if
+  // created) + refund premium (G2 #6: no more paid-but-uncertificated
+  // partial records).
+  let policy;
+  let certificate;
+  try {
+    currentStep = "create_policy";
+    policy = await acts.createInsurancePolicy({ quoteId: input.quoteId, customerId: input.customerId, agentId: input.agentId, productId, sumInsured, premiumAmount, durationMonths, coverageStartDate: new Date().toISOString(), paymentRef: input.paymentRef, beneficiaryName: input.beneficiaryName });
 
-  // Step 6: Calculate & credit agent commission
-  currentStep = "credit_commission";
-  if (input.agentId) {
-    const commission = await acts.calculateAgentCommission({ agentId: input.agentId, policyId: policy.policyId, premiumAmount: input.premiumAmount, productType: "insurance" });
-    await acts.creditAgentCommission({ agentId: input.agentId, commissionAmount: commission.commissionAmount, policyId: policy.policyId, commissionRef: `COMM-${policy.policyId}-${Date.now()}` });
+    currentStep = "issue_certificate";
+    certificate = await acts.issuePolicyCertificate({ policyId: policy.policyId, customerId: input.customerId });
+
+    currentStep = "credit_commission";
+    if (input.agentId) {
+      const commission = await acts.calculateAgentCommission({ agentId: input.agentId, policyId: policy.policyId, premiumAmount, productType: "insurance" });
+      await acts.creditAgentCommission({ agentId: input.agentId, commissionAmount: commission.commissionAmount, policyId: policy.policyId, commissionRef: `COMM-${policy.policyId}-${Date.now()}` });
+    }
+
+    currentStep = "notify_stakeholders";
+    await acts.notifyPolicyStakeholders({ policyId: policy.policyId, policyNumber: policy.policyNumber, customerId: input.customerId, agentId: input.agentId, premiumAmount, eventType: "policy.bound" });
+
+    currentStep = "ingest_to_lakehouse";
+    await acts.ingestToLakehouse({ dataset: "policy_purchases", records: [{ policyId: policy.policyId, policyNumber: policy.policyNumber, customerId: input.customerId, premiumAmount, productId }], partitionKey: "purchase_date" });
+  } catch (err) {
+    const errMsg = (err as Error).message;
+    log.error(`[Journey:J02] Step ${currentStep} failed — compensating: ${errMsg}`);
+    if (policy) {
+      await acts.compensatePolicyBindingStep({ step: "create_policy", quoteId: input.quoteId, policyId: policy.policyId, paymentRef: input.paymentRef, customerId: input.customerId, premiumAmount }).catch((rbErr) => log.error(`[Journey:J02] policy cancel compensation failed: ${(rbErr as Error).message}`));
+    }
+    await acts.compensatePolicyBindingStep({ step: "collect_premium", quoteId: input.quoteId, paymentRef: input.paymentRef, customerId: input.customerId, premiumAmount }).catch((rbErr) => log.error(`[Journey:J02] premium refund compensation failed: ${(rbErr as Error).message}`));
+    return { success: false, error: errMsg, compensated: true };
   }
-
-  // Step 7: Notify stakeholders
-  currentStep = "notify_stakeholders";
-  await acts.notifyPolicyStakeholders({ policyId: policy.policyId, policyNumber: policy.policyNumber, customerId: input.customerId, agentId: input.agentId, premiumAmount: input.premiumAmount, eventType: "policy.bound" });
-
-  // Step 8: Ingest to lakehouse
-  currentStep = "ingest_to_lakehouse";
-  await acts.ingestToLakehouse({ dataset: "policy_purchases", records: [{ policyId: policy.policyId, policyNumber: policy.policyNumber, customerId: input.customerId, premiumAmount: input.premiumAmount, productId: input.productId }], partitionKey: "purchase_date" });
 
   return { success: true, policyId: policy.policyId, policyNumber: policy.policyNumber, certificateUrl: certificate.certificateUrl, transactionId: payment.transactionId };
 }

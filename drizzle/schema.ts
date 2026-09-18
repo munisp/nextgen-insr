@@ -1423,6 +1423,11 @@ export const customers = pgTable(
     // (self-describing "pii:v1:..." envelope) — widened to text (migration 0073).
     bvn: text("bvn"),
     nin: text("nin"),
+    // G2 audit 2026-02 (#7): deterministic HMAC blind indexes for duplicate-
+    // identity detection. The encrypted columns use random IVs and can never
+    // be unique-indexed; these keyed hashes can (migration 0077).
+    bvnHash: varchar("bvn_hash", { length: 64 }),
+    ninHash: varchar("nin_hash", { length: 64 }),
     dateOfBirth: text("dateOfBirth"),
     address: text("address"),
     status: customerStatusEnum("status").default("pending_kyc").notNull(),
@@ -1452,6 +1457,8 @@ export const customers = pgTable(
     statusIdx: index("customers_status_idx").on(t.status),
     tenantIdIdx: index("customers_tenantId_idx").on(t.tenantId),
     deletedAtIdx: index("customers_deletedAt_idx").on(t.deletedAt),
+    bvnHashIdx: uniqueIndex("customers_bvn_hash_idx").on(t.bvnHash),
+    ninHashIdx: uniqueIndex("customers_nin_hash_idx").on(t.ninHash),
   })
 );
 
@@ -5759,3 +5766,55 @@ export const smsMessages = pgTable(
   })
 );
 export type SmsMessage = typeof smsMessages.$inferSelect;
+
+// ─── G2 audit 2026-02 (#10): server-persisted customer onboarding stage ────
+// The pipeline previously trusted the client-asserted fromStage and
+// FABRICATED progress ("live" for every user). Stage is now durable and
+// server-derived (migration 0078).
+export const customerOnboardingProgress = pgTable(
+  "customer_onboarding_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    currentStage: varchar("current_stage", { length: 32 })
+      .default("registration")
+      .notNull(),
+    notes: text("notes"),
+    advancedBy: varchar("advanced_by", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    userIdx: uniqueIndex("customer_onboarding_progress_user_idx").on(t.userId),
+  })
+);
+export type CustomerOnboardingProgress =
+  typeof customerOnboardingProgress.$inferSelect;
+
+// ─── G2 audit 2026-02 (#8): phone-ownership OTP for identity merges ────────
+// createOrFetchCustomer silently merged any matching phone. Merging into an
+// existing customer now requires proof of phone ownership via this OTP flow
+// (same discipline as pinReset: CSPRNG code, bcrypt at rest, attempt lock).
+export const phoneVerificationOtps = pgTable(
+  "phone_verification_otps",
+  {
+    id: serial("id").primaryKey(),
+    phone: varchar("phone", { length: 20 }).notNull(),
+    hashedOtp: varchar("hashed_otp", { length: 128 }).notNull(),
+    purpose: varchar("purpose", { length: 32 })
+      .default("phone_ownership")
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    used: boolean("used").default(false).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    phoneIdx: index("phone_verif_otps_phone_idx").on(t.phone),
+    expiresIdx: index("phone_verif_otps_expires_idx").on(t.expiresAt),
+  })
+);
+export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;

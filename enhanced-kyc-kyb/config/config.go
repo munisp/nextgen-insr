@@ -33,6 +33,10 @@ type Config struct {
 	KYBTTT           time.Duration
 	AuditRetention   time.Duration
 	JWTSecret        string
+	// APIKey is the shared service-to-service credential required on all
+	// protected endpoints (G2 audit 2026-02: replaces per-request bcrypt of
+	// the JWT secret — that was both a CPU-exhaustion DoS and secret reuse).
+	APIKey           string
 	RateLimitNIN     int
 	RateLimitBVN     int
 	RateLimitWindow  time.Duration
@@ -68,13 +72,44 @@ func Load() *Config {
 		KYCTTL:           getEnvDuration("KYC_TTL", 2*365*24*time.Hour),
 		KYBTTT:           getEnvDuration("KYB_TTL", 1*365*24*time.Hour),
 		AuditRetention:   getEnvDuration("AUDIT_RETENTION", 7*365*24*time.Hour),
-		JWTSecret:        getEnv("JWT_SECRET", "change-me-in-production"),
+		JWTSecret:        getEnv("JWT_SECRET", ""),
+		APIKey:           getEnv("KYC_API_KEY", ""),
 		RateLimitNIN:     getEnvInt("RATE_LIMIT_NIN", 10),
 		RateLimitBVN:     getEnvInt("RATE_LIMIT_BVN", 10),
 		RateLimitWindow:  getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Hour),
 		PEPAPIURL:        getEnv("PEP_API_URL", ""),
 		PEPAPIKey:        getEnv("PEP_API_KEY", ""),
 	}
+}
+
+// DefaultJWTSecret is the historical insecure default. It must NEVER be
+// accepted at boot (G2 audit 2026-02, finding #3: with the default, anyone
+// could call every protected KYC endpoint).
+const DefaultJWTSecret = "change-me-in-production"
+
+// Validate enforces fail-closed startup: the service refuses to boot with a
+// missing/default JWT secret or a missing/weak API key, in ANY environment.
+// Honest error over silent insecurity.
+func (c *Config) Validate() error {
+	if c.JWTSecret == "" {
+		return fmt.Errorf("JWT_SECRET is not set; refusing to start (no default credentials)")
+	}
+	if c.JWTSecret == DefaultJWTSecret {
+		return fmt.Errorf("JWT_SECRET is the insecure default %q; refusing to start — set a strong secret", DefaultJWTSecret)
+	}
+	if len(c.JWTSecret) < 32 {
+		return fmt.Errorf("JWT_SECRET is too short (%d chars); refusing to start — use at least 32 random chars", len(c.JWTSecret))
+	}
+	if c.APIKey == "" {
+		return fmt.Errorf("KYC_API_KEY is not set; refusing to start (protected endpoints require a service API key)")
+	}
+	if len(c.APIKey) < 16 {
+		return fmt.Errorf("KYC_API_KEY is too short (%d chars); refusing to start — use at least 16 random chars", len(c.APIKey))
+	}
+	if c.APIKey == c.JWTSecret {
+		return fmt.Errorf("KYC_API_KEY must differ from JWT_SECRET (no shared-secret reuse); refusing to start")
+	}
+	return nil
 }
 
 func (c *Config) DSN() string {

@@ -129,3 +129,19 @@ export function decryptPiiFields<T extends Record<string, unknown>>(
 
 /** PII columns encrypted at rest on the customers table. */
 export const CUSTOMER_PII_FIELDS = ["bvn", "nin", "dateOfBirth"] as const;
+
+/**
+ * G2 audit 2026-02 (#7): deterministic blind index for duplicate-identity
+ * detection. encryptPii() uses a random IV so ciphertext can never be
+ * deduplicated or unique-indexed; this keyed HMAC can. Returns null for
+ * empty input. Digits-only normalization (BVN/NIN are 11-digit strings).
+ */
+export function piiDedupeHash(plaintext: string | null | undefined): string | null {
+  if (plaintext === null || plaintext === undefined || plaintext === "") return null;
+  const normalized = plaintext.replace(/\D/g, "");
+  if (normalized === "") return null;
+  return crypto
+    .createHmac("sha256", getFieldEncryptionKey())
+    .update(`pii-dedupe:v1:${normalized}`)
+    .digest("hex");
+}

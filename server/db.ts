@@ -665,6 +665,17 @@ export async function writeAuditLog(data: {
         .limit(1);
       const prevHash = last?.entryHash ?? null;
       const createdAt = new Date();
+      // Strip undefined-valued metadata keys (2026-02, G2 audit-chain fix):
+      // the entry hash canonicalizes `undefined` object values as null, but
+      // JSONB storage DROPS those keys — so a row hashed with an undefined
+      // key could never recompute, silently breaking chain verification.
+      // Stripping at write time makes the hash input identical to the stored
+      // row for every caller, present and future.
+      const metadata = data.metadata
+        ? Object.fromEntries(
+            Object.entries(data.metadata).filter(([, v]) => v !== undefined)
+          )
+        : null;
       const fields = {
         agentId: data.agentId ?? null,
         action: data.action,
@@ -673,7 +684,7 @@ export async function writeAuditLog(data: {
         ipAddress: data.ipAddress ?? null,
         userAgent: null,
         status: data.status ?? ("success" as const),
-        metadata: data.metadata ?? null,
+        metadata,
         tenantId: null,
         createdAt,
       };
@@ -685,7 +696,7 @@ export async function writeAuditLog(data: {
         resourceId: fields.resourceId,
         ipAddress: fields.ipAddress,
         status: fields.status,
-        metadata: data.metadata ?? null,
+        metadata,
         prevHash,
         entryHash,
         createdAt,

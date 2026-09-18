@@ -356,6 +356,7 @@ import { paymentTokenVaultRouter } from "./routers/paymentTokenVault";
 import { pbacManagementRouter } from "./routers/pbacManagement";
 import { pensionCollectionRouter } from "./routers/pensionCollection";
 import { performanceProfilerRouter } from "./routers/performanceProfiler";
+import { phoneOwnershipRouter } from "./routers/phoneOwnership";
 import { pinResetRouter } from "./routers/pinReset";
 import { pipelineMonitoringRouter } from "./routers/pipelineMonitoring";
 import { platformABTestingRouter } from "./routers/platformABTesting";
@@ -607,6 +608,7 @@ export const appRouter = router({
   premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
   export: exportRouter,
+  phoneOwnership: phoneOwnershipRouter,
   pinReset: pinResetRouter,
   settlement: settlementRouter,
   resilience: resilienceRouter,
