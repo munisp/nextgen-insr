@@ -342,7 +342,15 @@ describe("Sprint 46: Data Integrity", () => {
     // Honest-count drift, not a weakening — the gate still counts
     // information_schema at runtime; if CI measures differently, the
     // measured number wins.
-    expect(stats.totalTables).toBe(217);
+    // 2026-02: count updated 217 → 219 — audit wave G2 (individual
+    // onboarding) added two REAL platform-schema tables in migration 0078:
+    // customer_onboarding_progress (durable server-derived pipeline stage)
+    // and phone_verification_otps (phone-ownership proof for merges). Both
+    // pgTable definitions appended to drizzle/schema.ts, so drizzle-kit
+    // push materializes them; measured 219 in CI (job 105754628299).
+    // Honest-count drift, not a weakening — the gate still counts
+    // information_schema at runtime.
+    expect(stats.totalTables).toBe(219);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

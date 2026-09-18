@@ -40,8 +40,14 @@ describe("Sprint 95: Router Implementation", () => {
   // router added by 29a27686 (PR #162, actuarial pricing engine v1), verified
   // legitimate (router({...}) present, registered as actuarialEngine in
   // server/routers.ts).
-  it("should have 466 router files", () => {
-    expect(routerFiles.length).toBe(466);
+  // 2026-02 drift fix (lead-approved, G2): verified live count = 467 — the
+  // 467th file is server/routers/phoneOwnership.ts, a real tRPC router added
+  // by the G2 individual-onboarding wave (phone-ownership OTP proof required
+  // before phone-match customer merges, audit finding #8); verified
+  // legitimate (router({...}) present, registered as phoneOwnership in
+  // server/routers.ts). Measured 467 in CI (job 105754628299).
+  it("should have 467 router files", () => {
+    expect(routerFiles.length).toBe(467);
   });
 
   it("should have zero empty routers (router({}))", () => {

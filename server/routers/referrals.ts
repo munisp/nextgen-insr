@@ -8,9 +8,10 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { referrals, agents, loyaltyHistory } from "../../drizzle/schema";
+import { referrals, agents, loyaltyHistory, transactions } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 
 
 
@@ -18,14 +19,33 @@ import { getDb } from "../db";
 const REFERRAL_BONUS_POINTS = 500;
 const REFERRAL_BONUS_CASH = 1000; // ₦1,000
 
+/**
+ * G2 audit 2026-02 (#11): resolve the caller's agent identity from the
+ * agent-session cookie — never from client-supplied IDs. Admins (Keycloak
+ * role) may act on any agent. Returns null when the caller is neither.
+ */
+async function resolveCallerAgent(ctx: { req: any; user?: { role?: string | null } | null }) {
+  const session = await getAgentFromCookie(ctx.req);
+  if (session) return { agentPk: session.id, agentCode: session.agentId, isAdmin: false };
+  if (ctx.user?.role === "admin") return { agentPk: null, agentCode: null, isAdmin: true };
+  return null;
+}
+
 export const referralsRouter = router({
   // ── Generate a referral code for an agent ────────────────────────────────
   generateCode: protectedProcedure
     .input(z.object({ agentId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // IDOR fix: the caller may only mint a code for THEIR OWN agent
+        // account (session-derived), unless they are an admin.
+        const caller = await resolveCallerAgent(ctx);
+        if (!caller || (!caller.isAdmin && caller.agentCode !== input.agentId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot generate a referral code for another agent" });
+        }
 
         const [agent] = await db
           .select()
@@ -89,10 +109,17 @@ export const referralsRouter = router({
         refereeAgentCode: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // IDOR fix: only the referee THEMSELVES (session-derived) may attach
+        // their agent account to a referral code, unless admin.
+        const caller = await resolveCallerAgent(ctx);
+        if (!caller || (!caller.isAdmin && caller.agentCode !== input.refereeAgentCode)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot apply a referral code to another agent" });
+        }
 
         const [referral] = await db
           .select()
@@ -158,63 +185,90 @@ export const referralsRouter = router({
   // ── Award referral bonus (called when referee completes first transaction) ─
   awardBonus: protectedProcedure
     .input(z.object({ refereeAgentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [referral] = await db
-          .select()
-          .from(referrals)
-          .where(
-            and(
-              eq(referrals.refereeCode, input.refereeAgentCode),
-              eq(referrals.status, "activated")
-            )
-          )
-          .limit(1);
+        // G2 audit 2026-02 (#11): a referral bonus moves real money — it is
+        // NOT caller-triggerable. The caller must be the referee agent
+        // (session-derived) or an admin, AND a qualifying first successful
+        // transaction by the referee must exist server-side.
+        const caller = await resolveCallerAgent(ctx);
+        if (!caller || (!caller.isAdmin && caller.agentCode !== input.refereeAgentCode)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot trigger a referral bonus for another agent" });
+        }
 
-        if (!referral) return { awarded: false };
-
-        // Award bonus points to referrer
-        const [referrer] = await db
+        // Server-side proof (checked BEFORE claiming): the referee must have
+        // at least one SUCCESSFUL transaction — the "first transaction"
+        // qualifying event. A success transaction is immutable history, so
+        // this check needs no lock.
+        const [refereeAgent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.id, referral.referrerAgentId))
+          .where(eq(agents.agentId, input.refereeAgentCode))
           .limit(1);
+        const [qualifying] = refereeAgent
+          ? await db
+              .select({ c: count() })
+              .from(transactions)
+              .where(and(eq(transactions.agentId, refereeAgent.id), eq(transactions.status, "success")))
+          : [{ c: 0 }];
+        if (!refereeAgent || Number(qualifying?.c ?? 0) === 0) {
+          return { awarded: false, reason: "no_qualifying_transaction" };
+        }
 
-        if (!referrer) return { awarded: false };
+        return await db.transaction(async (tx) => {
+          // Atomic single-statement claim: the status guard makes exactly one
+          // concurrent caller flip activated → rewarded; everyone else gets
+          // zero rows (no double-award), without FOR UPDATE.
+          const claimed = await tx
+            .update(referrals)
+            .set({ status: "rewarded", rewardedAt: new Date() })
+            .where(
+              and(
+                eq(referrals.refereeCode, input.refereeAgentCode),
+                eq(referrals.status, "activated")
+              )
+            )
+            .returning();
+          const referral = claimed[0];
+          if (!referral) return { awarded: false };
 
-        const newPoints = referrer.loyaltyPoints + referral.bonusPoints;
-        await db
-          .update(agents)
-          .set({
-            loyaltyPoints: newPoints,
-            commissionBalance: sql`${agents.commissionBalance} + ${referral.bonusCash}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.id, referral.referrerAgentId));
+          // Award bonus points to referrer
+          const [referrer] = await tx
+            .select()
+            .from(agents)
+            .where(eq(agents.id, referral.referrerAgentId))
+            .limit(1);
+          if (!referrer) return { awarded: false };
 
-        // Record loyalty history
-        await db.insert(loyaltyHistory).values({
-          agentId: referral.referrerAgentId,
-          type: "bonus",
-          points: referral.bonusPoints,
-          description: `Referral bonus for activating agent ${input.refereeAgentCode}`,
-          balanceAfter: newPoints,
+          const newPoints = referrer.loyaltyPoints + referral.bonusPoints;
+          await tx
+            .update(agents)
+            .set({
+              loyaltyPoints: newPoints,
+              commissionBalance: sql`${agents.commissionBalance} + ${referral.bonusCash}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, referral.referrerAgentId));
+
+          // Record loyalty history
+          await tx.insert(loyaltyHistory).values({
+            agentId: referral.referrerAgentId,
+            type: "bonus",
+            points: referral.bonusPoints,
+            description: `Referral bonus for activating agent ${input.refereeAgentCode}`,
+            balanceAfter: newPoints,
+          });
+
+          // (Referral was already marked rewarded by the atomic claim above.)
+          return {
+            awarded: true,
+            bonusPoints: referral.bonusPoints,
+            bonusCash: referral.bonusCash,
+          };
         });
-
-        // Mark referral as rewarded
-        await db
-          .update(referrals)
-          .set({ status: "rewarded", rewardedAt: new Date() })
-          .where(eq(referrals.referralCode, referral.referralCode));
-
-        return {
-          awarded: true,
-          bonusPoints: referral.bonusPoints,
-          bonusCash: referral.bonusCash,
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -228,7 +282,7 @@ export const referralsRouter = router({
   // ── Get referral stats for an agent ──────────────────────────────────────
   agentStats: protectedProcedure
     .input(z.object({ agentId: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db)
@@ -239,6 +293,12 @@ export const referralsRouter = router({
             rewarded: 0,
             totalEarned: "0",
           };
+
+        // IDOR fix: agents may only read their OWN referral stats.
+        const caller = await resolveCallerAgent(ctx);
+        if (!caller || (!caller.isAdmin && caller.agentCode !== input.agentId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot view another agent's referral stats" });
+        }
 
         const rows = await db
           .select()
