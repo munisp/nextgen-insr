@@ -185,11 +185,59 @@ interface FraudScoreResult {
   recommendations: string[];
 }
 
+/**
+ * Fraud-signal features derived SERVER-SIDE from the authenticated session /
+ * verified user record. Client-supplied headers (x-kyc-level, x-device-id,
+ * x-session-age, x-geo-country, x-new-recipient, x-international) are NEVER
+ * forwarded to the scorer — they are trivially spoofable risk-score gaming
+ * vectors (audit finding AB-5).
+ */
+export interface ServerDerivedFraudFeatures {
+  kycLevel: number;
+  sessionAgeSeconds: number;
+  deviceId: string;
+  geoCountry: string;
+  isNewRecipient: boolean;
+  isInternational: boolean;
+}
+
+/**
+ * Build fraud features from trusted server-side state only.
+ * Anything that cannot be established server-side defaults to the
+ * most conservative value rather than trusting the client.
+ */
+export function deriveFraudFeatures(
+  user: { kycLevel?: number; iat?: number; sessionIssuedAt?: number; deviceId?: string } | undefined
+): ServerDerivedFraudFeatures {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const issuedAt =
+    typeof user?.sessionIssuedAt === "number"
+      ? user.sessionIssuedAt
+      : typeof user?.iat === "number"
+        ? user.iat
+        : 0;
+  const sessionAgeSeconds =
+    issuedAt > 0 && issuedAt <= nowSec ? nowSec - issuedAt : 0;
+  return {
+    kycLevel: Number.isFinite(Number(user?.kycLevel)) ? Number(user?.kycLevel) : 0,
+    sessionAgeSeconds,
+    // Device binding only when the server-side session established it.
+    deviceId: typeof user?.deviceId === "string" ? user.deviceId : "",
+    // No server-side geo source in this middleware: leave empty rather
+    // than trusting the x-geo-country header.
+    geoCountry: "",
+    // Conservative defaults — the scorer treats unknown as new/high-risk.
+    isNewRecipient: true,
+    isInternational: false,
+  };
+}
+
 async function scoreFraud(
   req: Request,
   userId: string,
   transactionId: string,
-  amount: number
+  amount: number,
+  features: ServerDerivedFraudFeatures
 ): Promise<FraudScoreResult | null> {
   const ip = req.ip || req.socket.remoteAddress || "unknown";
 
@@ -202,18 +250,16 @@ async function scoreFraud(
       amount: amount,
       currency: "NGN",
       transaction_type: detectTransactionType(req.path),
-      channel: req.headers["x-channel"] || "web",
+      channel: "web",
       ip_address: ip,
-      device_id: req.headers["x-device-id"] || "",
+      device_id: features.deviceId,
       user_agent: req.headers["user-agent"] || "",
-      geo_country: req.headers["x-geo-country"] || "",
+      geo_country: features.geoCountry,
       timestamp: Date.now(),
-      session_age_seconds: parseInt(
-        String(req.headers["x-session-age"] || "0")
-      ),
-      kyc_level: parseInt(String(req.headers["x-kyc-level"] || "0")),
-      is_new_recipient: req.headers["x-new-recipient"] === "true",
-      is_international: req.headers["x-international"] === "true",
+      session_age_seconds: features.sessionAgeSeconds,
+      kyc_level: features.kycLevel,
+      is_new_recipient: features.isNewRecipient,
+      is_international: features.isInternational,
     }),
   });
 
@@ -399,7 +445,8 @@ export function applySecurityOrchestrator(app: Express): void {
         req,
         user.id?.toString() || "",
         txId,
-        amount
+        amount,
+        deriveFraudFeatures(user)
       );
 
       if (fraudResult) {

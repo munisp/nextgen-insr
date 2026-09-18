@@ -394,6 +394,22 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authorization: creating payout records requires the payout:create permission.
+	userID, _ := r.Context().Value(ctxKeyUserId).(string)
+	if !permifyCheck(r.Context(), "payout", "instant_payouts", "create", userID) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	// Strict column whitelist: the previous implementation interpolated
+	// arbitrary client-supplied column names into an INSERT, enabling
+	// payout-record forgery. Only known payout fields are accepted.
+	allowedCols := map[string]bool{
+		"claim_id": true, "customer_id": true, "amount": true, "currency": true,
+		"channel": true, "account_number": true, "bank_code": true, "reference": true,
+		"status": true, "paid_at": true,
+	}
+
 	cols := make([]string, 0)
 	vals := make([]interface{}, 0)
 	placeholders := make([]string, 0)
@@ -402,7 +418,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 		if k == "id" || k == "created_at" {
 			continue
 		}
-		if !isSafeColumnName(k) {
+		if !allowedCols[k] || !isSafeColumnName(k) {
 			http.Error(w, `{"error":"invalid field name"}`, http.StatusBadRequest)
 			return
 		}
@@ -582,14 +598,130 @@ func handleProcessPayout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	var req PayoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Funds-safety: amount and destination are NEVER taken from the client.
+	// They are derived from the verified, approved claim record server-side.
+	verified, holdUntil, err := verifyClaimForPayout(r.Context(), req.ClaimID)
+	if err != nil {
+		jsonLog("warn", "payout_claim_verification_failed", "claim_id", req.ClaimID, "error", err.Error())
+		http.Error(w, fmt.Sprintf(`{"error":"claim verification failed: %s"}`, err.Error()), http.StatusUnprocessableEntity)
+		return
+	}
+	if holdUntil != nil {
+		// Claim is within its post-approval hold (cooling) period.
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":     "hold",
+			"claim_id":   req.ClaimID,
+			"hold_until": holdUntil.Format(time.RFC3339),
+		})
+		return
+	}
+
+	// Authorization for releasing funds.
+	userID, _ := r.Context().Value(ctxKeyUserId).(string)
+	if !permifyCheck(r.Context(), "payout", req.ClaimID, "process", userID) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	req.Amount = verified.amount
+	req.BankCode = verified.bankCode
+	req.AccountNumber = verified.accountNumber
+	if req.Channel == "" {
+		req.Channel = "nibss"
+	}
 	result := processPayout(req)
-	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+type verifiedClaim struct {
+	amount        float64
+	bankCode      string
+	accountNumber string
+}
+
+// verifyClaimForPayout loads the referenced claim and enforces:
+//   - claim exists and is in 'approved' status
+//   - payable amount = approvedAmount - paidAmount - already-initiated payouts
+//   - destination account comes from the claim record (metadata set at
+//     approval time), not from the client request
+//   - a configurable post-approval hold period has elapsed
+//
+// Returns (claim, holdUntil, err); holdUntil non-nil means the payout must wait.
+func verifyClaimForPayout(ctx context.Context, claimRef string) (*verifiedClaim, *time.Time, error) {
+	if claimRef == "" {
+		return nil, nil, fmt.Errorf("claim_id is required")
+	}
+	var (
+		status     string
+		approved   sql.NullFloat64
+		paid       sql.NullFloat64
+		updatedAt  time.Time
+		metadata   []byte
+		claimIntID int
+	)
+	// claimRef may be the numeric id or the claimNumber.
+	claimIntID, _ = strconv.Atoi(claimRef)
+	row := db.QueryRowContext(ctx,
+		`SELECT status, "approvedAmount", "paidAmount", "updatedAt", metadata, id FROM claims WHERE id = $1 OR "claimNumber" = $2 LIMIT 1`,
+		claimIntID, claimRef)
+	if err := row.Scan(&status, &approved, &paid, &updatedAt, &metadata, &claimIntID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, fmt.Errorf("claim not found")
+		}
+		return nil, nil, fmt.Errorf("claim lookup failed")
+	}
+	if status != "approved" {
+		return nil, nil, fmt.Errorf("claim is not in approved status (current: %s)", status)
+	}
+	if !approved.Valid || approved.Float64 <= 0 {
+		return nil, nil, fmt.Errorf("claim has no approved amount")
+	}
+
+	// Subtract amounts already paid or in-flight for this claim.
+	var inFlight sql.NullFloat64
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(amount),0) FROM instant_payouts WHERE claim_id = $1 AND status NOT IN ('failed','cancelled')`,
+		claimIntID).Scan(&inFlight); err != nil {
+		return nil, nil, fmt.Errorf("payout history lookup failed")
+	}
+	payable := approved.Float64 - paid.Float64 - inFlight.Float64
+	if payable <= 0 {
+		return nil, nil, fmt.Errorf("claim coverage exhausted")
+	}
+
+	// Destination must come from the approved claim record, not the client.
+	var meta struct {
+		BankCode      string `json:"bankCode"`
+		AccountNumber string `json:"accountNumber"`
+	}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &meta)
+	}
+	if meta.AccountNumber == "" || meta.BankCode == "" {
+		return nil, nil, fmt.Errorf("claim has no verified payout destination on record")
+	}
+
+	// Post-approval hold (cooling) period before funds may move.
+	holdMinutes := 60
+	if v := os.Getenv("PAYOUT_HOLD_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			holdMinutes = n
+		}
+	}
+	holdUntil := updatedAt.Add(time.Duration(holdMinutes) * time.Minute)
+	if time.Now().Before(holdUntil) {
+		return nil, &holdUntil, nil
+	}
+
+	return &verifiedClaim{amount: payable, bankCode: meta.BankCode, accountNumber: meta.AccountNumber}, nil, nil
 }
 
 // ── Middleware Clients ────────────────────────────────────────────────────
@@ -858,12 +990,28 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
-		// In production: validate JWT against Keycloak JWKS endpoint
-		// For now, decode and pass through (validation handled by APISIX gateway)
+		// Real JWT validation against Keycloak JWKS. Fail-closed: when JWKS is
+		// not configured, production returns 503 (misconfiguration) rather than
+		// trusting spoofable identity headers.
+		if authMisconfigured() {
+			w.Header().Set("Content-Type", "application/json")
+			jsonLog("error", "auth_misconfigured", "service", "instant-payout-service", "reason", "KEYCLOAK_JWKS_URL unset")
+			w.WriteHeader(503)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "AUTH_UNAVAILABLE", "message": "token validation not configured"}})
+			return
+		}
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_ = tokenStr
-		ctx := context.WithValue(r.Context(), ctxKeyUserId, r.Header.Get("X-User-ID"))
-		ctx = context.WithValue(ctx, ctxKeyTenantId, r.Header.Get("X-Tenant-ID"))
+		claims, err := validateJWT(tokenStr)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			jsonLog("warn", "auth_failure", "service", "instant-payout-service", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "error", err.Error())
+			w.WriteHeader(401)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "invalid token"}})
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxKeyUserId, claims.Sub)
+		ctx = context.WithValue(ctx, ctxKeyTenantId, claims.TenantID)
+		ctx = context.WithValue(ctx, ctxKeyRoles, claims.Roles)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -872,7 +1020,13 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
 	permifyAddr := os.Getenv("PERMIFY_ADDR")
 	if permifyAddr == "" {
-		return true // Permissive when Permify is not configured
+		// Fail-closed: authorization backend unavailable is a denial in
+		// production, never a silent grant.
+		if isProduction() {
+			jsonLog("error", "permify_not_configured", "entity", entity, "permission", permission)
+			return false
+		}
+		return true
 	}
 	payload := map[string]interface{}{
 		"entity":     map[string]string{"type": entity, "id": entityID},
@@ -894,7 +1048,8 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 	resp, err := client.Do(req) // #nosec G704 -- safe-by-construction: scheme+host come from operator-controlled PERMIFY_ADDR env (not attacker-influenced); the only request-derived component (tenantID) is url-escaped via neturl.PathEscape before path interpolation, so host/port/scheme cannot be manipulated
 	if err != nil {
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
-		return true // Fail open
+		// Fail-closed in production: an unreachable authz service denies.
+		return !isProduction()
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var result struct {
@@ -1217,8 +1372,10 @@ func main() {
 	// Payout domain routes
 	mux.HandleFunc("/api/v1/payout/process", handleProcessPayout)
 
-	// Apply middleware chain
+	// Apply middleware chain — keycloakAuthMiddleware is REQUIRED: payout
+	// endpoints move real funds and must never be reachable unauthenticated.
 	var handler http.Handler = mux
+	handler = keycloakAuthMiddleware(handler)
 	handler = metricsMiddleware(handler)
 	handler = rateLimitMiddleware(rl)(handler)
 	handler = securityHeaders(handler)

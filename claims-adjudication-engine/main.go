@@ -32,11 +32,19 @@ type Engine struct {
 	config       *config.Config
 	db           *db.ClaimsRepository
 	cache        *db.ClaimCache
+	coverage     coverageReserver
 	logger       *zap.Logger
 	startTime    time.Time
 	healthy      atomic.Bool
 	requestCount atomic.Int64
 	errorCount   atomic.Int64
+}
+
+// coverageReserver performs the atomic coverage check-and-decrement against
+// the policy's sum insured (AB-6). *db.ClaimsRepository implements it.
+type coverageReserver interface {
+	ReserveCoverage(ctx context.Context, policyID string, amount float64) error
+	ReleaseCoverage(ctx context.Context, policyID string, amount float64) error
 }
 
 // NewEngine creates a new claims adjudication engine
@@ -76,6 +84,7 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 		return nil, fmt.Errorf("failed to initialize database (set DATABASE_URL or DB_* variables): %w", err)
 	}
 	engine.db = repo
+	engine.coverage = repo
 	logger.Info("Database initialized successfully")
 
 	// Initialize cache
@@ -181,6 +190,23 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 
 	// Determine queue and SLA deadline based on risk and amount
 	decision, queue, reason, confidence := e.determineDecision(claim, riskScore, fraudFlags)
+
+	// AB-6: decisions that commit funds must atomically reserve coverage
+	// against the policy's sum insured. A failed reservation (exhausted or
+	// unknown coverage) NEVER auto-approves — the claim escalates for review.
+	if decision == models.DecisionAutoApproved && e.coverage != nil {
+		if err := e.coverage.ReserveCoverage(context.Background(), claim.PolicyID, claim.Amount); err != nil {
+			e.logger.Warn("Coverage reservation failed; escalating instead of auto-approving",
+				zap.String("claim_id", claim.ID),
+				zap.String("policy_id", claim.PolicyID),
+				zap.Error(err),
+			)
+			decision = models.DecisionEscalated
+			queue = "coverage_review_queue"
+			reason = fmt.Sprintf("Coverage reservation failed: %s", err.Error())
+			confidence = 0.50
+		}
+	}
 
 	// Set SLA deadline based on decision
 	slaDeadline := e.calculateSLADeadline(claim, decision)
@@ -1333,6 +1359,22 @@ func handleApproveClaim(e *Engine) http.HandlerFunc {
 		if e.db == nil {
 			http.Error(w, "Database not available", http.StatusServiceUnavailable)
 			return
+		}
+
+		// AB-6: manual approval also commits funds — atomically reserve
+		// coverage first so parallel approvals cannot drain the same limit.
+		if e.coverage != nil {
+			claim, err := e.db.GetClaim(r.Context(), claimID)
+			if err != nil {
+				http.Error(w, "Claim not found", http.StatusNotFound)
+				return
+			}
+			if err := e.coverage.ReserveCoverage(r.Context(), claim.PolicyID, claim.Amount); err != nil {
+				e.logger.Warn("Approval blocked by coverage reservation",
+					zap.String("claim_id", claimID), zap.Error(err))
+				http.Error(w, fmt.Sprintf("Coverage check failed: %v", err), http.StatusUnprocessableEntity)
+				return
+			}
 		}
 
 		// INS-7: atomic FROM-state guard — concurrent approve/deny cannot both win.

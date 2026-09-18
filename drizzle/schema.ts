@@ -854,6 +854,9 @@ export const refunds = pgTable(
     rejectedAt: timestamp("rejectedAt"),
     rejectionReason: text("rejectionReason"),
     notes: text("notes"),
+    // AB-19: server-derived refund destination + initiating user (migration 0072)
+    destinationAccount: varchar("destinationAccount", { length: 20 }),
+    initiatedByUserId: integer("initiatedByUserId"),
     metadata: text("metadata"),
     tenantId: integer("tenantId"),
     deletedAt: timestamp("deletedAt"),
@@ -4995,6 +4998,22 @@ export const claimDocuments = pgTable(
   })
 );
 export type ClaimDocument = typeof claimDocuments.$inferSelect;
+
+// ─── Claim Document Hashes (AB-7: cross-claim document reuse dedup) ──────────
+export const claimDocumentHashes = pgTable(
+  "claim_document_hashes",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull(),
+    docHash: varchar("docHash", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    docHashUnique: uniqueIndex("cdh_docHash_unique").on(t.docHash),
+    claimIdx: index("cdh_claim_idx").on(t.claimId),
+  })
+);
+export type ClaimDocumentHash = typeof claimDocumentHashes.$inferSelect;
 
 // ─── Underwriting Assessments ─────────────────────────────────────────────────
 export const underwritingAssessments = pgTable(

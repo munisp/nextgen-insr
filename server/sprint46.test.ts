@@ -318,7 +318,18 @@ describe("Sprint 46: Data Integrity", () => {
     // REAL table via migration 0066: impersonation_events (admin-leg audit
     // records for resolveAgentScope). Count is measured from
     // information_schema at runtime; honest-count drift, not a weakening.
-    expect(stats.totalTables).toBe(212);
+    // 2026-09-18: count updated 212 → 213 — audit wave F5 (abuse) added ONE
+    // new runtime table to the platform schema: claim_document_hashes (AB-7
+    // cross-claim document dedup, migration 0071, which is now platform-only
+    // statements). The AB-14 coupon tables (coupon_redemptions +
+    // promotions."perCustomerLimit") were moved OUT of 0071 into
+    // insureportal/drizzle/0044_abuse_controls.sql — they belong to the
+    // insureportal schema side, and the promotions ALTER aborted 0071
+    // mid-file on platform-only databases (risking claim_document_hashes
+    // rollback under transactional runners). Migration 0072 is ALTER-only
+    // (no new tables). Measured honest count, not a weakening — the gate
+    // still counts information_schema at runtime.
+    expect(stats.totalTables).toBe(213);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
@@ -647,3 +658,5 @@ describe("Sprint 46: appRouter Registration", () => {
     }
   }, 120000);
 });
+
+

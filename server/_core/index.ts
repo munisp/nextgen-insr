@@ -15,6 +15,7 @@
 
 import "dotenv/config";
 import crypto from "crypto";
+import type { EventEmitter } from "events";
 // NOTE: ../temporal-worker, ../tbClient and ../fluvio are imported lazily
 // inside startServer()'s listen callback. They pull in heavyweight optional
 // infra clients (protobufjs-based Temporal codecs etc.) that are only needed
@@ -912,7 +913,7 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     const onAlert = (alert: unknown) => {
       res.write(`data: ${JSON.stringify(alert)}\n\n`);
     };
-    let fraudAlertBus: any;
+    let fraudAlertBus: EventEmitter | undefined;
     import("../lib/fraudDetectionEngine")
       .then(mod => {
         fraudAlertBus = mod.fraudAlertBus;
@@ -1054,3 +1055,4 @@ if (isDirectRun) {
     process.exit(1);
   });
 }
+

@@ -429,8 +429,9 @@ function exportAsMarkdown(spec: APIDocumentation): string {
   for (const [path, methods] of Object.entries(spec.paths)) {
     for (const [method, details] of Object.entries(methods)) {
       if (typeof details === "object" && details !== null) {
-        const summary = (details as any).summary || "No summary";
-        const tags = (details as any).tags || [];
+        const det = details as { summary?: string; tags?: string[] };
+        const summary = det.summary ?? "No summary";
+        const tags = det.tags ?? [];
         md += `| ${method.toUpperCase()} | ${path} | ${summary} | ${tags.join(", ")} |\n`;
       }
     }
@@ -496,3 +497,4 @@ export default {
   exportDocumentation,
   parseRouterFile,
 };
+

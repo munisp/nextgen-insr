@@ -5588,6 +5588,8 @@ export const promotions = pgTable(
     minPurchaseAmount: numeric("minPurchaseAmount", { precision: 12, scale: 2 }),
     maxUsageCount: integer("maxUsageCount"),
     usageCount: integer("usageCount").default(0),
+    // AB-14: per-customer redemption cap (added in migration 0071)
+    perCustomerLimit: integer("perCustomerLimit").default(1),
     isActive: boolean("isActive").default(true).notNull(),
     startsAt: timestamp("startsAt"),
     endsAt: timestamp("endsAt"),
@@ -5602,6 +5604,22 @@ export const promotions = pgTable(
 );
 
 // ─── Loyalty Accounts ─────────────────────────────────────────────────────────
+// AB-14: durable per-customer coupon redemption records (migration 0071).
+export const couponRedemptions = pgTable(
+  "coupon_redemptions",
+  {
+    id: serial("id").primaryKey(),
+    promoId: integer("promoId").notNull(),
+    customerId: integer("customerId").notNull(),
+    orderId: integer("orderId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    promoCustomerIdx: index("cr_promo_customer_idx").on(t.promoId, t.customerId),
+    promoIdx: index("cr_promo_idx").on(t.promoId),
+  })
+);
+
 export const loyaltyAccounts = pgTable(
   "loyalty_accounts",
   {

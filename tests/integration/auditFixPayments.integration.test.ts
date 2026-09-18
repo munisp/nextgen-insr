@@ -43,9 +43,9 @@ const testRouter = router({
   bulkPaymentProcessor: bulkPaymentProcessorRouter,
 });
 
-function caller() {
+function caller(userId?: number) {
   const ctx = {
-    user: { ...adminUser, tenantId: null } as any,
+    user: { ...adminUser, ...(userId != null ? { id: userId } : {}), tenantId: null } as any,
     req: { headers: {} } as any,
     res: { cookie: () => undefined, clearCookie: () => undefined } as any,
     requestId: "f1-test",
@@ -144,17 +144,24 @@ describe("PAY-2 refund pipeline (real processing)", () => {
   });
 
   it("enforces the ₦2,000,000 daily agent refund cap", async () => {
-    const c = caller();
+    // 2026-09-18 (F5/AB-19): velocity is keyed on the authenticated user, so
+    // this scenario also needs a dedicated USER namespace (its 5 calls would
+    // otherwise add to earlier tests' per-user velocity budget and trip the
+    // velocity guard before reaching the daily cap). Cap semantics unchanged.
+    const c = caller(adminUser.id + 500);
     // Dedicated agent namespace so earlier tests' refunds don't count here.
     const capAgent = AGENT_ID + 500;
     // Four refunds of ₦500k from distinct customers/disputes = exactly ₦2M.
+    // 2026-09-18 (F5/AB-19): duplicate detection is now keyed on the refund
+    // DESTINATION account, so each iteration must use a distinct
+    // accountNumber to genuinely reach the daily-cap path.
     for (let i = 0; i < 4; i++) {
       const r = await c.disputeRefund.initiateRefund({
         disputeId: BASE + 200 + i,
         amount: 500_000, // distinct customers: duplicate rule is per-customer
         reason: `cap test refund ${i}`,
         customerId: BASE + 2000 + i,
-        accountNumber: "0123456789",
+        accountNumber: `01234567${80 + i}`,
         agentId: capAgent,
       });
       expect(r.success).toBe(true);
@@ -164,7 +171,7 @@ describe("PAY-2 refund pipeline (real processing)", () => {
       amount: 1000,
       reason: "cap breaching refund",
       customerId: BASE + 2999,
-      accountNumber: "0123456789",
+      accountNumber: "0123456799", // distinct destination (AB-19)
       agentId: capAgent,
     });
     expect((over as any).success).toBe(false);

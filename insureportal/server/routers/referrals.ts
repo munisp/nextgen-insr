@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { referrals, agents, loyaltyHistory } from "@schema";
+import { referrals, agents, loyaltyHistory, transactions } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -129,6 +129,50 @@ export const referralsRouter = router({
             message: "Referee agent not found",
           });
 
+        // AB-9: self-referral guard — referee must not be the referrer.
+        if (referee.id === referral.referrerAgentId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Self-referral is not allowed" });
+        }
+
+        // AB-9: identity dedup — same phone / email / device terminal as the
+        // referrer means this is a self-signup farm attempt.
+        const [referrerAgent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.id, referral.referrerAgentId))
+          .limit(1);
+        if (referrerAgent) {
+          const samePhone = referee.phone && referee.phone === referrerAgent.phone;
+          const sameEmail = referee.email && referrerAgent.email && referee.email === referrerAgent.email;
+          const sameDevice = referee.terminalSerial && referee.terminalSerial === referrerAgent.terminalSerial;
+          if (samePhone || sameEmail || sameDevice) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Referee shares identity with referrer" });
+          }
+        }
+
+        // AB-9: one-referral-per-identity — this referee phone/email must not
+        // already be tied to another activated/rewarded referral.
+        const samePhoneAgents = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.phone, referee.phone));
+        const identityIds = samePhoneAgents.map(a => a.id).filter(id => id !== referee.id);
+        if (identityIds.length > 0) {
+          const prior = await db
+            .select({ id: referrals.id })
+            .from(referrals)
+            .where(
+              and(
+                sql`${referrals.refereeAgentId} = ANY(${identityIds})`,
+                sql`${referrals.status} IN ('activated','rewarded')`
+              )
+            )
+            .limit(1);
+          if (prior.length > 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Referee identity already referred" });
+          }
+        }
+
         // Link the referee to the referral
         await db
           .update(referrals)
@@ -154,10 +198,15 @@ export const referralsRouter = router({
   // ── Award referral bonus (called when referee completes first transaction) ─
   awardBonus: protectedProcedure
     .input(z.object({ refereeAgentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // AB-10: bonus crediting is a funds movement — staff only.
+        if (ctx.user?.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only staff can award referral bonuses" });
+        }
 
         const [referral] = await db
           .select()
@@ -171,6 +220,43 @@ export const referralsRouter = router({
           .limit(1);
 
         if (!referral) return { awarded: false };
+
+        // AB-10: require a VERIFIED referee qualification event — at least one
+        // successful transaction by the referee — before crediting anything.
+        const [refereeAgent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.agentId, input.refereeAgentCode))
+          .limit(1);
+        if (!refereeAgent || refereeAgent.id !== referral.refereeAgentId) {
+          return { awarded: false };
+        }
+        const [qualification] = await db
+          .select({ n: count() })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.agentId, refereeAgent.id),
+              eq(transactions.status, "success")
+            )
+          );
+        if (!qualification || qualification.n < 1) {
+          return { awarded: false, reason: "referee has no qualifying transaction" };
+        }
+
+        // AB-10/AB-11: atomic guarded flip — only one concurrent call can
+        // transition activated -> rewarded, so double-crediting is impossible.
+        const [flipped] = await db
+          .update(referrals)
+          .set({ status: "rewarded", rewardedAt: new Date() })
+          .where(
+            and(
+              eq(referrals.id, referral.id),
+              eq(referrals.status, "activated")
+            )
+          )
+          .returning();
+        if (!flipped) return { awarded: false };
 
         // Award bonus points to referrer
         const [referrer] = await db
@@ -199,12 +285,6 @@ export const referralsRouter = router({
           description: `Referral bonus for activating agent ${input.refereeAgentCode}`,
           balanceAfter: newPoints,
         });
-
-        // Mark referral as rewarded
-        await db
-          .update(referrals)
-          .set({ status: "rewarded", rewardedAt: new Date() })
-          .where(eq(referrals.referralCode, referral.referralCode));
 
         return {
           awarded: true,
@@ -387,14 +467,40 @@ export const referralsRouter = router({
   // ── markRewarded ──────────────────────────────────────────────────────────────
   markRewarded: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        // AB-11: staff-only; and only an activated referral with a verified
+        // qualification event may transition (never a bare flip).
+        if (ctx.user?.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only staff can mark referrals rewarded" });
+        }
+        const [ref] = await db
+          .select()
+          .from(referrals)
+          .where(eq(referrals.id, input.id))
+          .limit(1);
+        if (!ref) throw new TRPCError({ code: "NOT_FOUND", message: "Referral not found" });
+        if (ref.status !== "activated") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Referral is not in activated state" });
+        }
+        const [qualification] = await db
+          .select({ n: count() })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.agentId, ref.refereeAgentId!),
+              eq(transactions.status, "success")
+            )
+          );
+        if (!qualification || qualification.n < 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Referee has no qualifying transaction" });
+        }
         const [updated] = await db
           .update(referrals)
           .set({ status: "rewarded", rewardedAt: new Date() })
-          .where(eq(referrals.id, input.id))
+          .where(and(eq(referrals.id, input.id), eq(referrals.status, "activated")))
           .returning();
         return updated;
       } catch (error) {

@@ -4,13 +4,14 @@ import { TRPCError } from "@trpc/server";
 import { desc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { disputes, refunds, type Refund } from "../../drizzle/schema";
+import { disputes, refunds, transactions, type Refund } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, TBLedgerUnavailableError } from "../tbClient";
+import { deriveRefundTerms } from "../lib/refundTerms";
 
 /**
  * Dispute Refund Router
@@ -170,8 +171,6 @@ export const disputeRefundRouter = router({
       idempotencyKey: z.string().min(8).max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const tier = getRefundTier(input.amount);
-
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -190,8 +189,32 @@ export const disputeRefundRouter = router({
         assertTenantOwnership(linkedDispute.tenantId, tenantId, "Dispute");
       }
 
+      // ── AB-19: amount & destination derived from the ORIGINAL transaction ──
+      // When the disputed transaction is known, the client-supplied amount,
+      // accountNumber and customerId are NOT trusted: the refund may not
+      // exceed the original amount and must return to the source account.
+      let effectiveAmount = input.amount;
+      let effectiveDestination = input.accountNumber;
+      let originalTxId: number | null = null;
+      if (linkedDispute?.transactionId) {
+        const [origTx] = await database
+          .select()
+          .from(transactions)
+          .where(eq(transactions.id, linkedDispute.transactionId))
+          .limit(1);
+        if (origTx) {
+          const terms = deriveRefundTerms(origTx, input);
+          effectiveAmount = terms.effectiveAmount;
+          effectiveDestination = terms.effectiveDestination;
+          originalTxId = terms.originalTxId;
+        }
+      }
+      const tier = getRefundTier(effectiveAmount);
+
       // ── Idempotency: replay or reject before doing any work ─────────────
-      const payloadHash = input.idempotencyKey ? refundPayloadHash(input) : null;
+      const payloadHash = input.idempotencyKey
+        ? refundPayloadHash({ ...input, amount: effectiveAmount, accountNumber: effectiveDestination })
+        : null;
       if (input.idempotencyKey) {
         const [existing] = await database
           .select()
@@ -207,8 +230,10 @@ export const disputeRefundRouter = router({
       }
 
       // PAY-2: ALL pre-checks and the queue insert run in ONE transaction
-      // behind a per-customer advisory lock, so velocity/duplicate/daily-cap/
-      // per-dispute checks can never TOCTOU-race a concurrent request.
+      // behind advisory locks, so velocity/duplicate/daily-cap/per-dispute
+      // checks can never TOCTOU-race a concurrent request. AB-19: locks and
+      // velocity are keyed on the AUTHENTICATED USER and the refund
+      // destination account, never the attacker-chosen customerId.
       const refundRef = `REF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -218,23 +243,27 @@ export const disputeRefundRouter = router({
         | { blocked: true; response: Record<string, unknown> }
         | { blocked: false; inserted?: Refund };
       const queueOutcome = await database.transaction(async (tx): Promise<QueueOutcome> => {
-        // Serialise concurrent refund initiation for this customer (velocity
-        // TOCTOU fix): the lock is released automatically at commit/rollback.
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-cust-${input.customerId}`}))`);
+        // Serialise concurrent refund initiation for this user + destination
+        // (velocity TOCTOU fix): locks release automatically at commit/rollback.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-user-${ctx.user?.id ?? 0}`}))`);
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-dest-${effectiveDestination}`}))`);
         if (input.agentId != null) {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-agent-${input.agentId}`}))`);
         }
 
-        // Velocity check — real DB query for refunds in last 30 days.
+        // Velocity check — AB-19: keyed on the AUTHENTICATED USER and the
+        // refund destination account, not the attacker-chosen customerId.
+        // Counts refunds in the last 30 days initiated by this user or sent
+        // to the same destination account.
         const velocityRows = await tx.select({
-          customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
+          velocityCount: sql<number>`COUNT(*) FILTER (WHERE "createdAt" >= ${thirtyDaysAgo.toISOString()} AND ("initiatedByUserId" = ${ctx.user?.id ?? -1} OR "destinationAccount" = ${effectiveDestination}))`,
         }).from(refunds);
-        const customerRefundCount = Number(velocityRows[0]?.customerRefundCount ?? 0);
-        if (customerRefundCount >= MAX_REFUNDS_PER_CUSTOMER_30D) {
+        const velocityCount = Number(velocityRows[0]?.velocityCount ?? 0);
+        if (velocityCount >= MAX_REFUNDS_PER_CUSTOMER_30D) {
           return { blocked: true, response: {
             success: false,
             error: "velocity_exceeded",
-            message: `Customer has reached maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days`,
+            message: `Maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days reached for this user or destination account`,
             recommendation: "Escalate to compliance team for review",
           } };
         }
@@ -257,18 +286,17 @@ export const disputeRefundRouter = router({
           });
         }
 
-        // PAY-2 duplicate detection (documented rule, previously unenforced):
-        // same amount ± ₦100 to the same customer within 24h is a probable
-        // duplicate and is refused loudly.
+        // PAY-2 duplicate detection: same amount ± ₦100 to the same
+        // destination within 24h is a probable duplicate and is refused loudly.
         const dupRows = await tx.select({ ref: refunds.ref, refundAmount: refunds.refundAmount })
           .from(refunds)
-          .where(sql`"customerId" = ${input.customerId} AND status NOT IN ('rejected','failed') AND "deletedAt" IS NULL AND "createdAt" >= ${oneDayAgo.toISOString()} AND ABS("refundAmount" - ${Math.round(input.amount)}) <= 100
+          .where(sql`"destinationAccount" = ${effectiveDestination} AND status NOT IN ('rejected','failed') AND "deletedAt" IS NULL AND "createdAt" >= ${oneDayAgo.toISOString()} AND ABS("refundAmount" - ${Math.round(effectiveAmount)}) <= 100
                 AND (${input.idempotencyKey ?? null}::text IS NULL OR "idempotencyKey" IS NULL OR "idempotencyKey" <> ${input.idempotencyKey ?? ""})`)
           .limit(1);
         if (dupRows.length > 0) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: `Probable duplicate: refund ${dupRows[0]!.ref} of ₦${dupRows[0]!.refundAmount} was already queued for this customer within 24h (±₦100 tolerance). If this is a genuinely separate refund, wait 24h or escalate to compliance.`,
+            message: `Probable duplicate: refund ${dupRows[0]!.ref} of ₦${dupRows[0]!.refundAmount} was already queued to this destination within 24h (±₦100 tolerance). If this is a genuinely separate refund, wait 24h or escalate to compliance.`,
           });
         }
 
@@ -279,11 +307,11 @@ export const disputeRefundRouter = router({
           const [{ dayTotal }] = await tx.select({
             dayTotal: sql<string>`COALESCE(SUM("refundAmount") FILTER (WHERE status NOT IN ('rejected','failed') AND "deletedAt" IS NULL AND "createdAt" >= ${today.toISOString()}), 0)`,
           }).from(refunds).where(eq(refunds.agentId, input.agentId));
-          if (Number(dayTotal ?? 0) + Math.round(input.amount) > DAILY_AGENT_CAP) {
+          if (Number(dayTotal ?? 0) + Math.round(effectiveAmount) > DAILY_AGENT_CAP) {
             return { blocked: true, response: {
               success: false,
               error: "daily_agent_cap_exceeded",
-              message: `Agent daily refund cap of ₦${DAILY_AGENT_CAP.toLocaleString()} exceeded (today: ₦${Number(dayTotal ?? 0).toLocaleString()}, requested: ₦${input.amount.toLocaleString()})`,
+              message: `Agent daily refund cap of ₦${DAILY_AGENT_CAP.toLocaleString()} exceeded (today: ₦${Number(dayTotal ?? 0).toLocaleString()}, requested: ₦${effectiveAmount.toLocaleString()})`,
               recommendation: "Escalate to compliance team for review",
             } };
           }
@@ -302,16 +330,19 @@ export const disputeRefundRouter = router({
             idempotencyKey: input.idempotencyKey ?? null,
             payloadHash,
             disputeId: input.disputeId,
+            transactionId: originalTxId,
             agentId: input.agentId ?? 0,
             customerId: input.customerId,
-            originalAmount: Math.round(input.amount),
-            refundAmount: Math.round(input.amount),
+            originalAmount: Math.round(effectiveAmount),
+            refundAmount: Math.round(effectiveAmount),
             currency: "NGN",
             reason: input.reason,
             category: "dispute_refund",
             status: "pending",
             method: "original_method",
-            notes: `destination_account:${input.accountNumber}`,
+            notes: `destination_account:${effectiveDestination}`,
+            destinationAccount: effectiveDestination,
+            initiatedByUserId: ctx.user?.id ?? null,
             tenantId: ctx.user?.tenantId ?? null,
           })
           .onConflictDoNothing(

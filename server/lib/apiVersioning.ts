@@ -1,4 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
+import type { NextFunction, Request, Response } from "express";
+
 /**
  * API Versioning Middleware
  *
@@ -27,8 +29,8 @@ interface VersionInfo {
  */
 export function extractApiVersion(req: {
   path?: string;
-  headers?: Record<string, string | string[] | undefined>;
-  query?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, unknown>;
+  query?: Record<string, unknown>;
 }): VersionInfo {
   // 1. URL prefix: /api/v2/trpc/...
   const urlMatch = req.path?.match(/\/api\/v(\d+)\//);
@@ -79,7 +81,7 @@ export function extractApiVersion(req: {
  * Express middleware for API versioning
  */
 export function apiVersionMiddleware() {
-  return (req: any, res: any, next: any) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const versionInfo = extractApiVersion(req);
 
     // Check if version is supported
@@ -111,3 +113,4 @@ export function apiVersionMiddleware() {
     next();
   };
 }
+

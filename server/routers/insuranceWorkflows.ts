@@ -15,6 +15,7 @@
  *  10. Admin: product management → system config → user management
  */
 import { TRPCError } from "@trpc/server";
+import crypto from "node:crypto";
 import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 
@@ -40,6 +41,7 @@ import {
   ifrs17MeasurementGroups,
   insuranceProducts,
   claimDocuments,
+  claimDocumentHashes,
   daprWorkflowState,
   fluvioEventLog,
   tigerBeetleSyncLog,
@@ -65,6 +67,7 @@ import {
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, withTbCompensation } from "../tbClient";
 import { getTemporalClient } from "../temporal";
+import { flagRefundLoopIfAbusive } from "../lib/refundLoopDetection";
 
 // ─── Claim state-machine guards (F11-1/F11-3, DD-TSSTATE) ────────────────────
 /**
@@ -424,6 +427,23 @@ export const insuranceWorkflowsRouter = router({
       const graceHold = isInGracePeriod(policy[0], lifecycle);
       const arrearsAtFiling = graceHold ? Number(lifecycle.arrearsAmount ?? 0) : 0;
 
+      // AB-7: IDOR guard — the caller must OWN the policy (or be staff).
+      // Staff roles per keycloak.ts mapKeycloakRole: "admin" | "supervisor".
+      const isStaff = ctx.user?.role === "admin" || ctx.user?.role === "supervisor";
+      if (!isStaff && policy[0].customerId !== ctx.user?.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only file claims against your own policies" });
+      }
+
+      // AB-7: claimedAmount is validated server-side against the policy
+      // schedule (sum insured), not trusted from the client.
+      const sumInsured = Number(policy[0].sumInsured);
+      if (!(input.claimedAmount > 0)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "claimedAmount must be positive" });
+      }
+      if (Number.isFinite(sumInsured) && input.claimedAmount > sumInsured) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "claimedAmount exceeds policy sum insured" });
+      }
+
       // INS-4: duplicate-claim dedup — exact (policyId, incidentDate,
       // claimType) plus a fuzzy match on claimedAmount within ±1%. Rejected /
       // closed claims release the key so a legitimate re-file is not blocked.
@@ -446,7 +466,23 @@ export const insuranceWorkflowsRouter = router({
         });
       }
 
-      const claimNumber = `CLM-${Date.now()}-${input.policyId}`;
+      // AB-7: document-hash dedup — the same document bytes must not be
+      // reusable across claims. Fail-closed on storage error.
+      const docHashes = (input.documents ?? []).map(d =>
+        crypto.createHash("sha256").update(String(d)).digest("hex")
+      );
+      for (const h of docHashes) {
+        const dupe = await db.select({ id: claimDocumentHashes.id })
+          .from(claimDocumentHashes)
+          .where(eq(claimDocumentHashes.docHash, h))
+          .limit(1);
+        if (dupe.length) {
+          throw new TRPCError({ code: "CONFLICT", message: "A submitted document was already used in another claim" });
+        }
+      }
+
+      // AB-7: unpredictable claim number (CSPRNG), not timestamp+policyId.
+      const claimNumber = `CLM-${crypto.randomBytes(12).toString("hex").toUpperCase()}`;
       const [claim] = await db.insert(claims).values({
         claimNumber,
         policyId: input.policyId,
@@ -470,6 +506,13 @@ export const insuranceWorkflowsRouter = router({
         triggeredBy: ctx.user?.id ?? undefined,
         payload: { claimNumber },
       });
+
+      // AB-7: record document hashes so reused documents are rejected globally.
+      for (const h of docHashes) {
+        await db.insert(claimDocumentHashes)
+          .values({ claimId: claim.id, docHash: h })
+          .onConflictDoNothing();
+      }
 
       await emitFluvioEvent(db, "claims-events", { eventType: "claim.submitted", claimId: claim.id, claimNumber });
       await emitAuditLog(db, "CLAIM_FILED", "claim", claim.id, ctx.user?.id, { claimNumber });
@@ -719,6 +762,9 @@ export const insuranceWorkflowsRouter = router({
       });
 
       await emitFluvioEvent(db, "policy-events", { eventType: "policy.cancelled", policyId: input.policyId, reason: input.reason });
+      // AB-10: refund-loop velocity detection (fire-and-forget; never blocks cancel).
+      flagRefundLoopIfAbusive(db, { policyId: input.policyId, tenantId: ctx.user?.tenantId ?? null })
+        .catch((e) => console.warn("[refundLoopDetection] flag failed:", e));
       await emitAuditLog(db, "POLICY_CANCELLED", "policy", input.policyId, ctx.user?.id, {
         reason: input.reason, refundAmount, coolingOff: withinCoolingOff, refundTbRef,
       });
