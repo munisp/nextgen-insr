@@ -498,7 +498,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
           txType: "stripe_refund_reversal",
         });
         await db.insert(billingAuditLog).values({
-          tenantId: parseInt((charge.metadata as any)?.tenant_id || "0"),
+          tenantId: parseInt((charge.metadata as any)?.tenant_id || "0", 10),
           userId: 0,
           userName: "stripe_webhook",
           action: "charge_refunded",
@@ -546,7 +546,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
           }
         }
         await db.insert(billingAuditLog).values({
-          tenantId: parseInt(dispute.metadata?.tenant_id || "0"),
+          tenantId: parseInt(dispute.metadata?.tenant_id || "0", 10),
           userId: 0,
           userName: "stripe_webhook",
           action: lost ? "dispute_lost" : "dispute_closed",
