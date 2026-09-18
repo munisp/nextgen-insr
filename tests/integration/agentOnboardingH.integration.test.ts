@@ -10,7 +10,7 @@
  *
  * Phones in the 0914xxxxxxx range, unused elsewhere.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, it, beforeAll, afterAll } from "vitest";
 import bcrypt from "bcryptjs";
 
@@ -144,10 +144,22 @@ describe("H #1: wizard approveAgent is admin-gated + evidence-gated", () => {
     const db = (await getDb())!;
     const [row] = await db.select().from(agents).where(eq(agents.id, eligPk));
     expect(row.isActive).toBe(true);
+    // 2026-09-18 (H-wave CI fix, PR #209): filter by ACTION as well as
+    // resourceId. The audit_log resourceId column is a bare string shared by
+    // every resource type; the H2-individual suite creates policies whose
+    // numeric PK can equal this agent's PK, so a POLICY_CREATED row with the
+    // same resourceId string could be picked up by an unfiltered limit(1)
+    // query (cross-suite PK collision). The assertion is unchanged — the
+    // query is now fully specified.
     const [log] = await db
       .select()
       .from(auditLog)
-      .where(eq(auditLog.resourceId, String(eligPk)))
+      .where(
+        and(
+          eq(auditLog.resourceId, String(eligPk)),
+          eq(auditLog.action, "agent_onboarding_approved")
+        )
+      )
       .limit(1);
     expect(log.action).toBe("agent_onboarding_approved");
     const md = log.metadata as Record<string, unknown>;
