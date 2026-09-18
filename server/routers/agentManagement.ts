@@ -287,13 +287,8 @@ export const agentManagementRouter = router({
         {
           const [targetAgent] = await db
             .select()
-            .from(require("../../drizzle/schema").agents)
-            .where(
-              require("drizzle-orm").eq(
-                require("../../drizzle/schema").agents.id,
-                req.agentId
-              )
-            )
+            .from(agents)
+            .where(eq(agents.id, req.agentId))
             .limit(1);
           if (!targetAgent || targetAgent.deletedAt || !targetAgent.isActive) {
             throw new TRPCError({
