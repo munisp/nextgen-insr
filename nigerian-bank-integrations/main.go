@@ -66,7 +66,7 @@ var supportedBanks = []db.BankDB{
 func main() {
 	cfg := config.NewConfig()
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	sugar := logger.Sugar()
 
 	srv := &Server{Config: cfg, Logger: sugar, NIBSS: newNIBSSClient(cfg.Bank)}
@@ -138,8 +138,8 @@ func main() {
 	sugar.Infof("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownGrace)
 	defer cancel()
-	httpServer.Shutdown(shutdownCtx)
-	srv.Redis.Close()
+	_ = httpServer.Shutdown(shutdownCtx)
+	_ = srv.Redis.Close()
 	srv.Postgres.Close()
 	sugar.Infof("Server exited")
 }
@@ -155,7 +155,7 @@ func (s *Server) instrumentMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"service":  "nigerian-bank-integrations",
 		"status":   "healthy",
 		"version":  "1.0.0",
@@ -184,13 +184,13 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleListBanks returns all supported Nigerian banks
 func (s *Server) handleListBanks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"banks": supportedBanks,
 		"total": len(supportedBanks),
 		"nip_enabled": func() int {
@@ -273,7 +273,7 @@ func (s *Server) handleVerifyAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"success":        true,
 		"account_number": req.AccountNumber,
 		"bank_code":      req.BankCode,
@@ -293,7 +293,7 @@ func (s *Server) handleGetVerification(w http.ResponseWriter, r *http.Request) {
 
 	if cached, err := s.Redis.GetCachedVerification(r.Context(), accountNumber+"_"+bankCode); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -416,7 +416,7 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 				"reference": existing.Reference, "status": existing.Status, "duplicate": true,
 			}})
 			return
@@ -478,7 +478,7 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(Response{
+	_ = json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
 			"reference":        req.Reference,
@@ -501,7 +501,7 @@ func (s *Server) handleGetTransfer(w http.ResponseWriter, r *http.Request) {
 
 	if cached, err := s.Redis.GetCachedTransfer(r.Context(), reference); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -512,7 +512,7 @@ func (s *Server) handleGetTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: transfer})
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: transfer})
 }
 
 // handleApproveTransfer approves a pending transfer (dual-control).
@@ -554,7 +554,7 @@ func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 	_ = s.Redis.InvalidateTransfer(r.Context(), reference)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"reference":   reference,
 		"previous":    transfer.Status,
 		"new_status":  "success",
@@ -569,13 +569,13 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	offset := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
-		fmt.Sscanf(l, "%d", &limit)
+		_, _ = fmt.Sscanf(l, "%d", &limit)
 		if limit > 100 {
 			limit = 100
 		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
-		fmt.Sscanf(o, "%d", &offset)
+		_, _ = fmt.Sscanf(o, "%d", &offset)
 	}
 
 	transfers, err := s.Postgres.ListTransfers(r.Context(), status, limit, offset)
@@ -585,7 +585,7 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"transfers": transfers,
 		"total":     len(transfers),
 		"limit":     limit,
@@ -634,7 +634,7 @@ func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"report_id":       report.ID,
 		"date":            req.Date,
 		"total_txn_count": req.TotalTxnCount,
@@ -653,7 +653,7 @@ func (s *Server) handleGetReconciliation(w http.ResponseWriter, r *http.Request)
 
 	if cached, err := s.Redis.GetCachedSettlement(r.Context(), date); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -664,7 +664,7 @@ func (s *Server) handleGetReconciliation(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: report})
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: report})
 }
 
 // handleProcessCallbacks processes pending callback events from banks
@@ -701,7 +701,7 @@ func (s *Server) handleProcessCallbacks(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"processed":    processed,
 		"total":        len(events),
 		"processed_at": time.Now().Format(time.RFC3339),
@@ -727,7 +727,7 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(Response{
+	_ = json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
 			"endpoint_url": req.EndpointURL,
@@ -765,7 +765,7 @@ func validateNUBANChecksum(accountNum string) bool {
 func writeError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(Response{Success: false, Error: msg})
+	_ = json.NewEncoder(w).Encode(Response{Success: false, Error: msg})
 }
 
 // validateQueryParam returns a query parameter value, rejecting over-long input.

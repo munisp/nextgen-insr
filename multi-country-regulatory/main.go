@@ -303,7 +303,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -495,7 +495,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM regulatory_requirements").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "multi-country-regulatory",
 		"table":         "regulatory_requirements",
 		"total_records": count,
@@ -599,7 +599,7 @@ func handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
 		issues = append(issues, "Local partner requirement not met")
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"country": reg.Country, "compliant": len(issues) == 0, "issues": issues,
 	})
 }
@@ -965,7 +965,7 @@ func handleGenerateReturn(w http.ResponseWriter, r *http.Request) {
 	}
 	filingID := fmt.Sprintf("REG-%s-%d", req.Country, time.Now().UnixNano())
 	if db != nil {
-		db.Exec("INSERT INTO regulatory_filings (id, country, regulator, report_type, period, status, created_at) VALUES ($1,$2,$3,$4,$5,'generated',NOW())",
+		_, _ = db.Exec("INSERT INTO regulatory_filings (id, country, regulator, report_type, period, status, created_at) VALUES ($1,$2,$3,$4,$5,'generated',NOW())",
 			filingID, req.Country, regulator, req.ReportType, req.Period)
 	}
 	w.Header().Set("Content-Type", "application/json")

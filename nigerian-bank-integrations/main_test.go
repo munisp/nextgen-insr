@@ -85,7 +85,7 @@ func TestGenerateTransferReference(t *testing.T) {
 func TestNIBSSClientNameEnquiry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/name-enquiry" {
-			json.NewEncoder(w).Encode(map[string]string{"account_name": "Ada Lovelace", "bank_name": "GTBank"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"account_name": "Ada Lovelace", "bank_name": "GTBank"})
 			return
 		}
 		w.WriteHeader(404)
@@ -102,9 +102,9 @@ func TestNIBSSClientTransferAndRequery(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/api/v1/nip/transfer":
-			json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/nip/transfers/"):
-			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 		default:
 			w.WriteHeader(404)
 		}

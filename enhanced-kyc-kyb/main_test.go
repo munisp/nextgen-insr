@@ -118,7 +118,7 @@ func TestScreenPEP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		json.NewEncoder(w).Encode(map[string]bool{"match": body["name"] == "Sanctioned Person"})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"match": body["name"] == "Sanctioned Person"})
 	}))
 	defer srv.Close()
 
