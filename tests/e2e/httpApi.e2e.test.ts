@@ -41,6 +41,12 @@ const E2E_CUSTOMER_AUTO = 920101;
 const E2E_CUSTOMER_SUPERVISOR = 920102;
 const E2E_DISPUTE_REF_AUTO = "E2EDSP-AUTO-0001";
 const E2E_DISPUTE_REF_SUP = "E2EDSP-SUP-0002";
+// 2026-09-18 (audit wave F1, PAY-2): one ACTIVE refund per dispute is now
+// enforced (double-refund block), so the idempotency-contract test below
+// needs its own dispute — test 6's auto-tier refund already occupies
+// E2EDSP-AUTO-0001. The pinned contract itself is unchanged: same key+payload
+// replays, same key+different payload is a 409 CONFLICT.
+const E2E_DISPUTE_REF_IDEM = "E2EDSP-IDEM-0003";
 
 let adminCookie: string;
 let agentCookie: string;
@@ -78,6 +84,15 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
           priority: "high",
           description: "E2E: customer charged twice for premium",
           amount: "2500",
+        },
+        {
+          ref: E2E_DISPUTE_REF_IDEM,
+          agentId: 1,
+          type: "double_charge",
+          status: "open",
+          priority: "medium",
+          description: "E2E: idempotency-contract refund dispute",
+          amount: "3000",
         },
         {
           ref: E2E_DISPUTE_REF_SUP,
@@ -261,7 +276,7 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
     const [dispute] = await db
       .select()
       .from(disputes)
-      .where(eq(disputes.ref, E2E_DISPUTE_REF_AUTO));
+      .where(eq(disputes.ref, E2E_DISPUTE_REF_IDEM));
     const idemKey = "e2e-idem-key-000001";
     const payload = {
       disputeId: dispute!.id,

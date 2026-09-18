@@ -49,7 +49,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { publishInsuranceEvent } from "../daprClient";
 import { getDb, withClientTransaction } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
-import { tbCreateTransfer } from "../tbClient";
+import { tbCreateTransfer, withTbCompensation } from "../tbClient";
 import { getTemporalClient } from "../temporal";
 
 // ─── Claim state-machine guards (F11-1/F11-3, DD-TSSTATE) ────────────────────
@@ -718,7 +718,7 @@ export const insuranceWorkflowsRouter = router({
 
       try {
         // TigerBeetle: insurer-claims-pool → claimant (CLAIMS_PAYOUTS ledger, code 800)
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: "insurer-claims-pool",
           creditAccountId: `claimant-${claim.claimantId}`,
           amount: Math.round(approvedAmount * 100),
@@ -726,14 +726,18 @@ export const insuranceWorkflowsRouter = router({
           code: 800,
           ref: payRef,
           txType: "claim_settlement",
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
         // Payment record + claim state flip in ONE real transaction on a
         // single connection (withClientTransaction). The claim flip carries
         // the expected-state guard atomically; the claims_payments.claimId
         // unique index (migration 0053) makes a lost race idempotent instead
         // of a double-pay.
-        const settleResult = await withClientTransaction(async (client) => {
+        // PAY-1 (orphan transfer): the TB leg above is committed. If the PG
+        // transaction fails, post a compensating reversal (payRef-REV) and
+        // rethrow loudly — previously a PG rollback left the TB leg posted.
+        const settleResult = await withTbCompensation("insuranceWorkflows.settleClaimPayment", tbReq, () => withClientTransaction(async (client) => {
           const ins = await client.query(
             `INSERT INTO claims_payments
                ("claimId", "paymentRef", amount, currency, "paymentMethod",
@@ -779,7 +783,7 @@ export const insuranceWorkflowsRouter = router({
             });
           }
           return { payment: ins.rows[0], replayed: false };
-        });
+        }));
 
         if (!settleResult.replayed) {
           await emitFluvioEvent(db, "payment-events", {
