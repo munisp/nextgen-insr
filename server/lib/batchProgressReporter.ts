@@ -255,7 +255,7 @@ export function createSocketIOProgressHandler(): (
 
     // Emit to Socket.IO /settlement namespace
     try {
-      const { getIO } = require("../socketSingleton");
+      const { getIO } = require("../socketSingleton") as typeof import("../socketSingleton");
       const io = getIO();
       if (io) {
         const settlementNs = io.of("/settlement");
@@ -288,3 +288,4 @@ export function createRedisPubSubHandler(
     );
   };
 }
+
