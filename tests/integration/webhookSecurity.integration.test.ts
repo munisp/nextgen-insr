@@ -174,9 +174,15 @@ describe("generic webhook HMAC middleware (tigerbeetle/termii/partner routes)", 
   const SECRET_ENV = "GENERIC_TEST_WEBHOOK_SECRET";
   const payload = Buffer.from(JSON.stringify({ event: "settled", data: { id: 1 } }));
 
-  function mwReq(sig?: string) {
+  function mwReq(sig?: string, opts: { timestamp?: number } = {}) {
+    const headers: Record<string, string> = {};
+    if (sig) headers["x-webhook-signature"] = sig;
+    // replay-window added 2026-09-18 per OPS-8: fail-closed/production routes
+    // require a fresh x-webhook-timestamp; tests that expect acceptance send one.
+    if (opts.timestamp !== undefined)
+      headers["x-webhook-timestamp"] = String(opts.timestamp);
     return {
-      headers: sig ? { "x-webhook-signature": sig } : {},
+      headers,
       rawBody: payload,
       path: "/webhooks/test",
     } as any;
@@ -267,13 +273,34 @@ describe("generic webhook HMAC middleware (tigerbeetle/termii/partner routes)", 
     process.env.NODE_ENV = "development";
     const res = mockRes();
     let called = false;
+    // replay-window added 2026-09-18 per OPS-8: fail-closed routes require a
+    // fresh timestamp header in addition to the valid signature.
     verifyWebhookHmac(SECRET_ENV, "x-webhook-signature", { failClosed: true })(
-      mwReq(sign("generic-secret")),
+      mwReq(sign("generic-secret"), { timestamp: Date.now() }),
       res as any,
       () => {
         called = true;
       }
     );
     expect(called).toBe(true);
+  });
+
+  // OPS-8 (2026-09-18): a validly-signed request with a STALE timestamp is a
+  // replay and must be rejected on fail-closed routes.
+  it("failClosed route rejects a validly-signed request with a stale timestamp (replay)", () => {
+    process.env[SECRET_ENV] = "generic-secret";
+    process.env.NODE_ENV = "development";
+    const res = mockRes();
+    let called = false;
+    verifyWebhookHmac(SECRET_ENV, "x-webhook-signature", { failClosed: true })(
+      mwReq(sign("generic-secret"), { timestamp: Date.now() - 10 * 60_000 }),
+      res as any,
+      () => {
+        called = true;
+      }
+    );
+    expect(called).toBe(false);
+    expect(res.statusCode).toBe(401);
+    expect(String((res.body as any).error)).toMatch(/replay window/i);
   });
 });
