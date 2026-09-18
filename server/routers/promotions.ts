@@ -1,10 +1,12 @@
 import crypto from "crypto";
 
-import { eq, and, sql, lte, gte } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { eq, and, sql, lte, gte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
   promotions,
+  couponRedemptions,
   loyaltyAccounts,
   loyaltyTransactions,
 } from "../../drizzle/insurance-extended-schema";
@@ -144,17 +146,92 @@ export const promotionsRouter = router({
       };
     }),
 
+  // H-wave (2026-09): race-safe redemption. The previous implementation
+  // incremented usedCount unconditionally — no global limit, no per-customer
+  // limit at burn time, and any limit check was check-then-insert (TOCTOU).
+  // Now a single transaction holds pg_advisory_xact_lock(promoId,
+  // customerId) so concurrent redemptions by the same customer serialize,
+  // the per-customer count is re-read under the lock, and the global usage
+  // counter is an atomic guarded UPDATE (WHERE usedCount < usageLimit).
   redeemCoupon: protectedProcedure
-    .input(z.object({ code: z.string() }))
+    .input(
+      z.object({
+        code: z.string(),
+        customerId: z.number(),
+        orderId: z.number().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
-      await database
-        .update(promotions)
-        .set({ usedCount: sql`${promotions.usedCount} + 1` })
-        .where(eq(promotions.code, input.code));
-      return { success: true };
+      return await database.transaction(async tx => {
+        const [promo] = await tx
+          .select()
+          .from(promotions)
+          .where(eq(promotions.code, input.code))
+          .limit(1);
+        if (!promo)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Invalid coupon code",
+          });
+        if (!promo.isActive)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Coupon is inactive",
+          });
+
+        // Serialize concurrent redemptions by this customer for this promo
+        // (advisory xact lock — released automatically at commit/rollback).
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(${promo.id}, ${input.customerId})`
+        );
+
+        // Per-customer limit, re-read UNDER the lock — no TOCTOU window.
+        const perCustomerLimit = promo.perCustomerLimit ?? 1;
+        const [customerUses] = await tx
+          .select({ n: count() })
+          .from(couponRedemptions)
+          .where(
+            and(
+              eq(couponRedemptions.promoId, promo.id),
+              eq(couponRedemptions.customerId, input.customerId)
+            )
+          );
+        if ((customerUses?.n ?? 0) >= perCustomerLimit) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Per-customer coupon limit reached",
+          });
+        }
+
+        // Global usage limit: atomic guarded increment — trips even under
+        // cross-customer concurrency (single UPDATE with WHERE guard).
+        const [burned] = await tx
+          .update(promotions)
+          .set({ usedCount: sql`${promotions.usedCount} + 1` })
+          .where(
+            and(
+              eq(promotions.id, promo.id),
+              sql`(${promotions.usageLimit} IS NULL OR ${promotions.usedCount} < ${promotions.usageLimit})`
+            )
+          )
+          .returning({ id: promotions.id });
+        if (!burned) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Coupon usage limit reached",
+          });
+        }
+
+        await tx.insert(couponRedemptions).values({
+          promoId: promo.id,
+          customerId: input.customerId,
+          orderId: input.orderId ?? null,
+        });
+        return { success: true };
+      });
     }),
 
   // ─── Loyalty Program ─────────────────────────────────────────────────────

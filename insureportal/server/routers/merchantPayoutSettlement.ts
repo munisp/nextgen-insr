@@ -6,8 +6,8 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { merchantPayouts } from "@schema";
-import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
+import { merchantPayouts, merchants, merchantSettlementChangeRequests } from "@schema";
+import { eq, desc, and, gte, count, sum, sql, isNull } from "drizzle-orm";
 
 export const merchantPayoutSettlementRouter = router({
   list: protectedProcedure
@@ -52,14 +52,15 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
+  // H-wave (2026-09, mirrors platform G1 CRIT-5): the payout destination is
+  // ALWAYS the merchant's verified settlement account on file — never
+  // client-supplied. The previous version accepted arbitrary bank details
+  // from the caller and checked neither merchant status nor balance.
   initiatePayout: protectedProcedure
     .input(
       z.object({
         merchantId: z.number(),
         amount: z.number().min(100),
-        bankCode: z.string(),
-        accountNumber: z.string(),
-        accountName: z.string(),
         settlementCycle: z.enum(["T0", "T1", "T2", "weekly"]).default("T1"),
       })
     )
@@ -67,6 +68,60 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
+
+        const [merchant] = await db
+          .select()
+          .from(merchants)
+          .where(
+            and(eq(merchants.id, input.merchantId), isNull(merchants.deletedAt))
+          )
+          .limit(1);
+        if (!merchant)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Merchant not found",
+          });
+        if (merchant.status !== "active")
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Merchant is not active (status: ${merchant.status})`,
+          });
+        if (
+          !merchant.settlementAccountNumber ||
+          !merchant.settlementBankCode ||
+          !merchant.settlementBankName
+        )
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Merchant has no verified settlement account on file",
+          });
+
+        // OTP-hold: payouts are blocked while a freshly-changed settlement
+        // account is inside its cooling-off window (migration 0045).
+        const [recentChange] = await db
+          .select({ holdUntil: merchantSettlementChangeRequests.holdUntil })
+          .from(merchantSettlementChangeRequests)
+          .where(
+            and(
+              eq(merchantSettlementChangeRequests.merchantId, merchant.id),
+              eq(merchantSettlementChangeRequests.status, "applied"),
+              gte(merchantSettlementChangeRequests.holdUntil, new Date())
+            )
+          )
+          .limit(1);
+        if (recentChange)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Settlement account was recently changed; payouts held until ${recentChange.holdUntil?.toISOString()}`,
+          });
+
+        const walletBalance = Number(merchant.walletBalance ?? 0);
+        if (walletBalance < input.amount)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Insufficient merchant balance. Available: ₦${walletBalance.toLocaleString()}`,
+          });
+
         const settlementDate = new Date();
         const cycleMap = { T0: 0, T1: 1, T2: 2, weekly: 7 };
         settlementDate.setDate(
@@ -77,9 +132,10 @@ export const merchantPayoutSettlementRouter = router({
           .values({
             merchantId: input.merchantId,
             amount: String(input.amount),
-            bankCode: input.bankCode,
-            accountNumber: input.accountNumber,
-            accountName: input.accountName,
+            // Destination from the VERIFIED settlement record only.
+            bankCode: merchant.settlementBankCode,
+            accountNumber: merchant.settlementAccountNumber,
+            accountName: merchant.businessName,
             settlementCycle: input.settlementCycle,
             settlementDate,
             status: "pending",

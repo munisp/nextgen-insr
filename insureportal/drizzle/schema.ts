@@ -5659,3 +5659,38 @@ export const loyaltyTransactions = pgTable(
     tenantIdx: index("lt_tenant_idx").on(t.tenantId),
   })
 );
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// H-wave (2026-09): settlement-change verification for the LEGACY insureportal
+// merchant tree (mirrors platform G1 migration 0076 / table of the same name).
+// Settlement (payout destination) changes NEVER apply inline: a pending
+// request row is created, a 6-digit OTP (bcrypt hash) is sent to the
+// merchant's registered phone, and the change applies only on OTP
+// confirmation, followed by a payout hold (cooling-off).
+// ═══════════════════════════════════════════════════════════════════════════════
+export const merchantSettlementChangeRequests = pgTable(
+  "merchant_settlement_change_requests",
+  {
+    id: serial("id").primaryKey(),
+    merchantId: integer("merchantId")
+      .references(() => merchants.id)
+      .notNull(),
+    newAccountNumber: varchar("newAccountNumber", { length: 20 }).notNull(),
+    newBankCode: varchar("newBankCode", { length: 10 }).notNull(),
+    newBankName: varchar("newBankName", { length: 64 }).notNull(),
+    hashedOtp: varchar("hashedOtp", { length: 128 }).notNull(),
+    otpExpiresAt: timestamp("otpExpiresAt").notNull(),
+    otpAttempts: integer("otpAttempts").default(0).notNull(),
+    status: varchar("status", { length: 16 }).default("pending").notNull(), // pending | applied | expired | locked | rejected
+    requestedBy: integer("requestedBy").notNull(),
+    appliedAt: timestamp("appliedAt"),
+    holdUntil: timestamp("holdUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    merchantIdx: index("mscr_merchantId_idx").on(t.merchantId),
+    statusIdx: index("mscr_status_idx").on(t.status),
+  })
+);
+export type MerchantSettlementChangeRequest =
+  typeof merchantSettlementChangeRequests.$inferSelect;

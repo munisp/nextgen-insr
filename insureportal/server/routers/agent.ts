@@ -22,7 +22,7 @@ import {
   writeAuditLog,
   getDb,
 } from "../db";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { agents } from "@schema";
 import { getJwtSecret } from "../lib/envValidation";
 import {
@@ -612,7 +612,11 @@ export const agentRouter = router({
     }),
 
   // ── Bulk activate ─────────────────────────────────────────────────────────
-  bulkActivate: protectedProcedure
+  // H-wave (2026-09): admin-only. Eligibility gate: an agent can be (re)activated
+  // only with evidence of completed onboarding (a prior login or an issued
+  // terminal serial) — a bare row with a PIN hash is not activation evidence.
+  // Ineligible ids are reported honestly, never silently activated.
+  bulkActivate: adminProcedure
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) })
     )
@@ -620,18 +624,41 @@ export const agentRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        await db
-          .update(agents)
-          .set({ isActive: true, updatedAt: new Date() })
+        const rows = await db
+          .select({
+            id: agents.id,
+            lastLoginAt: agents.lastLoginAt,
+            terminalSerial: agents.terminalSerial,
+          })
+          .from(agents)
           .where(and(inArray(agents.id, input.ids), isNull(agents.deletedAt)));
+        const eligible = rows.filter(
+          r => r.lastLoginAt != null || r.terminalSerial != null
+        );
+        const eligibleIds = eligible.map(r => r.id);
+        const skipped = input.ids.filter(id => !eligibleIds.includes(id));
+        if (eligibleIds.length > 0) {
+          await db
+            .update(agents)
+            .set({ isActive: true, updatedAt: new Date() })
+            .where(inArray(agents.id, eligibleIds));
+        }
         await writeAuditLog({
           action: "BULK_ACTIVATE",
           resource: "agent",
           resourceId: input.ids.join(","),
           status: "success",
-          metadata: { count: input.ids.length },
+          metadata: {
+            count: eligibleIds.length,
+            skipped,
+            activatedBy: ctx.user?.id,
+          },
         });
-        return { success: true, count: input.ids.length };
+        return {
+          success: true,
+          count: eligibleIds.length,
+          skippedIneligible: skipped,
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -643,41 +670,12 @@ export const agentRouter = router({
     }),
 
   // ── Bulk suspend ──────────────────────────────────────────────────────────
-  bulkSuspend: protectedProcedure
-    .input(
-      z.object({
-        ids: z.array(z.number().int().positive()).min(1).max(100),
-        reason: z.string().min(5),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const db = (await getDb())!;
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        await db
-          .update(agents)
-          .set({ isActive: false, updatedAt: new Date() })
-          .where(and(inArray(agents.id, input.ids), isNull(agents.deletedAt)));
-        await writeAuditLog({
-          action: "BULK_SUSPEND",
-          resource: "agent",
-          resourceId: input.ids.join(","),
-          status: "success",
-          metadata: { count: input.ids.length, reason: input.reason },
-        });
-        return { success: true, count: input.ids.length };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-
-  // ── Bulk delete ───────────────────────────────────────────────────────────
-  bulkDelete: protectedProcedure
+  // H-wave (2026-09): admin-only + deactivation cascade equivalent (mirrors
+  // platform G3): identity, funds and hardware flags flip together, and the
+  // revocation-equivalent is REAL — requireAgent (middleware/agentAuth)
+  // re-reads the agent row on every request and now rejects inactive/deleted
+  // agents, so live JWT sessions die at the next request.
+  bulkSuspend: adminProcedure
     .input(
       z.object({
         ids: z.array(z.number().int().positive()).min(1).max(100),
@@ -691,8 +689,56 @@ export const agentRouter = router({
         await db
           .update(agents)
           .set({
+            isActive: false,
+            floatLocked: true,
+            terminalEnabled: false,
+            terminalDisabledReason: input.reason,
+            updatedAt: new Date(),
+          })
+          .where(and(inArray(agents.id, input.ids), isNull(agents.deletedAt)));
+        await writeAuditLog({
+          action: "BULK_SUSPEND",
+          resource: "agent",
+          resourceId: input.ids.join(","),
+          status: "success",
+          metadata: {
+            count: input.ids.length,
+            reason: input.reason,
+            suspendedBy: ctx.user?.id,
+          },
+        });
+        return { success: true, count: input.ids.length };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // ── Bulk delete ───────────────────────────────────────────────────────────
+  bulkDelete: adminProcedure
+    .input(
+      z.object({
+        ids: z.array(z.number().int().positive()).min(1).max(100),
+        reason: z.string().min(5),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        // H-wave: same cascade as suspend, plus soft delete.
+        await db
+          .update(agents)
+          .set({
             deletedAt: new Date(),
             isActive: false,
+            floatLocked: true,
+            terminalEnabled: false,
+            terminalDisabledReason: input.reason,
             updatedAt: new Date(),
           })
           .where(and(inArray(agents.id, input.ids), isNull(agents.deletedAt)));
@@ -701,7 +747,11 @@ export const agentRouter = router({
           resource: "agent",
           resourceId: input.ids.join(","),
           status: "success",
-          metadata: { count: input.ids.length, reason: input.reason },
+          metadata: {
+            count: input.ids.length,
+            reason: input.reason,
+            deletedBy: ctx.user?.id,
+          },
         });
         return { success: true, count: input.ids.length };
       } catch (error) {
