@@ -15,6 +15,7 @@
  *  10. Admin: product management → system config → user management
  */
 import { TRPCError } from "@trpc/server";
+import crypto from "node:crypto";
 import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 
@@ -40,6 +41,7 @@ import {
   ifrs17MeasurementGroups,
   insuranceProducts,
   claimDocuments,
+  claimDocumentHashes,
   daprWorkflowState,
   fluvioEventLog,
   tigerBeetleSyncLog,
@@ -313,7 +315,39 @@ export const insuranceWorkflowsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Policy is not active" });
       }
 
-      const claimNumber = `CLM-${Date.now()}-${input.policyId}`;
+      // AB-7: IDOR guard — the caller must OWN the policy (or be staff).
+      const isStaff = ctx.user?.role === "admin" || ctx.user?.role === "adjuster" || ctx.user?.role === "supervisor";
+      if (!isStaff && policy[0].customerId !== ctx.user?.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only file claims against your own policies" });
+      }
+
+      // AB-7: claimedAmount is validated server-side against the policy
+      // schedule (sum insured), not trusted from the client.
+      const sumInsured = Number(policy[0].sumInsured);
+      if (!(input.claimedAmount > 0)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "claimedAmount must be positive" });
+      }
+      if (Number.isFinite(sumInsured) && input.claimedAmount > sumInsured) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "claimedAmount exceeds policy sum insured" });
+      }
+
+      // AB-7: document-hash dedup — the same document bytes must not be
+      // reusable across claims. Fail-closed on storage error.
+      const docHashes = (input.documents ?? []).map(d =>
+        crypto.createHash("sha256").update(String(d)).digest("hex")
+      );
+      for (const h of docHashes) {
+        const dupe = await db.select({ id: claimDocumentHashes.id })
+          .from(claimDocumentHashes)
+          .where(eq(claimDocumentHashes.docHash, h))
+          .limit(1);
+        if (dupe.length) {
+          throw new TRPCError({ code: "CONFLICT", message: "A submitted document was already used in another claim" });
+        }
+      }
+
+      // AB-7: unpredictable claim number (CSPRNG), not timestamp+policyId.
+      const claimNumber = `CLM-${crypto.randomBytes(12).toString("hex").toUpperCase()}`;
       const [claim] = await db.insert(claims).values({
         claimNumber,
         policyId: input.policyId,
@@ -336,6 +370,13 @@ export const insuranceWorkflowsRouter = router({
         triggeredBy: ctx.user?.id ?? undefined,
         payload: { claimNumber },
       });
+
+      // AB-7: record document hashes so reused documents are rejected globally.
+      for (const h of docHashes) {
+        await db.insert(claimDocumentHashes)
+          .values({ claimId: claim.id, docHash: h })
+          .onConflictDoNothing();
+      }
 
       await emitFluvioEvent(db, "claims-events", { eventType: "claim.submitted", claimId: claim.id, claimNumber });
       await emitAuditLog(db, "CLAIM_FILED", "claim", claim.id, ctx.user?.id, { claimNumber });

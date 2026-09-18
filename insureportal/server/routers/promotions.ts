@@ -5,8 +5,11 @@ import {
   promotions,
   loyaltyAccounts,
   loyaltyTransactions,
+  couponRedemptions,
+  transactions,
 } from "../../drizzle/insurance-extended-schema";
-import { eq, and, sql, lte, gte } from "drizzle-orm";
+import { eq, and, sql, lte, gte, count, isNull } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import crypto from "crypto";
 
 export const promotionsRouter = router({
@@ -63,19 +66,27 @@ export const promotionsRouter = router({
         endDate: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
       const code =
         input.code ||
         `PROMO-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+      // AB-14: map to real schema columns (the previous spread wrote
+      // non-existent fields). perCustomerLimit persists for enforcement.
       const [promo] = await database
         .insert(promotions)
         .values({
-          ...input,
+          tenantId: (ctx.user as any)?.tenantId ?? 0,
           code,
-          startDate: new Date(input.startDate),
+          description: input.name,
+          discountType: input.type,
+          discountValue: input.value,
+          minPurchaseAmount: input.minOrderAmount,
+          maxUsageCount: input.usageLimit,
+          perCustomerLimit: input.perCustomerLimit,
+          startsAt: new Date(input.startDate),
           endDate: new Date(input.endDate),
         })
         .returning();
@@ -104,54 +115,109 @@ export const promotionsRouter = router({
       if (!promo) return { valid: false, reason: "Invalid coupon code" };
       if (!promo.isActive)
         return { valid: false, reason: "Coupon is inactive" };
-      if (new Date(promo.startDate) > now)
+      if (promo.startsAt && new Date(promo.startsAt) > now)
         return { valid: false, reason: "Coupon not yet active" };
-      if (new Date(promo.endDate) < now)
+      const expiry = promo.endsAt ?? promo.endDate;
+      if (expiry && new Date(expiry) < now)
         return { valid: false, reason: "Coupon has expired" };
-      if (promo.usageLimit && promo.usedCount >= promo.usageLimit)
+      // AB-14: global usage limit checked against the SAME column the
+      // redeem path increments (usageCount) — the previous usedCount /
+      // usageCount mismatch meant the limit never tripped.
+      if (promo.maxUsageCount && (promo.usageCount ?? 0) >= promo.maxUsageCount)
         return { valid: false, reason: "Usage limit reached" };
+
+      // AB-14: per-customer limit enforcement (multi-account coupon farming).
+      const perCustomerLimit = promo.perCustomerLimit ?? 1;
+      const [customerUses] = await database
+        .select({ n: count() })
+        .from(couponRedemptions)
+        .where(
+          and(
+            eq(couponRedemptions.promoId, promo.id),
+            eq(couponRedemptions.customerId, input.customerId)
+          )
+        );
+      if (customerUses && customerUses.n >= perCustomerLimit)
+        return { valid: false, reason: "Per-customer coupon limit reached" };
+
       if (
-        promo.minOrderAmount &&
-        input.orderTotal < parseFloat(promo.minOrderAmount)
+        promo.minPurchaseAmount &&
+        input.orderTotal < parseFloat(promo.minPurchaseAmount)
       )
         return {
           valid: false,
-          reason: `Minimum order of ₦${promo.minOrderAmount} required`,
+          reason: `Minimum order of ₦${promo.minPurchaseAmount} required`,
         };
 
       // Calculate discount
       let discount = 0;
-      const value = parseFloat(promo.value);
-      if (promo.type === "percentage") {
+      const value = parseFloat(promo.discountValue ?? "0");
+      if (promo.discountType === "percentage") {
         discount = input.orderTotal * (value / 100);
-      } else if (promo.type === "fixed_amount") {
+      } else if (promo.discountType === "fixed_amount") {
         discount = value;
-      } else if (promo.type === "free_shipping") {
+      } else if (promo.discountType === "free_shipping") {
         discount = 500; // standard shipping fee
-      }
-
-      if (promo.maxDiscount) {
-        discount = Math.min(discount, parseFloat(promo.maxDiscount));
       }
 
       return {
         valid: true,
         discount: Math.round(discount * 100) / 100,
-        type: promo.type,
-        name: promo.name,
+        type: promo.discountType,
+        name: promo.description ?? promo.code,
       };
     }),
 
   redeemCoupon: protectedProcedure
-    .input(z.object({ code: z.string() }))
+    .input(z.object({ code: z.string(), customerId: z.number(), orderId: z.number().optional() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
-      await database
+      const [promo] = await database
+        .select()
+        .from(promotions)
+        .where(eq(promotions.code, input.code))
+        .limit(1);
+      if (!promo) throw new TRPCError({ code: "NOT_FOUND", message: "Invalid coupon code" });
+      if (!promo.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "Coupon is inactive" });
+
+      // AB-14: per-customer limit, enforced at burn time (not just validate).
+      const perCustomerLimit = promo.perCustomerLimit ?? 1;
+      const [customerUses] = await database
+        .select({ n: count() })
+        .from(couponRedemptions)
+        .where(
+          and(
+            eq(couponRedemptions.promoId, promo.id),
+            eq(couponRedemptions.customerId, input.customerId)
+          )
+        );
+      if (customerUses && customerUses.n >= perCustomerLimit) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Per-customer coupon limit reached" });
+      }
+
+      // AB-14: atomic guarded increment — the global usage limit trips even
+      // under concurrent redemptions (single UPDATE with WHERE guard).
+      const [burned] = await database
         .update(promotions)
-        .set({ usedCount: sql`${promotions.usageCount} + 1` })
-        .where(eq(promotions.code, input.code));
+        .set({ usageCount: sql`${promotions.usageCount} + 1` })
+        .where(
+          and(
+            eq(promotions.id, promo.id),
+            sql`(${promotions.maxUsageCount} IS NULL OR ${promotions.usageCount} < ${promotions.maxUsageCount})`
+          )
+        )
+        .returning();
+      if (!burned) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Coupon usage limit reached" });
+      }
+
+      await database.insert(couponRedemptions).values({
+        promoId: promo.id,
+        customerId: input.customerId,
+        orderId: input.orderId,
+      });
       return { success: true };
     }),
 
@@ -186,19 +252,65 @@ export const promotionsRouter = router({
       return account;
     }),
 
+  // AB-12: earnPoints is SERVER-COMPUTED. Clients never supply the points
+  // amount. Purchase points derive from a verified successful transaction;
+  // other types use fixed server-side constants; "bonus" is staff-only.
   earnPoints: protectedProcedure
     .input(
       z.object({
         customerId: z.number(),
-        points: z.number(),
         type: z.enum(["purchase", "referral", "review", "bonus"]),
         orderId: z.number().optional(),
         description: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // Compute points server-side.
+      let points: number;
+      if (input.type === "purchase") {
+        if (!input.orderId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "orderId is required for purchase points" });
+        }
+        const [tx] = await database
+          .select()
+          .from(transactions)
+          .where(eq(transactions.id, input.orderId))
+          .limit(1);
+        if (!tx || tx.status !== "success") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Qualifying transaction not found" });
+        }
+        // One award per transaction — no double-farming on retry.
+        const [existing] = await database
+          .select({ id: loyaltyTransactions.id })
+          .from(loyaltyTransactions)
+          .where(
+            and(
+              eq(loyaltyTransactions.referenceId, input.orderId),
+              eq(loyaltyTransactions.type, "purchase")
+            )
+          )
+          .limit(1);
+        if (existing) {
+          throw new TRPCError({ code: "CONFLICT", message: "Points already awarded for this transaction" });
+        }
+        points = Math.floor(parseFloat(tx.amount) / 100); // ₦100 = 1 point
+      } else if (input.type === "referral") {
+        points = 500;
+      } else if (input.type === "review") {
+        points = 50;
+      } else {
+        // bonus — arbitrary grants are staff-only and capped.
+        if (ctx.user?.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only staff can grant bonus points" });
+        }
+        points = 100;
+      }
+      if (!(points > 0)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No points earned" });
+      }
 
       // Get or create account
       let [account] = await database
@@ -214,7 +326,7 @@ export const promotionsRouter = router({
           .toUpperCase();
         [account] = await database
           .insert(loyaltyAccounts)
-          .values({ customerId: input.customerId, referralCode })
+          .values({ customerId: input.customerId, userId: ctx.user!.id, tenantId: 0, referralCode })
           .returning();
       }
 
@@ -222,24 +334,25 @@ export const promotionsRouter = router({
       await database
         .update(loyaltyAccounts)
         .set({
-          points: sql`${loyaltyAccounts.points} + ${input.points}`,
-          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${input.points}`,
+          points: sql`${loyaltyAccounts.points} + ${points}`,
+          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${points}`,
         })
         .where(eq(loyaltyAccounts.customerId, input.customerId));
 
       // Record transaction
       await database.insert(loyaltyTransactions).values({
         accountId: account.id,
-        points: input.points,
+        points,
         type: input.type,
+        tenantId: account.tenantId ?? 0,
         description:
           input.description ||
-          `Earned ${input.points} points from ${input.type}`,
-        orderId: input.orderId,
+          `Earned ${points} points from ${input.type}`,
+        referenceId: input.orderId,
       });
 
       // Upgrade tier if needed
-      const newLifetime = (account.lifetimePoints || 0) + input.points;
+      const newLifetime = (account.lifetimePoints || 0) + points;
       let tier = "bronze";
       if (newLifetime >= 10000) tier = "gold";
       else if (newLifetime >= 5000) tier = "silver";
@@ -252,7 +365,7 @@ export const promotionsRouter = router({
       }
 
       return {
-        points: input.points,
+        points,
         newTier: tier,
         lifetimePoints: newLifetime,
       };
@@ -322,7 +435,25 @@ export const promotionsRouter = router({
       if (referrer.customerId === input.customerId)
         throw new Error("Cannot refer yourself");
 
-      // Grant referral bonus to both parties
+      // AB-13: one-time guard — set referredBy only if never referred before.
+      // The guarded UPDATE makes concurrent repeat calls safe: only the first
+      // transitions and returns a row.
+      const [refereeAccount] = await database
+        .update(loyaltyAccounts)
+        .set({ referredBy: referrer.customerId })
+        .where(
+          and(
+            eq(loyaltyAccounts.customerId, input.customerId),
+            isNull(loyaltyAccounts.referredBy)
+          )
+        )
+        .returning();
+      if (!refereeAccount) {
+        throw new Error("Customer has already been referred");
+      }
+
+      // Grant referral bonus to BOTH parties (the referee bonus was previously
+      // advertised but never credited).
       const referralBonus = 500; // 500 points each
 
       await database
@@ -333,11 +464,28 @@ export const promotionsRouter = router({
         })
         .where(eq(loyaltyAccounts.id, referrer.id));
 
-      // Set referredBy on new customer
       await database
         .update(loyaltyAccounts)
-        .set({ referredBy: referrer.customerId })
-        .where(eq(loyaltyAccounts.customerId, input.customerId));
+        .set({
+          points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
+          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
+        })
+        .where(eq(loyaltyAccounts.id, refereeAccount.id));
+
+      await database.insert(loyaltyTransactions).values({
+        accountId: referrer.id,
+        points: referralBonus,
+        type: "referral",
+        tenantId: referrer.tenantId ?? 0,
+        description: `Referral bonus for customer ${input.customerId}`,
+      });
+      await database.insert(loyaltyTransactions).values({
+        accountId: refereeAccount.id,
+        points: referralBonus,
+        type: "referral",
+        tenantId: refereeAccount.tenantId ?? 0,
+        description: "Welcome referral bonus",
+      });
 
       return {
         success: true,
