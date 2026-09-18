@@ -6,7 +6,7 @@
  *   (in-process PGlite deadlocks with drizzle-kit push, which opens its own
  *   client while the pool holds the single connection).
  *
- * In both cases the schema is applied with `drizzle-kit push --force`, so the
+ * In both cases the schema is applied with `drizzle-kit push` (OPS-2: no --force), so the
  * database always matches drizzle/schema.ts exactly.
  */
 import { spawn, execFile, type ChildProcess } from "node:child_process";
@@ -30,7 +30,7 @@ function runDrizzleKitPush(databaseUrl: string): Promise<void> {
     const bin = path.join(repoRoot, "node_modules", ".bin", "drizzle-kit");
     execFile(
       bin,
-      ["push", "--force"],
+      ["push"],
       {
         cwd: repoRoot,
         env: { ...process.env, POSTGRES_URL: databaseUrl },
@@ -41,7 +41,7 @@ function runDrizzleKitPush(databaseUrl: string): Promise<void> {
         if (error) {
           reject(
             new Error(
-              `drizzle-kit push --force failed: ${error.message}\n${stdout}\n${stderr}`
+              `drizzle-kit push failed (OPS-2: --force removed; destructive drift fails loud: ${error.message}\n${stdout}\n${stderr}`
             )
           );
         } else {

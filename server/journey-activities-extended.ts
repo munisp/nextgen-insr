@@ -19,6 +19,7 @@
  *   - Ollama risk narrative generation
  */
 import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { lagosDateString } from "./lib/lagosDate";
 
 import { getDb } from "./db";
 import { fluvioProduce } from "./fluvio";
@@ -518,7 +519,8 @@ export async function callGoFloatReconciler(input: {
   status: "balanced" | "discrepancy_minor" | "discrepancy_major" | "error";
   action: string;
 }> {
-  const date = input.date ?? new Date().toISOString().split("T")[0];
+  // OPS-7: default reconciliation date is the Africa/Lagos business date.
+  const date = input.date ?? lagosDateString();
   const res = await safeFetch(
     `${FLOAT_RECONCILER_URL}/reconcile`,
     {

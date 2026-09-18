@@ -575,6 +575,12 @@ export const auditLog = pgTable(
     // inserts) — such rows are reported as "unchained" by verification.
     prevHash: varchar("prevHash", { length: 64 }),
     entryHash: varchar("entryHash", { length: 64 }),
+    // OPS-4: GDPR/NDPR erasure tombstone. When set, the row's PII-bearing
+    // payload (metadata, ipAddress, userAgent) has been redacted by
+    // redactAuditLogPii(); entryHash/prevHash are RETAINED so chain linkage
+    // stays verifiable — verification skips content recompute for redacted
+    // rows but still enforces prevHash linkage (see auditChain.ts).
+    redactedAt: timestamp("redactedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -1086,8 +1092,11 @@ export const kycSessions = pgTable(
       .default(sql`gen_random_uuid()`),
     type: varchar("type", { length: 32 }).default("agent_onboarding").notNull(),
     status: varchar("status", { length: 32 }).default("pending").notNull(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
+    // OPS-3: widened to text — BVN/NIN are stored AES-256-GCM encrypted at
+    // rest (server/lib/piiCrypto.ts envelope "pii:v1:..."); plaintext was
+    // varchar(11). Migration 0073 widens existing columns.
+    bvn: text("bvn"),
+    nin: text("nin"),
     selfieUrl: text("selfieUrl"),
     idDocUrl: text("idDocUrl"),
     idDocType: varchar("idDocType", { length: 32 }),
@@ -1407,9 +1416,11 @@ export const customers = pgTable(
     lastName: varchar("lastName", { length: 64 }).notNull(),
     email: varchar("email", { length: 320 }),
     phone: varchar("phone", { length: 20 }).notNull().unique(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
-    dateOfBirth: varchar("dateOfBirth", { length: 10 }),
+    // OPS-3: BVN/NIN/DOB encrypted at rest via server/lib/piiCrypto.ts
+    // (self-describing "pii:v1:..." envelope) — widened to text (migration 0073).
+    bvn: text("bvn"),
+    nin: text("nin"),
+    dateOfBirth: text("dateOfBirth"),
     address: text("address"),
     status: customerStatusEnum("status").default("pending_kyc").notNull(),
     kycLevel: integer("kycLevel").default(0).notNull(),

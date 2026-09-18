@@ -28,6 +28,7 @@ import {
 } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { CUSTOMER_PII_FIELDS, decryptPiiFields, encryptPiiFields } from "../lib/piiCrypto";
 
 // ── Customer-scoped procedure ─────────────────────────────────────────────────
 const customerProcedure = protectedProcedure;
@@ -82,10 +83,10 @@ export const customerRouter = router({
           const { db, customer } = await resolveCustomer(ctx.user.id);
           const [updated] = await db
             .update(customers)
-            .set({ ...input, updatedAt: new Date() })
+            .set({ ...encryptPiiFields(input, CUSTOMER_PII_FIELDS), updatedAt: new Date() })
             .where(eq(customers.id, customer.id))
             .returning();
-          const { passwordHash: _, refreshToken: __, ...safe } = updated;
+          const { passwordHash: _, refreshToken: __, ...safe } = decryptPiiFields(updated, CUSTOMER_PII_FIELDS);
           return safe;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -139,9 +140,9 @@ export const customerRouter = router({
             });
           const [customer] = await db
             .insert(customers)
-            .values(input as any)
+            .values(encryptPiiFields(input as any, CUSTOMER_PII_FIELDS))
             .returning();
-          const { passwordHash: _, refreshToken: __, ...safe } = customer;
+          const { passwordHash: _, refreshToken: __, ...safe } = decryptPiiFields(customer, CUSTOMER_PII_FIELDS);
           return safe;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

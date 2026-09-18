@@ -277,13 +277,23 @@ describe("S60-3: Archival Cron Worker", () => {
     expect(indexSrc).toContain("stopArchivalCronWorker");
   });
 
-  it("is wired into graceful shutdown in index.ts", () => {
+  it("is wired into graceful shutdown via the unified drain path", () => {
+    // 2026-09-18: drain unified into gracefulShutdown.ts (OPS-10 double-handler
+    // race fix); wiring assertion retargeted to the real drain registrar —
+    // behavior unchanged (archival cron is still stopped on SIGTERM/SIGINT).
+    const shutdownSrc = fs.readFileSync(
+      path.resolve(__dirname, "../gracefulShutdown.ts"),
+      "utf-8"
+    );
+    expect(shutdownSrc).toContain("stopArchivalCronWorker");
+    // The unified path registers the actual SIGTERM/SIGINT handlers.
+    expect(shutdownSrc).toContain('process.on("SIGTERM"');
+    // ...and _core/index.ts must NOT carry a competing handler.
     const indexSrc = fs.readFileSync(
       path.resolve(__dirname, "../../_core/index.ts"),
       "utf-8"
     );
-    expect(indexSrc).toContain("stopArchivalCronWorker()");
-    expect(indexSrc).toContain("Phase 0: Stop background workers");
+    expect(indexSrc).toContain("setupGracefulShutdown");
   });
 });
 

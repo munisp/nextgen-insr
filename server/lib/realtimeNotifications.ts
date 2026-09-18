@@ -162,8 +162,19 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
 
     if (token) {
       try {
-        const secret = new TextEncoder().encode(getJwtSecret());
-        const { payload } = await jwtVerify(token, secret);
+        // OPS-8: dual-key window (JWT_SECRET_PREVIOUS) + 30s clock tolerance
+        const secrets = [new TextEncoder().encode(getJwtSecret())];
+        if (process.env.JWT_SECRET_PREVIOUS) {
+          secrets.push(new TextEncoder().encode(process.env.JWT_SECRET_PREVIOUS));
+        }
+        let payload: Record<string, unknown> | null = null;
+        for (const secret of secrets) {
+          try {
+            ({ payload } = await jwtVerify(token, secret, { clockTolerance: 30 }) as any);
+            break;
+          } catch { /* try next key */ }
+        }
+        if (!payload) throw new Error("jwt verify failed with all configured keys");
         (socket as any).userId = String(payload.sub);
         (socket as any).userName = payload.name ?? "Unknown";
         (socket as any).userRole = payload.role ?? "user";

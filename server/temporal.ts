@@ -117,7 +117,9 @@ export async function triggerSettlement(
 /**
  * Schedule a daily settlement cron via Temporal.
  * This replaces the node-cron schedule when Temporal is available.
- * Cron: "0 17 * * *" = 17:00 UTC daily (adjust for WAT = UTC+1)
+ * Cron: "0 16 * * *" = 16:00 UTC = 17:00 WAT (Africa/Lagos, UTC+1, no DST).
+ * Settlement dates passed to workflows are Africa/Lagos business dates
+ * (server/lib/lagosDate.ts) — OPS-7.
  */
 export async function scheduleSettlementCron(): Promise<void> {
   const client = await getTemporalClient();
