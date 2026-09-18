@@ -51,7 +51,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply database schema
-        run: pnpm exec drizzle-kit push --force
+        run: pnpm exec drizzle-kit push
+        # OPS-2: --force removed — push must fail loud on any destructive/data-loss
+        # statement instead of auto-accepting it. Review drift and write a proper
+        # migration when push refuses.
         env:
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_test
 
@@ -107,8 +110,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The e2e globalSetup applies the schema itself (drizzle-kit push
-      # --force) against POSTGRES_URL, so no separate push step is needed.
+      # The e2e globalSetup applies the schema itself (drizzle-kit push,
+      # no --force — OPS-2) against POSTGRES_URL, so no separate push step is needed.
 
       # HTTP end-to-end: boots the REAL express/tRPC server and drives raw
       # HTTP through the full middleware chain against the postgres:16 and
@@ -163,7 +166,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # The contract suite reuses the e2e globalSetup, which applies the
-      # schema itself (drizzle-kit push --force) against POSTGRES_URL.
+      # schema itself (drizzle-kit push, no --force — OPS-2) against POSTGRES_URL.
 
       # API contract: boots the REAL express/tRPC server and asserts the
       # public wire contract over raw HTTP — superjson envelope shapes, zod

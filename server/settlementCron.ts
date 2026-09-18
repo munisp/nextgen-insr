@@ -14,6 +14,7 @@
  * Registered in server/_core/index.ts after server startup.
  */
 import { eq, and, gte, lte } from "drizzle-orm";
+import { lagosDateString } from "./lib/lagosDate";
 import cron from "node-cron";
 
 import { getDb } from "./db";
@@ -88,11 +89,14 @@ async function runDailySettlement(): Promise<SettlementResult> {
     };
   }
 
+  // OPS-7: the settlement window is the Africa/Lagos BUSINESS DAY (cutoff
+  // 22:00 Africa/Lagos per settlement schedule config), not the UTC or
+  // server-local day. UTC timestamps are still stored; only the day
+  // attribution changes.
   const today = new Date();
-  const dayStart = new Date(today);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(today);
-  dayEnd.setHours(23, 59, 59, 999);
+  const todayLagos = lagosDateString(today);
+  const dayStart = new Date(`${todayLagos}T00:00:00.000+01:00`);
+  const dayEnd = new Date(`${todayLagos}T23:59:59.999+01:00`);
 
   const activeAgents = await db
     .select({
@@ -158,14 +162,14 @@ async function runDailySettlement(): Promise<SettlementResult> {
         agentId: agent.id,
         action: "DAILY_SETTLEMENT_SENT",
         resource: "settlement",
-        resourceId: today.toISOString().split("T")[0],
+        resourceId: todayLagos, // OPS-7: Africa/Lagos business date, not UTC slice
         status: "success",
         metadata: {
           txCount,
           totalVolume,
           totalCommission,
           premiumReserve: Number(agent.premiumReserve),
-          date: today.toISOString().split("T")[0],
+          date: todayLagos, // OPS-7
         },
       });
 
@@ -197,7 +201,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
   } else try {
     const systemToken = ENV.platformServiceToken;
     if (systemToken) {
-      const settlementDate = new Date().toISOString().slice(0, 10);
+      const settlementDate = lagosDateString(); // OPS-7: Africa/Lagos business date
       await settlementPlatform.processSettlement(
         { settlement_date: settlementDate },
         systemToken
@@ -330,7 +334,7 @@ async function runWeeklyComplianceReport(): Promise<void> {
         topOffenders,
         byType,
       });
-      const suffix = periodEnd.toISOString().slice(0, 10);
+      const suffix = lagosDateString(periodEnd); // OPS-7
       pdfKey = `compliance-reports/weekly-${suffix}-${Date.now()}.pdf`;
       const uploaded = await storagePut(pdfKey, pdfBuffer, "application/pdf");
       pdfUrl = uploaded.url;
@@ -404,18 +408,18 @@ async function runWeeklyComplianceReport(): Promise<void> {
 
 /**
  * Register the daily settlement cron job.
- * Schedule: 17:00 WAT = 16:00 UTC (cron uses server local time; server is UTC)
- * Cron expression: "0 16 * * 1-5" = 16:00 UTC, Monday–Friday
+ * OPS-7: schedule is pinned to the Africa/Lagos timezone explicitly
+ * (17:00 WAT, Mon–Fri) instead of relying on the server TZ being UTC.
  */
 export function registerSettlementCron(): void {
-  // Daily settlement — 17:00 WAT (16:00 UTC), Mon–Fri
-  cron.schedule("0 16 * * 1-5", async () => {
+  // Daily settlement — 17:00 Africa/Lagos (WAT), Mon–Fri
+  cron.schedule("0 17 * * 1-5", async () => {
     try {
       await runDailySettlement();
     } catch (err) {
       logger.error("[settlement] Unhandled error in settlement cron:: " + String(err));
     }
-  });
+  }, { timezone: "Africa/Lagos" });
   logger.info(
     "[settlement] Daily settlement cron registered (16:00 UTC / 17:00 WAT, Mon–Fri)"
   );

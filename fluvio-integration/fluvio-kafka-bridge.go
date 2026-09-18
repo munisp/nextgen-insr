@@ -209,30 +209,74 @@ func (b *FluvioKafkaBridge) setupFluvioToKafkaBridge(fluvioTopic, kafkaTopic, br
 	return nil
 }
 
+// OPS-6: consumeKafkaToFluvio runs under a restart supervisor — a permanent
+// reader failure previously killed this bridge direction silently.
 func (b *FluvioKafkaBridge) consumeKafkaToFluvio(kafkaTopic, fluvioTopic string, reader *kafka.Reader) {
 	defer b.wg.Done()
 
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+
 	for {
+		err := b.pumpKafkaToFluvio(kafkaTopic, fluvioTopic, reader)
+		if err == nil || b.ctx.Err() != nil {
+			return // clean shutdown
+		}
+		log.Printf("[Bridge] Kafka->Fluvio pump for %s died: %v — restarting in %s", kafkaTopic, err, backoff)
 		select {
 		case <-b.ctx.Done():
 			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+}
+
+// pumpKafkaToFluvio runs one generation of the Kafka→Fluvio loop.
+// OPS-6: offsets are committed ONLY AFTER a successful Fluvio produce
+// (FetchMessage + CommitMessages instead of auto-committing ReadMessage),
+// so a produce failure redelivers the message instead of dropping it.
+func (b *FluvioKafkaBridge) pumpKafkaToFluvio(kafkaTopic, fluvioTopic string, reader *kafka.Reader) error {
+	for {
+		select {
+		case <-b.ctx.Done():
+			return nil
 		default:
-			msg, err := reader.ReadMessage(b.ctx)
+			msg, err := reader.FetchMessage(b.ctx)
 			if err != nil {
 				if err == context.Canceled {
-					return
+					return nil
 				}
-				log.Printf("Error reading from Kafka topic %s: %v", kafkaTopic, err)
-				continue
+				log.Printf("Error fetching from Kafka topic %s: %v", kafkaTopic, err)
+				return err // supervisor restarts with backoff
 			}
 
 			if err := b.fluvioClient.Produce(b.ctx, fluvioTopic, msg.Value); err != nil {
-				log.Printf("Failed to publish to Fluvio topic %s: %v", fluvioTopic, err)
+				log.Printf("Failed to publish to Fluvio topic %s: %v — offset NOT committed, will retry", fluvioTopic, err)
+				// Back off in-place; the message is re-fetched after the
+				// failure because we never commit its offset.
+				select {
+				case <-b.ctx.Done():
+					return nil
+				case <-time.After(2 * time.Second):
+				}
+				continue
+			}
+
+			// Produce succeeded — now it is safe to commit the offset.
+			if err := reader.CommitMessages(b.ctx, msg); err != nil {
+				log.Printf("Failed to commit offset for Kafka topic %s: %v", kafkaTopic, err)
 			}
 		}
 	}
 }
 
+// OPS-6: consumeFluvioToKafka runs a reconnect loop with exponential
+// backoff — previously a single failed reconnect returned, permanently
+// killing this bridge direction with only a log line.
 func (b *FluvioKafkaBridge) consumeFluvioToKafka(fluvioTopic, kafkaTopic string, writer *kafka.Writer) {
 	defer b.wg.Done()
 
@@ -240,21 +284,36 @@ func (b *FluvioKafkaBridge) consumeFluvioToKafka(fluvioTopic, kafkaTopic string,
 	ch, err := b.fluvioClient.Consume(b.ctx, fluvioTopic, -1)
 	if err != nil {
 		log.Printf("Failed to start Fluvio native consumer for %s: %v", fluvioTopic, err)
-		return
 	}
+
+	backoff := 2 * time.Second
+	const maxBackoff = 30 * time.Second
 
 	for {
 		select {
 		case <-b.ctx.Done():
 			return
 		case data, ok := <-ch:
-			if !ok {
-				log.Printf("[Fluvio] Consumer channel closed for topic %s, reconnecting...", fluvioTopic)
-				time.Sleep(2 * time.Second)
+			if !ok || ch == nil {
+				// Channel closed (or never opened) — reconnect with backoff
+				// instead of dying permanently.
+				log.Printf("[Fluvio] Consumer channel closed for topic %s, reconnecting in %s...", fluvioTopic, backoff)
+				select {
+				case <-b.ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
 				ch, err = b.fluvioClient.Consume(b.ctx, fluvioTopic, -1)
 				if err != nil {
-					log.Printf("[Fluvio] Reconnect failed for %s: %v", fluvioTopic, err)
-					return
+					log.Printf("[Fluvio] Reconnect failed for %s: %v — will retry (backoff %s)", fluvioTopic, err, backoff*2)
+					ch = nil
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				} else {
+					log.Printf("[Fluvio] Reconnected consumer for topic %s", fluvioTopic)
+					backoff = 2 * time.Second // reset on success
 				}
 				continue
 			}

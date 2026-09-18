@@ -41,6 +41,7 @@ import {
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { writeAuditLog } from "../lib/auditLogger";
+import { redactAuditLogPii } from "../lib/auditChain";
 
 const THIRTY_DAYS_AGO = () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 const ONE_YEAR_AGO = () => new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
@@ -238,6 +239,7 @@ export const gdprDashboardRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found" });
       }
       const originalPhone = customer.phone;
+      const originalEmail = customer.email;
       const anonymizedPhone = `anon_${input.customerId}`;
       const anonymizedEmail = `anon_${input.customerId}@deleted.insureportal.ng`;
       const now = new Date();
@@ -306,6 +308,21 @@ export const gdprDashboardRouter = router({
         ipAddress: ctx.req.ip,
       });
 
+      // OPS-4: purge this customer's PII from the append-only audit chain.
+      // Tombstone redaction keeps prevHash/entryHash intact so the
+      // tamper-evident chain still verifies (linkage enforced), while the
+      // erased subject's PII (phone/email embedded in metadata, IPs, user
+      // agents) is irrecoverable. Resolves the documented
+      // erasure-vs-immutability conflict; WORM offload to the object-locked
+      // MinIO audit bucket (OPS-1) covers the superuser-rewrite residue.
+      const redaction = await redactAuditLogPii(db, {
+        customerId: input.customerId,
+        piiFragments: [originalPhone, originalEmail].filter(
+          (v): v is string => typeof v === "string" && v.length >= 3
+        ),
+        reason: `GDPR/NDPR erasure customer=${input.customerId}`,
+      });
+
       return {
         requestId: `ERASURE-${Date.now()}`,
         customerId: input.customerId,
@@ -313,9 +330,9 @@ export const gdprDashboardRouter = router({
         reason: input.reason,
         completedAt: now.toISOString(),
         coverage: {
-          anonymized: ["customers (PII columns)", "transactions.customerPhone", "data_consent_records (revoked)"],
+          anonymized: ["customers (PII columns)", "transactions.customerPhone", "data_consent_records (revoked)", `audit_log (PII redacted in ${redaction.redactedRows} entr${redaction.redactedRows === 1 ? "y" : "ies"}; hash chain preserved)`],
           retained: [
-            "audit_log (tamper-evident chain; regulatory retention)",
+            "audit_log (tombstoned rows retain hashes/structure for tamper evidence — no PII)",
             "policies/claims (NAICOM 7-year retention)",
             "kyc_verifications document numbers (OPEN GAP)",
             "backups (expire per backup retention schedule)",

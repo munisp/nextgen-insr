@@ -16,7 +16,7 @@
 #      runs the rehearsal against it, and tears it down.
 #
 # Optional stages (env flags, all default to 1/true):
-#   SCHEMA_PUSH=1   apply schema with `pnpm exec drizzle-kit push --force`
+#   SCHEMA_PUSH=1   apply schema with `pnpm exec drizzle-kit push` (OPS-2: no --force)
 #   SEED=1          load demo data with `node seed.mjs` (180 tables)
 #
 # Integrity assertion: row counts on the core tables
@@ -94,8 +94,8 @@ log "Postgres is ready."
 
 # ── Stage 1: schema ───────────────────────────────────────────────────────────
 if [ "$SCHEMA_PUSH" = "1" ]; then
-    log "Stage 1: applying schema (drizzle-kit push --force) ..."
-    POSTGRES_URL="$DB_URL" pnpm exec drizzle-kit push --force
+    log "Stage 1: applying schema (drizzle-kit push — no --force, fails loud on destructive drift) ..."
+    POSTGRES_URL="$DB_URL" pnpm exec drizzle-kit push
 else
     log "Stage 1: SCHEMA_PUSH=0 — assuming schema already applied"
 fi
