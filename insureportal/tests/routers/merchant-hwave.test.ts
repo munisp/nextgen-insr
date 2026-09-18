@@ -11,7 +11,7 @@
  *   - merchant procedures require a Keycloak principal bound via keycloakSub
  *   - agent bulkActivate/bulkSuspend/bulkDelete are admin-gated
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { merchantRouter } from "../../server/routers/merchant";
 import { agentRouter } from "../../server/routers/agent";
 import { merchantPayoutSettlementRouter } from "../../server/routers/merchantPayoutSettlement";
@@ -80,6 +80,58 @@ describe("H-wave: legacy merchant auth hardening (real routers)", () => {
         accountNumber: "0000000000",
         accountName: "Attacker",
       } as never),
+      "UNAUTHORIZED"
+    );
+  });
+});
+
+describe("H2-wave: fail-closed on DB outage (noop chain must NOT fail open)", () => {
+  beforeAll(() => {
+    // Force the outage posture regardless of ambient CI env: with no URL,
+    // this tree's getDb() returns the truthy NO-OP chain.
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("POSTGRES_URL", "");
+  });
+
+  // This tree's getDb() returns a truthy NO-OP chain when no database is
+  // configured — a truthy value is not availability. The identity helpers
+  // must therefore refuse (503-class) rather than treat the noop row as a
+  // merchant. This worker has NO DATABASE_URL, i.e. the outage posture.
+  const subUser = {
+    id: 910002,
+    email: "bound@hwave.test",
+    name: "Bound",
+    role: "user",
+    keycloakSub: "h2-sub-outage",
+  } as unknown as TrpcContext["user"];
+
+  it("getProfile with a bound principal but no DB → 503-class, never a phantom merchant", async () => {
+    const caller = merchantRouter.createCaller(ctxFor(subUser));
+    await expectTrpcCode(caller.getProfile(), "INTERNAL_SERVER_ERROR");
+  });
+
+  it("initiatePayout with a bound principal but no DB → 503-class", async () => {
+    const caller = merchantPayoutSettlementRouter.createCaller(ctxFor(subUser));
+    await expectTrpcCode(
+      caller.initiatePayout({ merchantId: 1, amount: 5000 }),
+      "INTERNAL_SERVER_ERROR"
+    );
+  });
+});
+
+describe("H2-wave: bulkSetTier is admin-gated (real router)", () => {
+  it("non-admin bulkSetTier → FORBIDDEN", async () => {
+    const caller = agentRouter.createCaller(ctxFor(noSubUser));
+    await expectTrpcCode(
+      caller.bulkSetTier({ ids: [1], tier: "Gold" }),
+      "FORBIDDEN"
+    );
+  });
+
+  it("anonymous bulkSetTier → UNAUTHORIZED", async () => {
+    const caller = agentRouter.createCaller(ctxFor(null));
+    await expectTrpcCode(
+      caller.bulkSetTier({ ids: [1], tier: "Gold" }),
       "UNAUTHORIZED"
     );
   });

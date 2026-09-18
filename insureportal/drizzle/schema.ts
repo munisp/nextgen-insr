@@ -3259,6 +3259,10 @@ export const merchantPayouts = pgTable(
     periodStart: timestamp("period_start").notNull(),
     periodEnd: timestamp("period_end").notNull(),
     txCount: integer("tx_count").default(0),
+    // H2-wave (2026-09): maker-checker attribution for the payout lifecycle
+    // (migration 0046). NULL = legacy row; such payouts can never be
+    // approved (fail-closed, see merchantPayoutSettlement.approvePayout).
+    initiatedBy: integer("initiated_by"),
     createdAt: timestamp("created_at").defaultNow(),
   },
   t => ({
