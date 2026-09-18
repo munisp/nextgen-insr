@@ -23,7 +23,7 @@ import {
   getDb,
 } from "../db";
 import { adminProcedure, publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import { agents } from "@schema";
+import { agents, otpTokens, kycSessions } from "@schema";
 import { getJwtSecret } from "../lib/envValidation";
 import {
   eq,
@@ -612,10 +612,14 @@ export const agentRouter = router({
     }),
 
   // ── Bulk activate ─────────────────────────────────────────────────────────
-  // H-wave (2026-09): admin-only. Eligibility gate: an agent can be (re)activated
-  // only with evidence of completed onboarding (a prior login or an issued
-  // terminal serial) — a bare row with a PIN hash is not activation evidence.
-  // Ineligible ids are reported honestly, never silently activated.
+  // H2-wave (2026-09): admin-only. Eligibility gate ALIGNED WITH THE
+  // PLATFORM semantics (server/lib/agentLifecycle.ts
+  // assertAgentActivationEligible): an agent can be activated only with REAL
+  // verification evidence on file — a USED phone_verify OTP (otp_tokens)
+  // or an APPROVED KYC session (kyc_sessions). This tree's schema has both
+  // tables, so the platform contract is honored exactly; the H-wave
+  // lastLoginAt/terminalSerial proxy is superseded. Ineligible ids are
+  // reported honestly via skippedIneligible, never silently activated.
   bulkActivate: adminProcedure
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) })
@@ -625,17 +629,41 @@ export const agentRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const rows = await db
-          .select({
-            id: agents.id,
-            lastLoginAt: agents.lastLoginAt,
-            terminalSerial: agents.terminalSerial,
-          })
+          .select({ id: agents.id })
           .from(agents)
           .where(and(inArray(agents.id, input.ids), isNull(agents.deletedAt)));
-        const eligible = rows.filter(
-          r => r.lastLoginAt != null || r.terminalSerial != null
+        const existingIds = new Set<number>(rows.map(r => r.id));
+
+        // Verification evidence (platform parity): used phone_verify OTP or
+        // approved KYC session, batched for all candidates.
+        const phoneVerified = await db
+          .selectDistinct({ agentId: otpTokens.agentId })
+          .from(otpTokens)
+          .where(
+            and(
+              inArray(otpTokens.agentId, input.ids),
+              eq(otpTokens.purpose, "phone_verify"),
+              eq(otpTokens.used, true)
+            )
+          );
+        const kycApproved = await db
+          .selectDistinct({ agentId: kycSessions.agentId })
+          .from(kycSessions)
+          .where(
+            and(
+              inArray(kycSessions.agentId, input.ids),
+              eq(kycSessions.status, "approved")
+            )
+          );
+        const evidenceIds = new Set<number>(
+          [
+            ...phoneVerified.map(r => r.agentId),
+            ...kycApproved.map(r => r.agentId),
+          ].filter((id): id is number => id != null)
         );
-        const eligibleIds = eligible.map(r => r.id);
+        const eligibleIds: number[] = [...existingIds].filter(id =>
+          evidenceIds.has(id)
+        );
         const skipped = input.ids.filter(id => !eligibleIds.includes(id));
         if (eligibleIds.length > 0) {
           await db
@@ -765,7 +793,9 @@ export const agentRouter = router({
     }),
 
   // ── Bulk tier upgrade ─────────────────────────────────────────────────────
-  bulkSetTier: protectedProcedure
+  // H2-wave (2026-09): admin-only — tier is a financial privilege (limits,
+  // commission splits); a plain authenticated user must not bulk-set it.
+  bulkSetTier: adminProcedure
     .input(
       z.object({
         ids: z.array(z.number().int().positive()).min(1).max(100),

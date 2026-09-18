@@ -50,6 +50,14 @@ async function getMerchantFromRequest(
   let db;
   try {
     db = await getDb();
+    // FAIL-CLOSED (503-class): this tree's getDb() returns a truthy NO-OP
+    // chain when the database is unreachable/unconfigured — a truthy value
+    // is NOT proof of availability. getPool() exposes the real connection
+    // state; a null pool means identity lookup is impossible and every
+    // merchant/money path must refuse.
+    const { getPool } = await import("../db");
+    const pool = await getPool();
+    if (!pool) db = null;
   } catch (err) {
     // FAIL-CLOSED (503-class): never degrade to anonymous/unbound access.
     console.error(
