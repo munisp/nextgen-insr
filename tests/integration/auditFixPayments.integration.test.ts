@@ -258,11 +258,43 @@ describe("PAY-6 reconciliation is real, not theatre", () => {
   });
 });
 
+describe("PAY-3 tb_transfer_registry (forced on)", () => {
+  it("replays committed refs from the registry and rejects payload reuse", async () => {
+    process.env.TB_REGISTRY_FORCE = "1";
+    try {
+      const { tbCreateTransfer, TBIdempotencyConflictError } = await import("../../server/tbClient");
+      const ref = `F1-REG-${BASE}`;
+      const req = {
+        debitAccountId: `reg-debit-${BASE}`,
+        creditAccountId: `reg-credit-${BASE}`,
+        amount: 777,
+        ledger: 2000,
+        code: 300,
+        ref,
+        txType: "registry_test",
+      };
+      const first = await tbCreateTransfer({ ...req });
+      // Second call is served by the durable registry (no second posting).
+      const second = await tbCreateTransfer({ ...req });
+      expect(second.id).toBe(first.id);
+
+      const db = (await getDb())!;
+      const rows = await db.execute(sql`SELECT status FROM tb_transfer_registry WHERE ref = ${ref}`);
+      expect((rows.rows[0] as any).status).toBe("committed");
+
+      await expect(tbCreateTransfer({ ...req, amount: 778 })).rejects.toBeInstanceOf(TBIdempotencyConflictError);
+    } finally {
+      delete process.env.TB_REGISTRY_FORCE;
+    }
+  });
+});
+
 afterAll(async () => {
   // Remove this file's fixtures so sibling suites (e.g. disputeRefund's
   // global pending-count summary) see the same baseline as before.
   const db = (await getDb())!;
   await db.execute(sql`DELETE FROM payment_discrepancies WHERE ref LIKE 'F1-%'`);
+  await db.execute(sql`DELETE FROM tb_transfer_registry WHERE ref LIKE 'F1-%'`);
   await db.execute(sql`DELETE FROM refunds WHERE "disputeId" BETWEEN ${BASE} AND ${BASE + 100000}`);
   await db.execute(sql`DELETE FROM transactions WHERE ref LIKE 'F1-%'`);
   await db.delete(agents).where(eq(agents.id, AGENT_ID));

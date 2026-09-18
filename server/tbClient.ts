@@ -146,6 +146,21 @@ interface RegistryRow {
   response: string | null;
 }
 
+/**
+ * The registry needs a live PostgreSQL. Under the test runner (VITEST /
+ * NODE_ENV=test) it is OFF by default so unit suites with module-level fetch
+ * mocks stay hermetic (a registry replay would short-circuit the mocked
+ * transport); dedup in tests is still exercised for real by the mini
+ * TigerBeetle ledger's ref/id idempotency. Tests that specifically cover the
+ * registry set TB_REGISTRY_FORCE=1 (see auditFixPayments.integration.test.ts).
+ * Production/staging behavior is unaffected.
+ */
+function registryEnabled(): boolean {
+  if (process.env.TB_REGISTRY_FORCE === "1") return true;
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return false;
+  return true;
+}
+
 async function registryGet(ref: string): Promise<RegistryRow | null> {
   try {
     const { getDb } = await import("./db");
@@ -214,7 +229,7 @@ export async function tbCreateTransfer(
     const payloadHash = tbPayloadHash(req);
     if (!req.id) req.id = tbDeterministicTransferId(req);
 
-    const prior = await registryGet(req.ref);
+    const prior = registryEnabled() ? await registryGet(req.ref) : null;
     if (prior) {
       if (prior.payloadHash !== payloadHash) {
         logger.error(`[tbClient] IDEMPOTENCY CONFLICT: ref=${req.ref} reused with a different payload`);
@@ -231,7 +246,7 @@ export async function tbCreateTransfer(
       // this converges instead of double-posting.
       req.id = prior.transferId ?? req.id;
       logger.warn(`[tbClient] retrying indeterminate transfer ref=${req.ref} with same deterministic id=${req.id}`);
-    } else {
+    } else if (registryEnabled()) {
       await registryReserve(req.ref, payloadHash, req.id);
     }
   }
@@ -249,17 +264,26 @@ export async function tbCreateTransfer(
     });
   } catch (err: unknown) {
     clearTimeout(timer);
-    const reason = err instanceof Error && err.name === "AbortError"
+    const timedOut = err instanceof Error && err.name === "AbortError";
+    const reason = timedOut
       ? `timed out after ${TB_TIMEOUT_MS}ms`
       : `unreachable (${String(err)})`;
-    // HONEST semantics (F-04): on timeout/unreachable the upstream MAY have
-    // committed — we cannot know. The registry row stays 'indeterminate' so a
-    // retry with the same ref+payload reposts the same deterministic id
-    // (upstream id-dedup makes that safe); a different payload is rejected.
-    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer aborted — sidecar ${reason}; ref=${req.ref ?? "n/a"}; commit state UNKNOWN`);
+    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer aborted — sidecar ${reason}; ref=${req.ref ?? "n/a"}; commit state ${timedOut ? "UNKNOWN" : "NOT committed"}`);
+    if (timedOut) {
+      // HONEST semantics (F-04): on TIMEOUT the upstream MAY have committed —
+      // we cannot know. The registry row stays 'indeterminate' so a retry
+      // with the same ref+payload reposts the same deterministic id (upstream
+      // id-dedup makes that safe); a different payload is rejected.
+      throw new TBLedgerUnavailableError(
+        `TigerBeetle ledger unavailable: sidecar ${reason}. Commit state UNKNOWN (ref=${req.ref ?? "n/a"}) — ` +
+        `retry with the SAME ref and payload is safe (deterministic-id dedup); never retry with a different payload.`,
+        err
+      );
+    }
+    // Connection refused/reset BEFORE the request was accepted: the transfer
+    // was NOT committed (the pinned fail-closed contract).
     throw new TBLedgerUnavailableError(
-      `TigerBeetle ledger unavailable: sidecar ${reason}. Commit state UNKNOWN (ref=${req.ref ?? "n/a"}) — ` +
-      `retry with the SAME ref and payload is safe (deterministic-id dedup); never retry with a different payload.`,
+      `TigerBeetle ledger unavailable: sidecar ${reason}. Transfer NOT committed (ref=${req.ref ?? "n/a"}).`,
       err
     );
   }
@@ -274,7 +298,7 @@ export async function tbCreateTransfer(
   }
 
   const out = (await res.json()) as TBTransferResponse;
-  if (req.ref) await registryMarkCommitted(req.ref, out);
+  if (req.ref && registryEnabled()) await registryMarkCommitted(req.ref, out);
   return out;
 }
 
