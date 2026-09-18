@@ -848,6 +848,9 @@ export const refunds = pgTable(
     rejectedAt: timestamp("rejectedAt"),
     rejectionReason: text("rejectionReason"),
     notes: text("notes"),
+    // AB-19: server-derived refund destination + initiating user (migration 0072)
+    destinationAccount: varchar("destinationAccount", { length: 20 }),
+    initiatedByUserId: integer("initiatedByUserId"),
     metadata: text("metadata"),
     tenantId: integer("tenantId"),
     deletedAt: timestamp("deletedAt"),

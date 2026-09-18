@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { desc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { disputes, refunds, type Refund } from "../../drizzle/schema";
+import { disputes, refunds, transactions, type Refund } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
@@ -37,6 +37,35 @@ const REFUND_TIERS = [
 
 const DAILY_AGENT_CAP = 2000000;
 const MAX_REFUNDS_PER_CUSTOMER_30D = 5;
+
+/**
+ * AB-19: derive the effective refund terms from the ORIGINAL transaction.
+ * The client may request any amount/destination, but when the disputed
+ * transaction is on record: the amount may not exceed the original amount
+ * (over-refund = fail-closed rejection) and the destination is forced to
+ * the transaction's source account when known. Exported for testing.
+ */
+export function deriveRefundTerms(
+  origTx: { id: number; amount: string | number; customerAccount: string | null; destinationAccount: string | null } | null,
+  input: { amount: number; accountNumber: string }
+): { effectiveAmount: number; effectiveDestination: string; originalTxId: number | null } {
+  if (!origTx) {
+    return { effectiveAmount: input.amount, effectiveDestination: input.accountNumber, originalTxId: null };
+  }
+  const origAmount = Number(origTx.amount);
+  if (input.amount > origAmount) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Refund amount (₦${input.amount}) exceeds the original transaction amount (₦${origAmount})`,
+    });
+  }
+  const sourceAccount = origTx.customerAccount || origTx.destinationAccount;
+  return {
+    effectiveAmount: input.amount,
+    effectiveDestination: sourceAccount || input.accountNumber,
+    originalTxId: origTx.id,
+  };
+}
 
 function getRefundTier(amount: number) {
   return REFUND_TIERS.find((t) => amount <= t.max)!;
@@ -164,8 +193,6 @@ export const disputeRefundRouter = router({
       idempotencyKey: z.string().min(8).max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const tier = getRefundTier(input.amount);
-
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -184,8 +211,32 @@ export const disputeRefundRouter = router({
         assertTenantOwnership(linkedDispute.tenantId, tenantId, "Dispute");
       }
 
+      // ── AB-19: amount & destination derived from the ORIGINAL transaction ──
+      // When the disputed transaction is known, the client-supplied amount,
+      // accountNumber and customerId are NOT trusted: the refund may not
+      // exceed the original amount and must return to the source account.
+      let effectiveAmount = input.amount;
+      let effectiveDestination = input.accountNumber;
+      let originalTxId: number | null = null;
+      if (linkedDispute?.transactionId) {
+        const [origTx] = await database
+          .select()
+          .from(transactions)
+          .where(eq(transactions.id, linkedDispute.transactionId))
+          .limit(1);
+        if (origTx) {
+          const terms = deriveRefundTerms(origTx, input);
+          effectiveAmount = terms.effectiveAmount;
+          effectiveDestination = terms.effectiveDestination;
+          originalTxId = terms.originalTxId;
+        }
+      }
+      const tier = getRefundTier(effectiveAmount);
+
       // ── Idempotency: replay or reject before doing any work ─────────────
-      const payloadHash = input.idempotencyKey ? refundPayloadHash(input) : null;
+      const payloadHash = input.idempotencyKey
+        ? refundPayloadHash({ ...input, amount: effectiveAmount, accountNumber: effectiveDestination })
+        : null;
       if (input.idempotencyKey) {
         const [existing] = await database
           .select()
@@ -200,17 +251,20 @@ export const disputeRefundRouter = router({
         if (existing) return replayOrConflict(existing, payloadHash!);
       }
 
-      // Velocity check — real DB query for refunds in last 30 days
+      // Velocity check — AB-19: keyed on the AUTHENTICATED USER and the
+      // refund destination account, not the attacker-chosen customerId.
+      // Counts refunds in the last 30 days initiated by this user or sent
+      // to the same destination account.
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const velocityRows = await database.select({
-        customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
+        velocityCount: sql<number>`COUNT(*) FILTER (WHERE "createdAt" >= ${thirtyDaysAgo.toISOString()} AND ("initiatedByUserId" = ${ctx.user?.id ?? -1} OR "destinationAccount" = ${effectiveDestination}))`,
       }).from(refunds);
-      const customerRefundCount = velocityRows[0]?.customerRefundCount ?? 0;
-      if (Number(customerRefundCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
+      const velocityCount = velocityRows[0]?.velocityCount ?? 0;
+      if (Number(velocityCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
         return {
           success: false,
           error: "velocity_exceeded",
-          message: `Customer has reached maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days`,
+          message: `Maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days reached for this user or destination account`,
           recommendation: "Escalate to compliance team for review",
         };
       }
@@ -230,16 +284,19 @@ export const disputeRefundRouter = router({
           idempotencyKey: input.idempotencyKey ?? null,
           payloadHash,
           disputeId: input.disputeId,
+          transactionId: originalTxId,
           agentId: input.agentId ?? 0,
           customerId: input.customerId,
-          originalAmount: Math.round(input.amount),
-          refundAmount: Math.round(input.amount),
+          originalAmount: Math.round(effectiveAmount),
+          refundAmount: Math.round(effectiveAmount),
           currency: "NGN",
           reason: input.reason,
           category: "dispute_refund",
           status: "pending",
           method: "original_method",
-          notes: `destination_account:${input.accountNumber}`,
+          notes: `destination_account:${effectiveDestination}`,
+          destinationAccount: effectiveDestination,
+          initiatedByUserId: ctx.user?.id ?? null,
           tenantId: ctx.user?.tenantId ?? null,
         })
         .onConflictDoNothing(

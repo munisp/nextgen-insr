@@ -53,6 +53,7 @@ import { getDb, withClientTransaction } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer } from "../tbClient";
 import { getTemporalClient } from "../temporal";
+import { flagRefundLoopIfAbusive } from "../lib/refundLoopDetection";
 
 // ─── Claim state-machine guards (F11-1/F11-3, DD-TSSTATE) ────────────────────
 /**
@@ -440,6 +441,9 @@ export const insuranceWorkflowsRouter = router({
       });
 
       await emitFluvioEvent(db, "policy-events", { eventType: "policy.cancelled", policyId: input.policyId, reason: input.reason });
+      // AB-10: refund-loop velocity detection (fire-and-forget; never blocks cancel).
+      flagRefundLoopIfAbusive(db, { policyId: input.policyId, tenantId: ctx.user?.tenantId ?? null })
+        .catch((e) => console.warn("[refundLoopDetection] flag failed:", e));
       return { success: true };
     }),
 
