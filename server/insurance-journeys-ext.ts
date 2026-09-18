@@ -15,6 +15,7 @@
  */
 
 import { proxyActivities, setHandler, defineQuery, sleep, condition, ApplicationFailure } from "@temporalio/workflow";
+import { lagosDateString, lagosMonthString } from "./lib/lagosDate";
 
 import type * as journeyActivities from "./journey-activities";
 import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
@@ -282,7 +283,7 @@ export async function J13_ComplianceMonitoringWorkflow(input: J13_ComplianceMoni
     currentStep = "filing_sar";
     await acts.fileNaicomReport({
       reportType: "suspicious_activity_report",
-      reportingPeriod: input.reportingPeriod ?? new Date().toISOString().slice(0, 7),
+      reportingPeriod: input.reportingPeriod ?? lagosMonthString(), // OPS-7
       data: {
         entityType: input.entityType,
         entityId: input.entityId,
@@ -302,7 +303,7 @@ export async function J13_ComplianceMonitoringWorkflow(input: J13_ComplianceMoni
     currentStep = "cbn_reporting";
     await acts.fileNaicomReport({
       reportType: "cbn_large_transaction",
-      reportingPeriod: input.reportingPeriod ?? new Date().toISOString().slice(0, 7),
+      reportingPeriod: input.reportingPeriod ?? lagosMonthString(), // OPS-7
       data: { entityId: input.entityId, amount: input.amount, transactionType: input.transactionType },
     });
     cbnReported = true;
@@ -882,8 +883,9 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19_UnderwritingDe
       policyType: input.policyType,
       sumInsured: input.sumInsured,
       premiumAmount,
-      startDate: new Date().toISOString().slice(0, 10),
-      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      // OPS-7: policy dates use the Africa/Lagos business calendar.
+      startDate: lagosDateString(),
+      endDate: lagosDateString(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
     });
 
     await acts.issuePolicyCertificate({
@@ -913,7 +915,7 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19_UnderwritingDe
   if (decision === "declined") {
     await acts.fileNaicomReport({
       reportType: "underwriting_declination",
-      reportingPeriod: new Date().toISOString().slice(0, 7),
+      reportingPeriod: lagosMonthString(), // OPS-7
       data: { applicationId: input.applicationId, customerId: input.customerId, policyType: input.policyType, reason: uw.declineReason },
     });
   }

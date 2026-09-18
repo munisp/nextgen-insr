@@ -82,7 +82,25 @@ export function safeRedirect(
 // 3. CSRF Protection
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const CSRF_SECRET = process.env.JWT_SECRET ?? secureRandomString(64);
+// OPS-8: in production the CSRF secret MUST come from the environment —
+// degenerating to a per-process random value silently breaks every CSRF
+// token on restart and across replicas. Fail loud instead. Dev/test keeps
+// the ephemeral fallback so local stacks boot without secrets.
+const CSRF_SECRET: string = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "[Security] JWT_SECRET (CSRF signing key) is required in production — refusing to start with a per-process random CSRF secret"
+    );
+  }
+  logger.warn(
+    "[Security] JWT_SECRET unset — using ephemeral per-process CSRF secret (dev/test only; invalid across restarts)"
+  );
+  return secureRandomString(64);
+})();
+// OPS-8: optional previous secret for rotation — tokens signed with the old
+// secret keep validating during the rotation window.
+const CSRF_SECRET_PREVIOUS = process.env.JWT_SECRET_PREVIOUS ?? null;
 const CSRF_HEADER = "X-CSRF-Token";
 const CSRF_COOKIE = "__csrf";
 
@@ -107,20 +125,28 @@ export function validateCsrfToken(token: string, sessionId: string): boolean {
   // Verify session match
   if (tokenSessionId !== sessionId) return false;
 
-  // Verify signature
+  // Verify signature (OPS-8: dual-key — current, then previous during rotation)
   const payload = `${tokenSessionId}:${timestamp}`;
-  const expectedSig = createHmac("sha256", CSRF_SECRET)
-    .update(payload)
-    .digest("hex")
-    .slice(0, 16);
-
-  // Constant-time comparison
-  if (signature.length !== expectedSig.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < signature.length; i++) {
-    mismatch |= signature.charCodeAt(i) ^ expectedSig.charCodeAt(i);
+  const candidateSecrets = [CSRF_SECRET, CSRF_SECRET_PREVIOUS].filter(
+    (v): v is string => typeof v === "string"
+  );
+  let signatureOk = false;
+  for (const secret of candidateSecrets) {
+    const expectedSig = createHmac("sha256", secret)
+      .update(payload)
+      .digest("hex")
+      .slice(0, 16);
+    if (signature.length !== expectedSig.length) continue;
+    let mismatch = 0;
+    for (let i = 0; i < signature.length; i++) {
+      mismatch |= signature.charCodeAt(i) ^ expectedSig.charCodeAt(i);
+    }
+    if (mismatch === 0) {
+      signatureOk = true;
+      break;
+    }
   }
-  if (mismatch !== 0) return false;
+  if (!signatureOk) return false;
 
   // Verify not expired (1 hour)
   const tokenTime = parseInt(timestamp, 36);

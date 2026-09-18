@@ -50,6 +50,7 @@ import { logger } from '../_core/logger';
 import { notifyOwner } from "../_core/notification";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import {
   createTransaction,
   getTransactionsByAgent,
@@ -319,7 +320,7 @@ async function validateDeviceToken(
 // ─── Router ───────────────────────────────────────────────────────────────────
 export const transactionsRouter = router({
   // ── Create transaction ────────────────────────────────────────────────────
-  create: protectedProcedure
+  create: financialProcedure
     .input(
       z.object({
         type: z.enum([
@@ -1099,7 +1100,7 @@ export const transactionsRouter = router({
 
   // ── Reverse transaction ───────────────────────────────────────────────────
   // Phase 45: reversals > ₦10,000 require admin/supervisor approval.
-  reverse: protectedProcedure
+  reverse: financialProcedure
     .input(z.object({ ref: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1263,7 +1264,7 @@ export const transactionsRouter = router({
   }),
 
   // ── Approve reversal (admin only) ─────────────────────────────────────────
-  approveReversal: protectedProcedure
+  approveReversal: financialProcedure
     .input(
       z.object({
         transactionId: z.number().int().positive(),
@@ -1353,7 +1354,7 @@ export const transactionsRouter = router({
     }),
 
   // ── Reject reversal (admin only) ──────────────────────────────────────────
-  rejectReversal: protectedProcedure
+  rejectReversal: financialProcedure
     .input(
       z.object({
         transactionId: z.number().int().positive(),

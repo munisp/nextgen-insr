@@ -24,6 +24,7 @@ import {
 import {
   agentSessionRevocationKey,
   hashSessionToken,
+  socketRevocationFailClosed,
 } from "./middleware/agentAuth";
 import { setIO } from "./socketSingleton";
 import { fraudAlerts } from "../drizzle/schema";
@@ -79,6 +80,59 @@ async function pollNewFraudAlerts(): Promise<any[]> {
   }
 }
 
+// ─── Shared socket auth (AUTH-1..4, fail-CLOSED) ────────────────────────────
+// Every namespace that carries PII or financial events authenticates the
+// agent_session cookie with the same JWT + revocation enforcement as HTTP
+// agent requests. There is NO unauthenticated mode; the only bypass is the
+// explicit, non-production demo flag that defaults OFF (F6-8 pattern).
+async function authenticateAgentSocket(
+  socket: Parameters<Parameters<ReturnType<SocketIOServer["of"]>["use"]>[0]>[0],
+  next: (err?: Error) => void,
+  namespace: string
+): Promise<void> {
+  const cookie = socket.handshake.headers.cookie ?? "";
+  const match = cookie.match(/agent_session=([^;]+)/);
+  if (match) {
+    try {
+      const secret = new TextEncoder().encode(getJwtSecret());
+      const { payload } = await jwtVerify(match[1], secret);
+      const failClosed = socketRevocationFailClosed();
+      const blacklisted = await isTokenBlacklisted(
+        hashSessionToken(match[1]),
+        failClosed
+      );
+      const revoked =
+        payload.sub && typeof payload.iat === "number"
+          ? await isUserTokenRevoked(
+              agentSessionRevocationKey(Number(payload.sub)),
+              payload.iat,
+              failClosed
+            )
+          : false;
+      if (!blacklisted && !revoked) {
+        // Identity comes ONLY from the verified token — never from client
+        // input on individual events (AUTH-2/4).
+        socket.data.agentId = Number(payload.sub);
+        socket.data.agentName = payload.name;
+        return next();
+      }
+    } catch {
+      // fall through to deny
+    }
+  }
+  if (
+    process.env.CHAT_ALLOW_UNAUTHENTICATED_DEMO === "true" &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    logger.warn(
+      { socketId: socket.id, namespace },
+      "[Socket] UNAUTHENTICATED demo connection accepted (CHAT_ALLOW_UNAUTHENTICATED_DEMO=true, non-production)"
+    );
+    return next();
+  }
+  return next(new Error("Authentication required"));
+}
+
 export function initSocketIO(httpServer: HttpServer) {
   // SECURITY: Restrict Socket.IO CORS to known origins only.
   // In production, set ALLOWED_ORIGINS env var to comma-separated list.
@@ -98,6 +152,10 @@ export function initSocketIO(httpServer: HttpServer) {
 
   // ── Fraud monitoring namespace ──────────────────────────────────────────────
   const fraudNs = io.of("/fraud");
+
+  // AUTH-1: live fraud alerts carry PII and alert:updateStatus mutates state —
+  // the namespace is authenticated fail-closed like /chat.
+  fraudNs.use((socket, next) => authenticateAgentSocket(socket, next, "/fraud"));
 
   // Seed the cursor to current max ID so we only emit new alerts going forward
   getDb().then(async db => {
@@ -140,7 +198,17 @@ export function initSocketIO(httpServer: HttpServer) {
     socket.on(
       "alert:updateStatus",
       async (data: { alertId: number; status: string }) => {
-        fraudNs.emit("alert:statusUpdated", data);
+        // AUTH-1: only an authenticated agent (see namespace middleware) can
+        // broadcast status updates; tag the event with the acting identity
+        // and validate the status transition target.
+        const ALLOWED = new Set(["open", "investigating", "resolved", "dismissed"]);
+        if (!data || typeof data.alertId !== "number" || !ALLOWED.has(data.status)) {
+          return;
+        }
+        fraudNs.emit("alert:statusUpdated", {
+          ...data,
+          updatedBy: socket.data.agentId ?? null,
+        });
       }
     );
 
@@ -152,64 +220,55 @@ export function initSocketIO(httpServer: HttpServer) {
   // ── Chat namespace ────────────────────────────────────────────────────────
   const chatNs = io.of("/chat");
 
-  chatNs.use(async (socket, next) => {
-    // F6-8: fail-CLOSED. The support channel carries customer PII — there is
-    // no unauthenticated mode. The only bypass is an explicit, non-production
-    // demo flag that defaults OFF.
-    const cookie = socket.handshake.headers.cookie ?? "";
-    const match = cookie.match(/agent_session=([^;]+)/);
-    if (match) {
-      try {
-        const secret = new TextEncoder().encode(getJwtSecret());
-        const { payload } = await jwtVerify(match[1], secret);
-        // Enforce the same revocation lists as HTTP agent requests (F6-1).
-        const failClosed = process.env.NODE_ENV === "production";
-        const blacklisted = await isTokenBlacklisted(
-          hashSessionToken(match[1]),
-          failClosed
-        );
-        const revoked =
-          payload.sub && typeof payload.iat === "number"
-            ? await isUserTokenRevoked(
-                agentSessionRevocationKey(Number(payload.sub)),
-                payload.iat,
-                failClosed
-              )
-            : false;
-        if (!blacklisted && !revoked) {
-          socket.data.agentId = Number(payload.sub);
-          socket.data.agentName = payload.name;
-          return next();
-        }
-      } catch {
-        // fall through to deny
-      }
+  chatNs.use((socket, next) => authenticateAgentSocket(socket, next, "/chat"));
+
+  /**
+   * AUTH-4: per-room ownership. A socket may only join/post to a chat session
+   * it owns (session.agentId === verified token sub). Demo-mode sockets (no
+   * authenticated agentId) may not join any room.
+   */
+  async function ownsChatSession(
+    socket: { data: Record<string, unknown> },
+    sessionRef: string
+  ): Promise<boolean> {
+    const agentId = socket.data.agentId as number | undefined;
+    if (typeof agentId !== "number" || !sessionRef) return false;
+    try {
+      const session = await getChatSession(sessionRef);
+      return !!session && session.agentId === agentId;
+    } catch {
+      return false; // fail-closed
     }
-    if (
-      process.env.CHAT_ALLOW_UNAUTHENTICATED_DEMO === "true" &&
-      process.env.NODE_ENV !== "production"
-    ) {
-      logger.warn(
-        { socketId: socket.id },
-        "[Chat] UNAUTHENTICATED demo connection accepted (CHAT_ALLOW_UNAUTHENTICATED_DEMO=true, non-production)"
-      );
-      return next();
-    }
-    return next(new Error("Authentication required"));
-  });
+  }
 
   chatNs.on("connection", socket => {
     const agentName = (socket.data.agentName as string | undefined) ?? "Agent";
     logger.info({ socketId: socket.id, agentName }, "[Chat] Agent connected");
 
-    socket.on("chat:join", (sessionRef: string) => {
-      socket.join(`session:${sessionRef}`);
+    socket.on("chat:join", async (sessionRef: string) => {
+      // AUTH-4: ownership-verified join — arbitrary sessionRef is rejected.
+      if (await ownsChatSession(socket, sessionRef)) {
+        socket.join(`session:${sessionRef}`);
+      } else {
+        logger.warn(
+          { socketId: socket.id, agentId: socket.data.agentId, sessionRef },
+          "[Chat] Denied join to session not owned by this agent"
+        );
+      }
     });
 
     socket.on(
       "chat:message",
       async (data: { sessionRef: string; content: string }) => {
         try {
+          // AUTH-4: verify the socket's token identity owns this session.
+          if (!(await ownsChatSession(socket, data?.sessionRef))) {
+            logger.warn(
+              { socketId: socket.id, agentId: socket.data.agentId, sessionRef: data?.sessionRef },
+              "[Chat] Denied message to session not owned by this agent"
+            );
+            return;
+          }
           const session = await getChatSession(data.sessionRef);
           if (!session) return;
 
@@ -276,9 +335,16 @@ export function initSocketIO(httpServer: HttpServer) {
   // ── Terminal status namespace ─────────────────────────────────────────────
   const terminalNs = io.of("/terminal");
 
+  // AUTH-2: terminal channel pushes per-agent transaction/status events —
+  // authenticated fail-closed like /chat.
+  terminalNs.use((socket, next) => authenticateAgentSocket(socket, next, "/terminal"));
+
   terminalNs.on("connection", socket => {
-    socket.on("terminal:register", (agentId: string) => {
-      if (agentId) {
+    socket.on("terminal:register", (_agentId: string) => {
+      // AUTH-2: the room is derived from the VERIFIED token identity, never
+      // from the client-supplied agentId (cross-agent room escape).
+      const agentId = socket.data.agentId as number | undefined;
+      if (typeof agentId === "number") {
         socket.join(`agent:${agentId}`);
         logger.info({ agentId, socketId: socket.id }, "[Terminal] Agent registered");
       }
@@ -299,13 +365,18 @@ export function initSocketIO(httpServer: HttpServer) {
   // ── Settlement batch progress namespace ────────────────────────────────────
   const settlementNs = io.of("/settlement");
 
+  // AUTH-3: settlement batches carry payout data — authenticated fail-closed.
+  settlementNs.use((socket, next) => authenticateAgentSocket(socket, next, "/settlement"));
+
   settlementNs.on("connection", socket => {
     logger.info({ socketId: socket.id }, "[Settlement] Dashboard connected");
 
-    // Client can subscribe to a specific batch
+    // Client can subscribe to a specific batch (authenticated agents only;
+    // identity comes from the verified token — AUTH-3)
     socket.on("settlement:subscribe", (batchId: string) => {
+      if (typeof batchId !== "string" || !batchId || socket.data.agentId == null) return;
       socket.join(`batch:${batchId}`);
-      logger.info({ socketId: socket.id, batchId }, "[Settlement] Subscribed to batch");
+      logger.info({ socketId: socket.id, batchId, agentId: socket.data.agentId }, "[Settlement] Subscribed to batch");
     });
 
     socket.on("settlement:unsubscribe", (batchId: string) => {

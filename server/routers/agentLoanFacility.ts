@@ -10,6 +10,7 @@ import { z } from "zod";
 import { transactions, agents, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { tbCreateTransfer } from "../tbClient";
@@ -17,7 +18,7 @@ import { tbCreateTransfer } from "../tbClient";
 
 
 export const agentLoanFacilityRouter = router({
-  applyLoan: protectedProcedure
+  applyLoan: financialProcedure
     .input(z.object({
       agent_id: z.number(),
       principal_amount: z.number().positive(),

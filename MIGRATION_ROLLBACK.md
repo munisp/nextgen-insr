@@ -123,3 +123,49 @@ this section exists in the codebase today:
 3. **Gate deploys on the nightly backup-restore rehearsal being green**
    (`.github/workflows/backup-rehearsal.yml`), since backup restore is the
    only real rollback for destructive changes.
+
+---
+
+## 6. OPS-2 remediation (2026, wave F6) — journal repair + deploy-path rewiring
+
+The defects in §1 have been remediated:
+
+1. **`drizzle-kit push --force` removed from all deploy/CI paths.**
+   `.github/workflows/{ci,ci-cd,integration}.yml`,
+   `tests/{integration,e2e}/setup/globalSetup.ts` and
+   `scripts/backup-restore-rehearsal.sh` now run plain `drizzle-kit push`,
+   which FAILS LOUD on any statement drizzle-kit classifies as data-loss
+   instead of auto-accepting it. When push refuses, the correct action is a
+   reviewed, journal-managed migration — never re-adding `--force`.
+
+2. **`Makefile.production db-migrate` now invokes the backup-gated
+   `scripts/db-migrate-safe.sh`** (previously `pnpm db:push`). The script
+   creates a GPG-ENCRYPTED pre-migration backup (OPS-3/OPS-4:
+   `BACKUP_GPG_RECIPIENT` or `BACKUP_ENCRYPTION_KEY` required; plaintext
+   backups are forbidden in production and the default directory moved from
+   world-readable `/tmp` to `0700` `/var/backups/insureportal`), runs
+   `drizzle-kit migrate`, then applies hand-written migrations via a ledger
+   (step 4b), verifies table counts, and restores from the (decrypted)
+   backup on failure.
+
+3. **Journal repair (documented, deliberate):**
+   - `drizzle/0000_conscious_guardian.sql` was a **MySQL-dialect** orphan
+     (`AUTO_INCREMENT`, backtick quoting) left over from scaffolding — never
+     referenced by `drizzle/meta/_journal.json` and inapplicable to the
+     PostgreSQL dialect of this project. It is QUARANTINED to
+     `drizzle/quarantine/0000_conscious_guardian.mysql-orphan.sql` (kept for
+     provenance, excluded from any migration run).
+   - The journal "skips" of `0005`/`0013` are consistent between
+     `_journal.json` and the on-disk files (no `0005_*.sql`/`0013_*.sql`
+     exist) — drizzle-kit renumbered at generation time; no repair needed.
+   - `_journal.json` legitimately covers only drizzle-kit-generated
+     `0000`-`0042`. Files `0043_*` and above are hand-written append-only
+     SQL that were previously applied ad-hoc with no record. They are now
+     applied exactly-once, in filename order, through the
+     `schema_migrations_ext` ledger in `db-migrate-safe.sh` step 4b.
+     **Baseline assumption:** on databases that existed before this change,
+     `0043`-`0060` are seeded into the ledger as already-applied (they were
+     applied out-of-band historically); files `0061`+ are executed for real.
+     A FRESH database must run `db-migrate-safe.sh` (or apply `0043`-`0060`
+     manually) — `drizzle-kit push` of the full schema also covers them
+     because the schema files are the union.

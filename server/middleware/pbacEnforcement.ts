@@ -167,7 +167,10 @@ interface CacheEntry {
 }
 
 const permissionCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 300_000; // 5 minutes
+// AUTH-18: short TTL so a revoked permission stops being honored quickly.
+// Revocation must additionally call invalidatePermissionsForUser() for
+// immediate effect — never wait for TTL expiry.
+const CACHE_TTL_MS = 15_000; // 15 seconds
 
 function getCacheKey(
   ctx: PBACContext,
@@ -184,6 +187,36 @@ setInterval(() => {
     if (entry.expiresAt < now) permissionCache.delete(key);
   }
 }, 60_000);
+
+/**
+ * AUTH-18: revocation invalidation hook. When a user's permissions/role are
+ * revoked or changed, callers MUST invoke this so cached allow-decisions are
+ * dropped immediately instead of living out their TTL.
+ */
+export function invalidatePermissionsForUser(
+  userId: number,
+  tenantId?: number
+): number {
+  const prefix = `${userId}:`;
+  const tenantKey = String(tenantId ?? "global");
+  let removed = 0;
+  for (const key of permissionCache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    if (
+      tenantId !== undefined &&
+      key.split(":")[2] !== tenantKey
+    )
+      continue;
+    permissionCache.delete(key);
+    removed++;
+  }
+  return removed;
+}
+
+/** Drop every cached decision (e.g. after a bulk policy change). */
+export function invalidateAllPermissions(): void {
+  permissionCache.clear();
+}
 
 // ─── Permify Client ──────────────────────────────────────────────────────────
 const PERMIFY_HOST = process.env.PERMIFY_HOST ?? "localhost";
@@ -261,21 +294,42 @@ export async function authorize(
     return permifyResult;
   }
 
-  // Local RBAC evaluation
+  // Local RBAC evaluation — AUTH-18: this static fallback is FAIL-OPEN and is
+  // therefore only permitted outside production as an explicit demo opt-in.
+  // In production (or whenever the demo flag is off), an unreachable/disabled
+  // policy engine DENIES the request instead of falling through to static
+  // role tables that cannot reflect revocations.
+  const localFallbackAllowed =
+    process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO === "true" &&
+    process.env.NODE_ENV !== "production";
+  if (!localFallbackAllowed) {
+    const decision: AuthorizationDecision = {
+      allowed: false,
+      reason: PERMIFY_ENABLED
+        ? "Policy engine unreachable — denied (fail-closed)"
+        : "Policy engine disabled (PERMIFY_ENABLED!=true) — denied (fail-closed)",
+      policy: "fail_closed",
+      cached: false,
+      evaluationTimeMs: Date.now() - start,
+    };
+    // Deny decisions are NOT cached — recovery must take effect immediately.
+    return decision;
+  }
+
   const rolePermissions = ROLE_PERMISSIONS[ctx.role] ?? [];
   const allowed = rolePermissions.includes(permission);
 
   const decision: AuthorizationDecision = {
     allowed,
     reason: allowed
-      ? `Role ${ctx.role} has ${permission}`
+      ? `Role ${ctx.role} has ${permission} (local RBAC demo fallback)`
       : `Role ${ctx.role} lacks ${permission}`,
     policy: "local_rbac",
     cached: false,
     evaluationTimeMs: Date.now() - start,
   };
 
-  // Cache the decision
+  // Cache the decision (short TTL — AUTH-18)
   permissionCache.set(cacheKey, {
     decision,
     expiresAt: Date.now() + CACHE_TTL_MS,

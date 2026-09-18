@@ -111,6 +111,8 @@ export async function verifyKeycloakToken(
   const { payload } = await jwtVerify(token, getJWKS(), {
     issuer: issuerUrl(),
     audience: keycloakConfig.clientId,
+    // OPS-8: tolerate up to 30s clock skew between this server and Keycloak
+    clockTolerance: 30,
   });
   return payload as KeycloakTokenPayload;
 }

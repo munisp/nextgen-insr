@@ -25,7 +25,7 @@ import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { tbCreateTransfer, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
 
 const MIN_FLOAT = 5_000;
 const MIN_TRANSFER = 500;
@@ -138,7 +138,7 @@ export const agentFloatTransferRouter = router({
         ]);
 
         // TigerBeetle atomic double-entry transfer
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: `float-${sender.agentId}`,
           creditAccountId: `float-${receiver.agentId}`,
           amount: Math.round(input.amountNGN * 100),
@@ -147,7 +147,8 @@ export const agentFloatTransferRouter = router({
           ref: input.reference,
           txType: "Float Transfer",
           agentId: sender.agentId,
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
         // F-01: ALL PostgreSQL effects (sender debit, receiver credit, both
         // transaction legs, audit) commit or roll back as ONE unit. The
@@ -166,7 +167,11 @@ export const agentFloatTransferRouter = router({
             };
         let outcome: TransferOutcome;
         try {
-          outcome = await db.transaction(async (tx): Promise<TransferOutcome> => {
+          // PAY-1 (orphan transfer): the TB leg above is committed. Any PG
+          // failure below (e.g. insufficient-float guard, constraint) must
+          // post a compensating reversal — previously the TB double-entry
+          // was left posted with no PG record and no reversal.
+          outcome = await withTbCompensation("agentFloatTransfer.transfer", tbReq, () => db.transaction(async (tx): Promise<TransferOutcome> => {
             // Reserve the reference first: ON CONFLICT DO NOTHING means a
             // concurrent duplicate gets zero rows back (no DB error, no
             // aborted transaction) and replays the winner after commit.
@@ -261,7 +266,7 @@ export const agentFloatTransferRouter = router({
               senderNewBalanceNGN: Number(debited[0]!.balance),
               receiverNewBalanceNGN: Number(credited[0]!.balance),
             };
-          });
+          }));
         } catch (err) {
           // Last-resort race handler (e.g. constraint race outside the
           // reservation above): if a committed winner exists for this

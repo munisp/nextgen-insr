@@ -139,6 +139,41 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 		}
 	}
 
+	// INS-6: adjudication must see the POLICY, not just claim fields. A claim
+	// on a lapsed/cancelled/expired/never-active policy, outside the coverage
+	// period, or inside the product waiting period is denied outright. The
+	// lookup is fail-closed: if the policy cannot be loaded, the claim is
+	// denied for manual handling rather than adjudicated blind.
+	if e.db != nil {
+		snap, err := e.db.GetPolicySnapshot(context.Background(), claim.PolicyNumber)
+		if err != nil {
+			e.logger.Error("Policy lookup failed — denying claim (fail-closed)",
+				zap.String("claim_id", claim.ID), zap.String("policy_number", claim.PolicyNumber), zap.Error(err))
+			return &models.AdjudicationResult{
+				ClaimID:        claim.ID,
+				Decision:       models.DecisionDenied,
+				Confidence:     1.0,
+				Reason:         fmt.Sprintf("Policy lookup failed for %s: %s", claim.PolicyNumber, err.Error()),
+				Queue:          "supervisor_queue",
+				AssignedTo:     "supervisor_queue",
+				SLADeadline:    time.Now().Add(4 * time.Hour),
+				ProcessingTime: time.Since(start),
+			}
+		}
+		if deny, reason := evaluatePolicyGate(snap, time.Now()); deny {
+			e.logger.Warn("Claim denied by policy gate",
+				zap.String("claim_id", claim.ID), zap.String("policy_number", claim.PolicyNumber), zap.String("reason", reason))
+			return &models.AdjudicationResult{
+				ClaimID:        claim.ID,
+				Decision:       models.DecisionDenied,
+				Confidence:     1.0,
+				Reason:         reason,
+				SLADeadline:    time.Now().Add(1 * time.Hour),
+				ProcessingTime: time.Since(start),
+			}
+		}
+	}
+
 	// Calculate risk score using comprehensive rules
 	riskScore := e.calculateRiskScore(claim)
 	claim.RiskScore = riskScore
@@ -233,6 +268,53 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 	e.trackAdjudicationMetric(result)
 
 	return result
+}
+
+// evaluatePolicyGate decides whether a claim may proceed based on the policy
+// snapshot (INS-6). Pure function for testability. Fail-closed: an unknown
+// policy denies the claim.
+func evaluatePolicyGate(snap *db.PolicySnapshot, now time.Time) (bool, string) {
+	if snap == nil {
+		return true, "policy not found — cannot verify coverage (fail-closed)"
+	}
+	switch snap.Status {
+	case "active", "bound", "endorsed", "renewed":
+		// adjudicable states
+	case "lapsed":
+		return true, "policy is lapsed — premium arrears must be settled before claims are covered"
+	case "cancelled":
+		return true, "policy is cancelled — no coverage in force"
+	case "expired":
+		return true, "policy term has expired — no coverage in force"
+	case "suspended":
+		return true, "policy is suspended — coverage is not in force"
+	default:
+		return true, fmt.Sprintf("policy status '%s' does not provide cover", snap.Status)
+	}
+	if snap.StartDate.Valid && now.Before(snap.StartDate.Time) {
+		return true, fmt.Sprintf("policy coverage has not started (starts %s)", snap.StartDate.Time.Format("2006-01-02"))
+	}
+	if snap.EndDate.Valid && now.After(snap.EndDate.Time.Add(30*24*time.Hour)) {
+		// endDate + statutory grace window fully elapsed
+		return true, fmt.Sprintf("policy period ended %s (incl. grace window)", snap.EndDate.Time.Format("2006-01-02"))
+	}
+	if snap.WaitingPeriodDays > 0 && snap.StartDate.Valid {
+		coveredFrom := snap.StartDate.Time.Add(time.Duration(snap.WaitingPeriodDays) * 24 * time.Hour)
+		if now.Before(coveredFrom) {
+			return true, fmt.Sprintf("within %d-day waiting period (coverage from %s)", snap.WaitingPeriodDays, coveredFrom.Format("2006-01-02"))
+		}
+	}
+	return false, ""
+}
+
+// adjudicableFromStates are the FROM states a manual approve/deny is allowed
+// to transition out of (INS-7): decided/terminal states are not re-decidable.
+var adjudicableFromStates = []string{
+	string(models.ClaimStatusSubmitted),
+	string(models.ClaimStatusUnderReview),
+	string(models.ClaimStatusPendingReview),
+	string(models.ClaimStatusEscalated),
+	string(models.ClaimStatusFraudAlert),
 }
 
 // validateClaim validates all claim fields and business rules
@@ -1295,7 +1377,12 @@ func handleApproveClaim(e *Engine) http.HandlerFunc {
 			}
 		}
 
-		if err := e.db.UpdateClaimStatus(r.Context(), claimID, models.ClaimStatusApproved, models.DecisionAutoApproved, map[string]interface{}{"action": "approve"}); err != nil {
+		// INS-7: atomic FROM-state guard — concurrent approve/deny cannot both win.
+		if err := e.db.UpdateClaimStatusFrom(r.Context(), claimID, models.ClaimStatusApproved, models.DecisionAutoApproved, map[string]interface{}{"action": "approve"}, adjudicableFromStates); err != nil {
+			if errors.Is(err, db.ErrInvalidClaimTransition) {
+				http.Error(w, fmt.Sprintf("Claim cannot be approved from its current state: %v", err), http.StatusConflict)
+				return
+			}
 			http.Error(w, fmt.Sprintf("Failed to approve claim: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -1325,7 +1412,12 @@ func handleDenyClaim(e *Engine) http.HandlerFunc {
 			return
 		}
 
-		if err := e.db.UpdateClaimStatus(r.Context(), claimID, models.ClaimStatusDenied, models.DecisionDenied, map[string]interface{}{"action": "deny"}); err != nil {
+		// INS-7: atomic FROM-state guard — concurrent approve/deny cannot both win.
+		if err := e.db.UpdateClaimStatusFrom(r.Context(), claimID, models.ClaimStatusDenied, models.DecisionDenied, map[string]interface{}{"action": "deny"}, adjudicableFromStates); err != nil {
+			if errors.Is(err, db.ErrInvalidClaimTransition) {
+				http.Error(w, fmt.Sprintf("Claim cannot be denied from its current state: %v", err), http.StatusConflict)
+				return
+			}
 			http.Error(w, fmt.Sprintf("Failed to deny claim: %v", err), http.StatusInternalServerError)
 			return
 		}

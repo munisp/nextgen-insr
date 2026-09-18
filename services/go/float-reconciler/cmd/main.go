@@ -18,7 +18,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -201,6 +203,31 @@ func emitFluvioEvent(event FluvioEvent) error {
 	return nil
 }
 
+// roundKobo converts an NGN amount to integer kobo with ROUNDING (PAY-8) —
+// the previous int64(x*100) truncation drifted sub-kobo fractions.
+func roundKobo(ngn float64) float64 {
+	return math.Round(ngn * 100)
+}
+
+// CorrectionRef builds the deterministic idempotency key for an
+// auto-correction (PAY-8): it binds (agent, day, EXACT discrepancy value) via
+// a hash of the full-precision discrepancy, so two DIFFERENT discrepancies of
+// the same rounded amount for the same agent on the same day no longer
+// conflate into one key (the second one used to be silently skipped).
+func CorrectionRef(agentCode string, discrepancy float64, day string) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.8f", agentCode, day, discrepancy)))
+	return fmt.Sprintf("RECON-CORR-%s-%d-%s-%s", agentCode, int64(roundKobo(math.Abs(discrepancy))), day, hex.EncodeToString(h[:])[:8])
+}
+
+// correctionTransferID is the deterministic upstream transfer id for a
+// correction ref — TigerBeetle deduplicates re-created transfers by id, so a
+// retry after a timeout (where the POST may actually have committed) cannot
+// double-apply the correction.
+func correctionTransferID(correctionRef string) string {
+	h := sha256.Sum256([]byte(correctionRef))
+	return "tb-" + hex.EncodeToString(h[:])[:24]
+}
+
 // autoCorrectDiscrepancy posts a REAL correction transfer to the TB sidecar.
 //
 // Fail-closed + idempotent:
@@ -212,6 +239,7 @@ func emitFluvioEvent(event FluvioEvent) error {
 //     that did not happen is reported as an error, never logged as applied.
 func autoCorrectDiscrepancy(ctx context.Context, agentID int, agentCode string, discrepancy float64) (applied bool, err error) {
 	type CorrectionRequest struct {
+		ID              string `json:"id,omitempty"`
 		DebitAccountID  string `json:"debit_account_id"`
 		CreditAccountID string `json:"credit_account_id"`
 		Amount          int64  `json:"amount"`
@@ -221,16 +249,21 @@ func autoCorrectDiscrepancy(ctx context.Context, agentID int, agentCode string, 
 		TxType          string `json:"tx_type"`
 	}
 
-	amountKobo := int64(math.Abs(discrepancy) * 100)
-	// Deterministic idempotency ref: one correction per agent per amount per day.
-	correctionRef := fmt.Sprintf("RECON-CORR-%s-%d-%s", agentCode, amountKobo, time.Now().UTC().Format("2006-01-02"))
+	amountKobo := int64(roundKobo(math.Abs(discrepancy)))
+	correctionRef := CorrectionRef(agentCode, discrepancy, time.Now().UTC().Format("2006-01-02"))
 
-	// Insert-first durable dedupe.
+	// Insert-first durable dedupe — RETRYABLE (PAY-8): a correction whose TB
+	// leg previously FAILED (including timeout-committed ambiguity) is
+	// re-claimed on the next run (ON CONFLICT ... WHERE status='failed'), so a
+	// failed correction can never wedge the discrepancy forever. Applied or
+	// in-flight corrections still dedupe.
 	var claimed bool
 	err = db.QueryRowContext(ctx, `
 		INSERT INTO float_reconciliation_corrections (correction_ref, agent_id, agent_code, discrepancy, status, created_at)
 		VALUES ($1, $2, $3, $4, 'pending', NOW())
-		ON CONFLICT (correction_ref) DO NOTHING
+		ON CONFLICT (correction_ref) DO UPDATE
+		  SET status = 'pending', error = NULL, completed_at = NULL
+		  WHERE float_reconciliation_corrections.status = 'failed'
 		RETURNING true
 	`, correctionRef, agentID, agentCode, discrepancy).Scan(&claimed)
 	if err == sql.ErrNoRows {
@@ -253,6 +286,7 @@ func autoCorrectDiscrepancy(ctx context.Context, agentID int, agentCode string, 
 	var req CorrectionRequest
 	if discrepancy > 0 {
 		req = CorrectionRequest{
+			ID:              correctionTransferID(correctionRef),
 			DebitAccountID:  "reconciliation-correction-pool",
 			CreditAccountID: fmt.Sprintf("float-%s", agentCode),
 			Amount:          amountKobo,
@@ -263,6 +297,7 @@ func autoCorrectDiscrepancy(ctx context.Context, agentID int, agentCode string, 
 		}
 	} else {
 		req = CorrectionRequest{
+			ID:              correctionTransferID(correctionRef),
 			DebitAccountID:  fmt.Sprintf("float-%s", agentCode),
 			CreditAccountID: "reconciliation-correction-pool",
 			Amount:          amountKobo,

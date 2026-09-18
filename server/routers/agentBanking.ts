@@ -12,6 +12,7 @@ import { z } from "zod";
 import { transactions, agents, auditLog, disputes, loyaltyHistory, qrCodes } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { tbCreateTransfer } from "../tbClient";
@@ -138,7 +139,7 @@ export const agentBankingRouter = router({
         const [{ total }] = await db.select({ total: count() }).from(transactions).where(where);
         return { items, total: Number(total) };
       }),
-    requestTopUp: protectedProcedure
+    requestTopUp: financialProcedure
       .input(z.object({ agentId: z.number(), amount: z.string() }))
       .mutation(async ({ input }) => {
         const db = await getDb();

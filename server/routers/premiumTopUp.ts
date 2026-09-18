@@ -6,20 +6,22 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, policies, auditLog } from "../../drizzle/schema";
+import { transactions, policies, policyLifecycleStates, auditLog } from "../../drizzle/schema";
+import { getOrInitLifecycle, validateReinstatement } from "../lib/policyLifecycle";
 import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { tbCreateTransfer, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
 
 export const premiumTopUpRouter = router({
-  topUp: protectedProcedure
+  topUp: financialProcedure
     .input(z.object({
       policyId: z.number(),
       amountNGN: z.number().positive(),
@@ -76,7 +78,7 @@ export const premiumTopUpRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payment in progress" });
 
       try {
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: `customer-${policy.customerId}`,
           creditAccountId: "insurer-premium-pool",
           amount: Math.round(input.amountNGN * 100),
@@ -85,7 +87,8 @@ export const premiumTopUpRouter = router({
           ref: input.reference,
           txType: "premium_payment",
           agentId: input.agentId ? String(input.agentId) : undefined,
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
         // F-02: ALL PostgreSQL effects (transaction row, premium ledger row,
         // lapsed-policy reactivation) commit or roll back as ONE unit. The
@@ -97,7 +100,11 @@ export const premiumTopUpRouter = router({
         type TopUpOutcome =
           | { replay: true }
           | { replay: false; tx: typeof transactions.$inferSelect; premium: typeof premiums.$inferSelect };
-        const outcome = await db.transaction(async (tx): Promise<TopUpOutcome> => {
+        // PAY-1 (orphan transfer): the TB leg above is already committed. If
+        // the PG transaction fails, post a compensating reversal (ref-REV)
+        // and rethrow loudly — value must never exist in the ledger without
+        // the corresponding durable PG record.
+        const outcome = await withTbCompensation("premiumTopUp.topUp", tbReq, () => db.transaction(async (tx): Promise<TopUpOutcome> => {
           const reserved = await tx.insert(transactions).values({
             ref: input.reference,
             agentId: txAgentId,
@@ -136,13 +143,32 @@ export const premiumTopUpRouter = router({
             .where(eq(transactions.ref, input.reference))
             .returning();
 
-          // Activate lapsed policy
+          // INS-9: reactivate a lapsed policy ONLY via the reinstatement
+          // rules — payment must cover recorded arrears, the lapse must be
+          // inside the max reinstatement window, and the waiting period
+          // restarts at reinstatement. Fail-closed: a short payment keeps the
+          // premium on the ledger but leaves the policy lapsed (error before
+          // commit rolls back this transaction's PG effects; the TB leg keyed
+          // on the caller's reference replays idempotently).
           if (policy.status === "lapsed") {
-            await tx.update(policies).set({ status: "active", updatedAt: new Date() }).where(eq(policies.id, input.policyId));
+            const lifecycle = await getOrInitLifecycle(tx as never as Awaited<ReturnType<typeof getDb>> & object, input.policyId);
+            const reinstateError = validateReinstatement(policy, lifecycle, input.amountNGN);
+            if (reinstateError) {
+              throw new TRPCError({ code: "PRECONDITION_FAILED", message: reinstateError });
+            }
+            const now = new Date();
+            await tx.update(policies).set({ status: "active", updatedAt: now }).where(eq(policies.id, input.policyId));
+            await tx.update(policyLifecycleStates).set({
+              arrearsAmount: "0",
+              lapsedAt: null,
+              reinstatedAt: now,
+              waitingPeriodResetAt: now,
+              updatedAt: now,
+            }).where(eq(policyLifecycleStates.policyId, input.policyId));
           }
 
           return { replay: false, tx: linkedTx ?? reserved[0]!, premium: premiumRecord };
-        });
+        }));
 
         if (outcome.replay) {
           const [winner] = await db.select().from(transactions)

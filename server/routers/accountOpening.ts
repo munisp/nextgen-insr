@@ -17,6 +17,7 @@ import { z } from "zod";
 import { customers, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { encryptPii } from "../lib/piiCrypto";
 
 
 export const accountOpeningRouter = router({
@@ -147,8 +148,8 @@ export const accountOpeningRouter = router({
             lastName: input.lastName,
             phone: input.phone,
             email: input.email,
-            bvn: input.bvn,
-            nin: input.nin,
+            bvn: encryptPii(input.bvn),
+            nin: encryptPii(input.nin),
             address: input.address,
             status: "pending_kyc",
           })

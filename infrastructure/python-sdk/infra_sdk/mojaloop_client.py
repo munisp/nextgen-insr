@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from typing import Optional
@@ -11,6 +12,19 @@ import httpx
 logger = logging.getLogger("ngapp.infra.mojaloop")
 
 KYC_TRANSFER_LIMITS = {0: 5000, 1: 50000, 2: 500000, 3: 10000000}
+
+
+def payment_scoped_key(prefix: str, entity_id: str, amount: str, currency: str,
+                       attempt_nonce: Optional[str] = None) -> str:
+    """PAY-9: idempotency keys bind the FULL payment intent (entity + amount +
+    currency + optional attempt nonce). Previously `prem-{policy_id}` /
+    `payout-{claim_id}` were reused across different amounts — a legitimate
+    second payment was either rejected by the switch (lost funds) or had no
+    replay protection at all."""
+    h = hashlib.sha256(
+        f"{entity_id}|{amount}|{currency}|{attempt_nonce or ''}".encode()
+    ).hexdigest()[:16]
+    return f"{prefix}-{entity_id}-{h}"
 
 
 class MojaloopClient:
@@ -81,25 +95,31 @@ class MojaloopClient:
 
     async def collect_premium_via_mobile_money(
         self, customer_phone: str, amount: str, currency: str,
-        kyc_level: int, policy_id: str,
+        kyc_level: int, policy_id: str, attempt_nonce: Optional[str] = None,
     ) -> dict:
+        key = payment_scoped_key("prem", policy_id, amount, currency, attempt_nonce)
         return await self.execute_transfer(
-            transfer_id=f"prem-{policy_id}-{time.time_ns()}",
+            transfer_id=f"{key}-{time.time_ns()}",
             payer_fsp="mobile-money-provider",
             payee_fsp=self._fsp_id,
             amount=amount,
             currency=currency,
             kyc_level=kyc_level,
-            idempotency_key=f"prem-{policy_id}",
+            idempotency_key=key,
         )
 
-    async def payout_claim(self, customer_phone: str, amount: str, currency: str, claim_id: str) -> dict:
+    async def payout_claim(self, customer_phone: str, amount: str, currency: str,
+                           claim_id: str, attempt_nonce: Optional[str] = None) -> dict:
+        # Amount-bound key: a legitimate partial/second payout for the same
+        # claim with a different amount gets a different key; an exact retry
+        # of the same payout replays safely.
+        key = payment_scoped_key("payout", claim_id, amount, currency, attempt_nonce)
         return await self.execute_transfer(
-            transfer_id=f"payout-{claim_id}-{time.time_ns()}",
-            payer_fsp=self._fsp_id,
+            transfer_id=f"{key}-{time.time_ns()}",
+            payer_fsp="mobile-money-provider",
             payee_fsp="mobile-money-provider",
             amount=amount,
             currency=currency,
             kyc_level=3,
-            idempotency_key=f"payout-{claim_id}",
+            idempotency_key=key,
         )
