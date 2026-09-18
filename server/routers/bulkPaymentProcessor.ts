@@ -1,6 +1,6 @@
 // Sprint 87: Upgraded from mock data to real DB queries — bulkPaymentProcessor
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { merchantPayouts } from "../../drizzle/schema";

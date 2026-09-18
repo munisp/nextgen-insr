@@ -14,7 +14,6 @@
  * TB-vs-PG divergence detection runs in the Go float-reconciler service; its
  * durable correction rows are surfaced via paymentReconciliation.
  */
-import { TRPCError } from "@trpc/server";
 import { desc, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
