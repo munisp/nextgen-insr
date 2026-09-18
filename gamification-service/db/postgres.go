@@ -719,6 +719,20 @@ func (p *Postgres) CheckReferralDailyLimit(ctx context.Context, referrerID strin
 	return count >= limit, nil
 }
 
+// CountDailyActions returns how many point awards of the given action the
+// user received today (AB-15: real daily-total enforcement, not per-request).
+func (p *Postgres) CountDailyActions(ctx context.Context, userID, action string) (int, error) {
+	var count int
+	err := p.Pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM point_transactions
+		WHERE user_id = $1 AND action = $2 AND created_at >= CURRENT_DATE
+	`, userID, action).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // ===== Rewards =====
 
 // InsertReward creates a reward catalog entry.

@@ -1,130 +1,137 @@
-"""Tests for liveness-detection-python-sdk service."""
+"""Tests for liveness-detection-python-sdk service (AB-16 rewrite).
+
+The previous suite asserted the vulnerable random-pass/fail behavior; these
+tests pin the new contract: real biometric input required, decisions delegated
+to the liveness-detection service, CSPRNG session ids, retry cap + lockout.
+"""
+import os
+import re
+
 import pytest
+
+os.environ["DEV_AUTH_BYPASS"] = "true"  # test env: skip bearer auth
+
 from fastapi.testclient import TestClient
+from src import main
 from src.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_sessions():
+    with main._session_lock:
+        main._sessions.clear()
+    yield
+
+
+def fake_downstream_completed(payload):
+    return {"session_id": payload["session_id"], "face_detected": True,
+            "challenge": "blink", "completed": True, "frames": 5}
+
+
+def fake_downstream_incomplete(payload):
+    return {"session_id": payload["session_id"], "face_detected": True,
+            "challenge": "blink", "completed": False, "frames": 2}
+
+
+def make_session(monkeypatch, downstream):
+    def _post(path, payload):
+        if path == "/challenge/start":
+            return {"session_id": "ds-abc", "challenge": payload["challenge"]}
+        return downstream(payload)
+    monkeypatch.setattr(main, "_downstream_post", _post)
+    resp = client.post("/api/v1/session/create")
+    assert resp.status_code == 200
+    return resp.json()["session_id"]
 
 
 # ── Health ──────────────────────────────────────────────────────────────────
 
 class TestHealth:
     def test_health_returns_200(self):
-        resp = client.get("/health")
-        assert resp.status_code == 200
+        assert client.get("/health").status_code == 200
 
     def test_health_contains_service_name(self):
-        data = client.get("/health").json()
-        assert data["service"] == "liveness-detection-python-sdk"
+        assert client.get("/health").json()["service"] == "liveness-detection-python-sdk"
 
-    def test_health_status_healthy(self):
-        assert client.get("/health").json()["status"] == "healthy"
+
+# ── Session Management ──────────────────────────────────────────────────────
+
+class TestSession:
+    def test_create_session_csprng_ids(self, monkeypatch):
+        s1 = make_session(monkeypatch, fake_downstream_incomplete)
+        s2 = make_session(monkeypatch, fake_downstream_incomplete)
+        assert re.fullmatch(r"LIV-[0-9a-f]{32}", s1), s1
+        assert s1 != s2
+
+    def test_create_session_shape(self, monkeypatch):
+        sid = make_session(monkeypatch, fake_downstream_incomplete)
+        data = client.post("/api/v1/session/create").json()
+        assert data["max_attempts"] == 3
+        assert data["timeout_seconds"] == 120
+        assert sid.startswith("LIV-")
 
 
 # ── Liveness Detection ─────────────────────────────────────────────────────
 
 class TestLivenessDetection:
-    def test_detect_liveness_returns_200(self):
-        resp = client.post("/api/v1/detect", json={"session_id": "LIV-001"})
-        assert resp.status_code == 200
+    def test_biometric_input_required(self, monkeypatch):
+        sid = make_session(monkeypatch, fake_downstream_incomplete)
+        resp = client.post("/api/v1/detect", json={"session_id": sid})
+        assert resp.status_code == 400
 
-    def test_detect_liveness_response_structure(self):
-        data = client.post("/api/v1/detect", json={"session_id": "LIV-001"}).json()
-        for field in ["session_id", "is_live", "confidence", "challenge_passed", "anti_spoof_score", "decision", "attempts_remaining"]:
-            assert field in data, f"Missing field: {field}"
+    def test_unknown_session_rejected(self):
+        resp = client.post("/api/v1/detect",
+                           json={"session_id": "LIV-nonexistent", "frame_base64": "AAAA"})
+        assert resp.status_code == 404
 
-    def test_detect_liveness_confidence_range(self):
-        data = client.post("/api/v1/detect", json={"session_id": "LIV-002"}).json()
-        assert 0.7 <= data["confidence"] <= 0.99
+    def test_pass_only_when_challenge_completes(self, monkeypatch):
+        sid = make_session(monkeypatch, fake_downstream_completed)
+        data = client.post("/api/v1/detect",
+                           json={"session_id": sid, "frame_base64": "AAAA"}).json()
+        assert data["decision"] == "pass"
+        assert data["is_live"] is True
 
-    def test_detect_liveness_anti_spoof_range(self):
-        data = client.post("/api/v1/detect", json={"session_id": "LIV-003"}).json()
-        assert 0.8 <= data["anti_spoof_score"] <= 0.99
+    def test_retry_until_cap_then_lockout(self, monkeypatch):
+        sid = make_session(monkeypatch, fake_downstream_incomplete)
+        last = None
+        for _ in range(3):
+            last = client.post("/api/v1/detect",
+                               json={"session_id": sid, "frame_base64": "AAAA"}).json()
+        assert last["decision"] == "fail"
+        assert last["attempts_remaining"] == 0
+        # 4th attempt: session is locked
+        resp = client.post("/api/v1/detect",
+                           json={"session_id": sid, "frame_base64": "AAAA"})
+        assert resp.status_code == 423
 
-    def test_detect_liveness_decision_values(self):
-        data = client.post("/api/v1/detect", json={"session_id": "LIV-004"}).json()
-        assert data["decision"] in ("pass", "retry", "fail")
+    def test_passed_session_cannot_be_replayed(self, monkeypatch):
+        sid = make_session(monkeypatch, fake_downstream_completed)
+        client.post("/api/v1/detect", json={"session_id": sid, "frame_base64": "AAAA"})
+        resp = client.post("/api/v1/detect", json={"session_id": sid, "frame_base64": "AAAA"})
+        assert resp.status_code == 423
 
-    def test_detect_liveness_session_id_preserved(self):
-        resp = client.post("/api/v1/detect", json={"session_id": "MY-SESSION-123"})
-        assert resp.json()["session_id"] == "MY-SESSION-123"
-
-    def test_detect_liveness_attemps_remaining_decreases(self):
-        r1 = client.post("/api/v1/detect", json={"session_id": "LIV-005", "attempt": 1}).json()
-        r2 = client.post("/api/v1/detect", json={"session_id": "LIV-005", "attempt": 3}).json()
-        assert r1["attempts_remaining"] > r2["attempts_remaining"]
-
-    def test_detect_liveness_is_live_boolean(self):
-        data = client.post("/api/v1/detect", json={"session_id": "LIV-006"}).json()
-        assert isinstance(data["is_live"], bool)
-
-    def test_detect_liveness_different_session_ids(self):
-        r1 = client.post("/api/v1/detect", json={"session_id": "LIV-007a"}).json()
-        r2 = client.post("/api/v1/detect", json={"session_id": "LIV-007b"}).json()
-        assert r1["session_id"] == "LIV-007a"
-        assert r2["session_id"] == "LIV-007b"
-
-    def test_detect_liveness_challenge_type_default(self):
-        resp = client.post("/api/v1/detect", json={"session_id": "LIV-008"})
-        assert resp.status_code == 200
-
-
-# ── Session Management ─────────────────────────────────────────────────────
-
-class TestSession:
-    def test_create_session_returns_200(self):
-        resp = client.post("/api/v1/session/create")
-        assert resp.status_code == 200
-
-    def test_create_session_has_session_id(self):
-        data = client.post("/api/v1/session/create").json()
-        assert "session_id" in data
-        assert data["session_id"].startswith("LIV-")
-
-    def test_create_session_has_challenges(self):
-        data = client.post("/api/v1/session/create").json()
-        assert "challenges" in data
-        assert len(data["challenges"]) > 0
-
-    def test_create_session_has_timeout(self):
-        data = client.post("/api/v1/session/create").json()
-        assert data["timeout_seconds"] == 120
-
-    def test_create_session_has_max_attempts(self):
-        data = client.post("/api/v1/session/create").json()
-        assert data["max_attempts"] == 3
-
-    def test_create_session_challenges_include_blink(self):
-        data = client.post("/api/v1/session/create").json()
-        assert "blink" in data["challenges"]
+    def test_downstream_outage_fails_closed(self, monkeypatch):
+        def boom(path, payload):
+            if path == "/challenge/start":
+                return {"session_id": "ds-x", "challenge": "blink"}
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail="liveness detection service unavailable")
+        monkeypatch.setattr(main, "_downstream_post", boom)
+        sid = client.post("/api/v1/session/create").json()["session_id"]
+        resp = client.post("/api/v1/detect", json={"session_id": sid, "frame_base64": "AAAA"})
+        assert resp.status_code == 503
 
 
-# ── Statistics ──────────────────────────────────────────────────────────────
+# ── Statistics (honest counters) ─────────────────────────────────────────────
 
 class TestStats:
-    def test_stats_returns_200(self):
-        assert client.get("/api/v1/stats").status_code == 200
-
-    def test_stats_has_total_sessions(self):
+    def test_stats_returns_real_counters(self, monkeypatch):
+        make_session(monkeypatch, fake_downstream_incomplete)
         data = client.get("/api/v1/stats").json()
-        assert "total_sessions_24h" in data
-        assert data["total_sessions_24h"] > 0
-
-    def test_stats_has_pass_rate(self):
-        data = client.get("/api/v1/stats").json()
-        assert "pass_rate" in data
-
-    def test_stats_pass_rate_range(self):
-        data = client.get("/api/v1/stats").json()
-        assert 0 <= data["pass_rate"] <= 1
-
-    def test_stats_has_avg_confidence(self):
-        data = client.get("/api/v1/stats").json()
-        assert "avg_confidence" in data
-
-    def test_stats_has_spoof_blocked(self):
-        data = client.get("/api/v1/stats").json()
-        assert "spoof_attempts_blocked" in data
+        assert data["active_sessions"] >= 1
+        assert "pass_rate" not in data  # no fabricated metrics
 
 
 # ── Error Handling ──────────────────────────────────────────────────────────
@@ -134,5 +141,4 @@ class TestErrorHandling:
         assert client.get("/api/v1/nonexistent").status_code == 404
 
     def test_detect_requires_session_id(self):
-        resp = client.post("/api/v1/detect", json={})
-        assert resp.status_code == 422
+        assert client.post("/api/v1/detect", json={}).status_code == 422
