@@ -58,7 +58,7 @@ export const customerOnboardingPipelineRouter = router({
           .from(customerOnboardingProgress)
           .where(eq(customerOnboardingProgress.userId, Number(userId)))
           .limit(1);
-        const currentStage = user ? (progress?.currentStage ?? "registration") : "registration";
+        const currentStage = (user ? (progress?.currentStage ?? "registration") : "registration") as (typeof STAGES)[number];
         const stageIndex = STAGES.indexOf(currentStage);
         return {
           userId,
@@ -223,11 +223,14 @@ export const customerOnboardingPipelineRouter = router({
           resource: "customer_onboarding",
           resourceId: input.userId,
           status: "success",
+          // NOTE (2026-02): undefined-valued metadata keys MUST be omitted —
+          // the audit-chain hash serializes undefined as null at write time
+          // while JSONB drops the key on read, which would break the chain.
           metadata: {
             agentCode: "system",
             fromStage,
             toStage: input.toStage,
-            notes: input.notes,
+            ...(input.notes !== undefined ? { notes: input.notes } : {}),
           },
         });
 
