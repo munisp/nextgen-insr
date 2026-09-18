@@ -56,6 +56,7 @@ import { agentKycRouter } from "../../../server/routers/agentKyc";
 import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
 import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
 import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
+import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboardingWizard";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -119,6 +120,8 @@ export const integrationRouter = router({
   agentOnboarding: agentOnboardingRouter,
   terminalLeasing: terminalLeasingRouter,
   agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
+  // H-wave: same mount path as production (routers.ts:845).
+  agentOnboardingWizard: agentOnboardingWizardRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

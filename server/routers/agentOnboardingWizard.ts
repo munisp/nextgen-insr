@@ -12,8 +12,9 @@ import {
 import {
   posTerminals,
 } from "../../drizzle/schema.additions";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { assertAgentActivationEligible } from "../lib/agentLifecycle";
 
 
 export const agentOnboardingWizardRouter = router({
@@ -136,21 +137,41 @@ export const agentOnboardingWizardRouter = router({
           : 0,
     };
   }),
-  approveAgent: protectedProcedure
+  // H-wave (adversarial verifier #1): this was a plain protectedProcedure —
+  // ANY authenticated user could activate ANY agent, bypassing every G3
+  // gate. Now: admin-only, durable verification evidence required
+  // (assertAgentActivationEligible), approver identity recorded.
+  approveAgent: adminProcedure
     .input(z.object({ agentId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const [agent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.id, input.agentId))
+          .limit(1);
+        if (!agent || agent.deletedAt) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        }
+        // Fail-closed: no verification evidence (phone OTP or approved KYC),
+        // no activation — same gate as every other activation path.
+        const evidence = await assertAgentActivationEligible(input.agentId);
         await db
           .update(agents)
-          .set({ isActive: true })
+          .set({ isActive: true, updatedAt: new Date() })
           .where(eq(agents.id, input.agentId));
         await db.insert(auditLog).values({
           action: "agent_onboarding_approved",
           resource: "agents",
           resourceId: String(input.agentId),
           status: "success",
-          metadata: {},
+          metadata: {
+            approverUserId: ctx.user?.id ?? null,
+            approverEmail: ctx.user?.email ?? null,
+            evidence,
+          },
         });
         return { success: true, agentId: input.agentId };
       } catch (error) {

@@ -151,8 +151,20 @@ export const agentKycRouter = router({
             .from(agents)
             .where(eq(agents.id, session.agentId))
             .limit(1);
+          // H-wave (adversarial verifier #2): the SoD check was SKIPPED when
+          // the subject agent's email was NULL — an approver could approve
+          // their own KYC by simply having no email on the agent record.
+          // Email is the only agent→user identity binding that exists in the
+          // schema, so when it is missing we cannot rule out self-approval:
+          // fail CLOSED with an honest error instead of silently allowing.
+          if (!subject?.email) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "Cannot approve: subject agent has no email on file, so separation-of-duties (self-approval) cannot be ruled out. Add the agent's email first.",
+            });
+          }
           if (
-            subject?.email &&
             ctx.user?.email &&
             subject.email.toLowerCase() === ctx.user.email.toLowerCase()
           ) {
