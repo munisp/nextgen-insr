@@ -5734,3 +5734,28 @@ export const offlineSyncConflicts = pgTable(
   })
 );
 export type OfflineSyncConflict = typeof offlineSyncConflicts.$inferSelect;
+
+// ─── F4 audit (NG-5/6): durable SMS delivery log (migration 0069) ───────────
+// Raw-SQL migration 0069 existed without this pgTable definition, so
+// drizzle-kit push never materialized it (CI measured 216, not 217).
+export const smsMessages = pgTable(
+  "sms_messages",
+  {
+    id: serial("id").primaryKey(),
+    recipient: varchar("recipient", { length: 32 }).notNull(),
+    body: text("body").notNull(),
+    provider: varchar("provider", { length: 32 }),
+    messageId: varchar("message_id", { length: 128 }),
+    status: varchar("status", { length: 16 }).default("queued").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    nextRetryAt: timestamp("next_retry_at"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    retryIdx: index("sms_msg_retry_idx").on(t.status, t.nextRetryAt),
+    providerIdIdx: index("sms_msg_provider_id_idx").on(t.provider, t.messageId),
+  })
+);
+export type SmsMessage = typeof smsMessages.$inferSelect;

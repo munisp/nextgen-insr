@@ -333,9 +333,15 @@ describe("Sprint 46: Data Integrity", () => {
     // four REAL top-level-schema tables: offline_sessions,
     // offline_sync_records, offline_sync_conflicts (migration 0068) and
     // sms_messages (migration 0069). All four are platform-schema tables in
-    // drizzle/schema.ts (nothing insureportal-side counted). Honest-count
-    // drift, not a weakening — the gate still counts information_schema at
-    // runtime; if CI measures differently, the measured number wins.
+    // drizzle/schema.ts (nothing insureportal-side counted). ROOT-CAUSE
+    // DISCLOSURE (CI job 105688982809 measured 216): 0069's sms_messages
+    // originally existed ONLY as raw SQL — its pgTable definition was
+    // missing from drizzle/schema.ts, so drizzle-kit push never
+    // materialized it (+3, not +4). The definition has been ADDED (append-
+    // only, matching 0069 columns), making 217 the honest measured count.
+    // Honest-count drift, not a weakening — the gate still counts
+    // information_schema at runtime; if CI measures differently, the
+    // measured number wins.
     expect(stats.totalTables).toBe(217);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
