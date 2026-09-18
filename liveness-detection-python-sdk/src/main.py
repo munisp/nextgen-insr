@@ -50,7 +50,6 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
-import random
 
 # ── Middleware Clients ─────────────────────────────────────────────────────
 import redis
@@ -203,10 +202,50 @@ def db_query(sql, params=None):
 app.middleware("http")(keycloak_auth_middleware)
 
 
+import secrets
+import threading
+import urllib.request
+import urllib.error
+
+# ── Real biometric liveness via the W5c liveness-detection service ───────────
+# The previous implementation accepted NO biometric input and returned a
+# RANDOM pass/fail with guessable timestamp session IDs and unlimited retries
+# (audit finding AB-16). All decisions now come from the real frame-processing
+# service; this SDK enforces CSPRNG session IDs, a retry cap, and lockout.
+LIVENESS_SERVICE_URL = os.environ.get("LIVENESS_SERVICE_URL", "http://localhost:8110")
+MAX_ATTEMPTS = 3
+DOWNSTREAM_TIMEOUT = 10
+
+_session_lock = threading.Lock()
+# local_session_id -> {downstream_id, attempts, locked, challenge}
+_sessions: dict = {}
+
+
+def _downstream_post(path: str, payload: dict) -> dict:
+    """POST to the real liveness service. Raises HTTPException(503) when it is
+    unavailable — fail-closed, never a local random verdict."""
+    req = urllib.request.Request(
+        f"{LIVENESS_SERVICE_URL}{path}",
+        data=_json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=DOWNSTREAM_TIMEOUT) as resp:
+            return _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:200]
+        raise HTTPException(status_code=e.code, detail=f"liveness service: {detail}")
+    except Exception as e:
+        logger.error(f"liveness service unreachable: {e}")
+        raise HTTPException(status_code=503, detail="liveness detection service unavailable")
+
+
 class LivenessRequest(BaseModel):
     session_id: str
     challenge_type: str = "blink"
     attempt: int = 1
+    frame_base64: Optional[str] = None
 
 class LivenessResult(BaseModel):
     session_id: str
@@ -223,27 +262,82 @@ def health():
 
 @app.post("/api/v1/detect", response_model=LivenessResult)
 def detect_liveness(req: LivenessRequest):
-    confidence = round(random.uniform(0.7, 0.99), 2)
-    anti_spoof = round(random.uniform(0.8, 0.99), 2)
-    is_live = confidence > 0.85 and anti_spoof > 0.80
-    decision = "pass" if is_live else "retry" if confidence > 0.6 else "fail"
+    # Biometric input is REQUIRED — no frame, no verdict.
+    if not req.frame_base64:
+        raise HTTPException(status_code=400, detail="frame_base64 biometric input is required")
+
+    with _session_lock:
+        sess = _sessions.get(req.session_id)
+        if sess is None:
+            raise HTTPException(status_code=404, detail="unknown session_id")
+        if sess["locked"]:
+            raise HTTPException(status_code=423, detail="session locked after repeated failures")
+        sess["attempts"] += 1
+        attempts = sess["attempts"]
+
+    result = _downstream_post("/challenge/frame", {
+        "session_id": sess["downstream_id"],
+        "frame_base64": req.frame_base64,
+    })
+
+    face_detected = bool(result.get("face_detected"))
+    completed = bool(result.get("completed"))
+    frames = int(result.get("frames", 0))
+
+    # Real decision: the challenge must complete on real frames. Confidence is
+    # derived from actual processed evidence, not randomness.
+    is_live = completed and face_detected
+    confidence = round(min(0.5 + 0.1 * frames, 0.99), 2) if face_detected else 0.0
+    attempts_remaining = max(0, MAX_ATTEMPTS - attempts)
+
+    if is_live:
+        decision = "pass"
+        with _session_lock:
+            sess["locked"] = True  # one-shot: a passed session cannot be replayed
+    elif attempts_remaining <= 0:
+        decision = "fail"
+        with _session_lock:
+            sess["locked"] = True  # retry cap reached → lockout
+    else:
+        decision = "retry"
+
     return LivenessResult(
         session_id=req.session_id, is_live=is_live, confidence=confidence,
-        challenge_passed=is_live, anti_spoof_score=anti_spoof,
-        decision=decision, attempts_remaining=max(0, 3 - req.attempt),
+        challenge_passed=is_live, anti_spoof_score=confidence,
+        decision=decision, attempts_remaining=attempts_remaining,
     )
 
 @app.post("/api/v1/session/create")
-def create_session():
+def create_session(challenge_type: str = "blink"):
+    # Start a REAL challenge session downstream and bind it to an
+    # unguessable CSPRNG local session id.
+    downstream = _downstream_post("/challenge/start", {"challenge": challenge_type})
+    session_id = f"LIV-{secrets.token_hex(16)}"
+    with _session_lock:
+        _sessions[session_id] = {
+            "downstream_id": downstream["session_id"],
+            "attempts": 0,
+            "locked": False,
+            "challenge": challenge_type,
+        }
     return {
-        "session_id": f"LIV-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "session_id": session_id,
         "challenges": ["blink", "turn_left", "turn_right"],
-        "timeout_seconds": 120, "max_attempts": 3,
+        "timeout_seconds": 120, "max_attempts": MAX_ATTEMPTS,
     }
 
 @app.get("/api/v1/stats")
 def get_stats():
-    return {"total_sessions_24h": 450, "pass_rate": 0.92, "avg_confidence": 0.88, "spoof_attempts_blocked": 12}
+    # Real counters derived from live session state — no fabricated numbers.
+    with _session_lock:
+        total = len(_sessions)
+        locked = sum(1 for s in _sessions.values() if s["locked"])
+        attempts = sum(s["attempts"] for s in _sessions.values())
+    return {
+        "active_sessions": total,
+        "locked_sessions": locked,
+        "total_frames_submitted": attempts,
+    }
 
 
 @app.on_event("startup")

@@ -116,6 +116,10 @@ describe("disputeRefund router (integration, real DB)", () => {
 
   it("velocity check: 6th refund in 30 days returns velocity_exceeded, count stays 5", async () => {
     const db = (await getDb())!;
+    // 2026-09-18 (F5/AB-19): velocity is now keyed on the authenticated user
+    // (initiatedByUserId) and the refund destination account, not the
+    // client-supplied customerId. Seeds therefore carry the new keys; the
+    // 6th-refund-denied + count-stays-5 semantics are unchanged.
     for (let i = 0; i < 5; i++) {
       await db.insert(refunds).values({
         ref: `REF-IT-VEL-${i}`,
@@ -128,6 +132,8 @@ describe("disputeRefund router (integration, real DB)", () => {
         category: "dispute_refund",
         status: "pending",
         method: "original_method",
+        destinationAccount: "0123456789",
+        initiatedByUserId: adminUser.id,
       });
     }
     expect(await refundCountFor(VELOCITY_CUSTOMER)).toBe(5);

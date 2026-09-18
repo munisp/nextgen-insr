@@ -25,7 +25,7 @@ import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
-import { tbCreateTransfer, tbGetAgentBalance, tbEnsureAgentAccount } from "../tbClient";
+import { tbCreateTransfer, tbGetAgentBalance, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
 
 const MIN_FLOAT = 5_000;
 const MAX_FLOAT = 5_000_000;
@@ -131,18 +131,28 @@ export const floatManagementRouter = router({
         });
       }
 
-      // Distributed lock to prevent concurrent top-ups
-      const lockKey = `float-topup:${input.agentId}`;
+      // PAY-7: ONE lock key per agent for ALL float mutations (top-up and
+      // withdraw previously used disjoint keys, so a top-up and a withdrawal
+      // raced and the absolute SET lost one update).
+      const lockKey = `float-ops:${input.agentId}`;
       const locked = await acquireLock(lockKey, 15_000);
       if (!locked) {
-        throw new TRPCError({ code: "CONFLICT", message: "Another top-up is in progress for this agent" });
+        throw new TRPCError({ code: "CONFLICT", message: "Another float operation is in progress for this agent" });
       }
 
       try {
-        // Idempotency check
+        // PAY-7 idempotency: the reference binds to (ref + amount). Replaying
+        // with the SAME amount returns the recorded effect; the same ref with
+        // a DIFFERENT amount is a loud CONFLICT, never a silent replay.
         const existing = await db.select().from(transactions)
           .where(eq(transactions.ref, input.reference)).limit(1);
         if (existing.length > 0) {
+          if (Number(existing[0]!.amount) !== input.amountNGN) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Reference '${input.reference}' was already used with amount ₦${existing[0]!.amount}. Refusing to re-execute with ₦${input.amountNGN}; submit with a new reference.`,
+            });
+          }
           return { idempotent: true, transaction: existing[0] };
         }
 
@@ -150,7 +160,7 @@ export const floatManagementRouter = router({
         await tbEnsureAgentAccount(agent.agentId);
 
         // TigerBeetle double-entry: sys-bank-reserve → float-{agentId}
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: "sys-bank-reserve",
           creditAccountId: `float-${agent.agentId}`,
           amount: Math.round(input.amountNGN * 100),
@@ -159,53 +169,71 @@ export const floatManagementRouter = router({
           ref: input.reference,
           txType: "Float Top-Up",
           agentId: agent.agentId,
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
-        // PostgreSQL update (authoritative)
-        const newBalance = currentBalance + input.amountNGN;
-        await db.update(agents)
-          .set({ premiumReserve: String(newBalance), updatedAt: new Date() })
-          .where(eq(agents.id, input.agentId));
+        // PAY-7/PAY-1: ALL PG effects commit or roll back as ONE unit; on any
+        // PG failure the committed TB leg is compensated (ref-REV). The
+        // balance update is an ATOMIC guarded increment — no absolute SET of
+        // a previously-read value, so a lost update is impossible even if the
+        // lock fails open.
+        const tx = await withTbCompensation("floatManagement.topUp", tbReq, () => db.transaction(async (txDb) => {
+          const credited = await txDb.update(agents)
+            .set({
+              premiumReserve: sql`CAST("premiumReserve" AS NUMERIC) + ${input.amountNGN}`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(agents.id, input.agentId),
+              sql`CAST("premiumReserve" AS NUMERIC) + ${input.amountNGN} <= ${MAX_FLOAT}`,
+            ))
+            .returning({ balance: agents.premiumReserve });
+          if (credited.length === 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Float would exceed maximum ₦${MAX_FLOAT.toLocaleString()}`,
+            });
+          }
 
-        // Record transaction
-        const [tx] = await db.insert(transactions).values({
-          ref: input.reference,
-          agentId: input.agentId,
-          type: "Float Transfer Received",
-          amount: String(input.amountNGN),
-          fee: "0",
-          commission: "0",
-          channel: ({ bank_transfer: "Internal", cash: "Cash", internal_transfer: "Internal" } as const)[input.source],
-          status: "success",
-          fraudScore: "0.00",
-          metadata: {
-            tbSyncStatus: tbResult ? "synced" : "pending",
-            source: input.source,
-            tbTransferId: tbResult?.id ?? null,
-            supervisorApproval: input.supervisorApproval ?? null,
-          },
-        }).returning();
-
-        // Audit log
-        await db.insert(auditLog).values({
-          action: "FLOAT_TOP_UP",
-          resource: "agent_float",
-          resourceId: String(input.agentId),
-          status: "success",
-          metadata: {
-            amountNGN: input.amountNGN,
-            newBalance,
+          const [txRow] = await txDb.insert(transactions).values({
             ref: input.reference,
-            tbTransferId: tbResult?.id ?? null,
-          },
-        }).catch(() => {});
+            agentId: input.agentId,
+            type: "Float Transfer Received",
+            amount: String(input.amountNGN),
+            fee: "0",
+            commission: "0",
+            channel: ({ bank_transfer: "Internal", cash: "Cash", internal_transfer: "Internal" } as const)[input.source],
+            status: "success",
+            fraudScore: "0.00",
+            metadata: {
+              tbSyncStatus: tbResult ? "synced" : "pending",
+              source: input.source,
+              tbTransferId: tbResult?.id ?? null,
+              supervisorApproval: input.supervisorApproval ?? null,
+            },
+          }).returning();
+
+          await txDb.insert(auditLog).values({
+            action: "FLOAT_TOP_UP",
+            resource: "agent_float",
+            resourceId: String(input.agentId),
+            status: "success",
+            metadata: {
+              amountNGN: input.amountNGN,
+              newBalance: Number(credited[0]!.balance),
+              ref: input.reference,
+              tbTransferId: tbResult?.id ?? null,
+            },
+          });
+          return { txRow, newBalance: Number(credited[0]!.balance) };
+        }));
 
         logger.info(`[FloatMgmt] Top-up ₦${input.amountNGN} for agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`);
 
         return {
           idempotent: false,
-          transaction: tx,
-          newBalanceNGN: newBalance,
+          transaction: tx.txRow,
+          newBalanceNGN: tx.newBalance,
           tbTransferId: tbResult?.id ?? null,
           tbSyncStatus: tbResult?.syncStatus ?? "pending",
         };
@@ -237,18 +265,29 @@ export const floatManagementRouter = router({
         });
       }
 
-      const lockKey = `float-withdraw:${input.agentId}`;
+      // PAY-7: same per-agent lock key as topUp — no concurrent mutation of
+      // the same float balance across procedures.
+      const lockKey = `float-ops:${input.agentId}`;
       const locked = await acquireLock(lockKey, 15_000);
-      if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Another operation is in progress" });
+      if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Another float operation is in progress" });
 
       try {
-        // Idempotency check
+        // PAY-7 idempotency: replay binds (ref + amount); same ref with a
+        // different amount is a loud CONFLICT.
         const existing = await db.select().from(transactions)
           .where(eq(transactions.ref, input.reference)).limit(1);
-        if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
+        if (existing.length > 0) {
+          if (Number(existing[0]!.amount) !== input.amountNGN) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Reference '${input.reference}' was already used with amount ₦${existing[0]!.amount}. Refusing to re-execute with ₦${input.amountNGN}; submit with a new reference.`,
+            });
+          }
+          return { idempotent: true, transaction: existing[0] };
+        }
 
         // TigerBeetle: float-{agentId} → sys-bank-reserve
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: `float-${agent.agentId}`,
           creditAccountId: "sys-bank-reserve",
           amount: Math.round(input.amountNGN * 100),
@@ -257,36 +296,55 @@ export const floatManagementRouter = router({
           ref: input.reference,
           txType: "Float Withdrawal",
           agentId: agent.agentId,
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
-        const newBalance = currentBalance - input.amountNGN;
-        await db.update(agents)
-          .set({ premiumReserve: String(newBalance), updatedAt: new Date() })
-          .where(eq(agents.id, input.agentId));
+        // PAY-7/PAY-1: single PG transaction with an ATOMIC guarded
+        // decrement (database enforces the MIN_FLOAT invariant, not the
+        // earlier read); on PG failure the committed TB leg is compensated.
+        const tx = await withTbCompensation("floatManagement.withdraw", tbReq, () => db.transaction(async (txDb) => {
+          const debited = await txDb.update(agents)
+            .set({
+              premiumReserve: sql`CAST("premiumReserve" AS NUMERIC) - ${input.amountNGN}`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(agents.id, input.agentId),
+              sql`CAST("premiumReserve" AS NUMERIC) - ${input.amountNGN} >= ${MIN_FLOAT}`,
+            ))
+            .returning({ balance: agents.premiumReserve });
+          if (debited.length === 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Withdrawal would bring float below minimum ₦${MIN_FLOAT.toLocaleString()}`,
+            });
+          }
 
-        const [tx] = await db.insert(transactions).values({
-          ref: input.reference,
-          agentId: input.agentId,
-          type: "Float Transfer",
-          amount: String(input.amountNGN),
-          fee: "0",
-          commission: "0",
-          channel: "Internal",
-          status: "success",
-          fraudScore: "0.00",
-          metadata: {
-            tbSyncStatus: tbResult ? "synced" : "pending", reason: input.reason, tbTransferId: tbResult?.id ?? null },
-        }).returning();
+          const [txRow] = await txDb.insert(transactions).values({
+            ref: input.reference,
+            agentId: input.agentId,
+            type: "Float Transfer",
+            amount: String(input.amountNGN),
+            fee: "0",
+            commission: "0",
+            channel: "Internal",
+            status: "success",
+            fraudScore: "0.00",
+            metadata: {
+              tbSyncStatus: tbResult ? "synced" : "pending", reason: input.reason, tbTransferId: tbResult?.id ?? null },
+          }).returning();
 
-        await db.insert(auditLog).values({
-          action: "FLOAT_WITHDRAWAL",
-          resource: "agent_float",
-          resourceId: String(input.agentId),
-          status: "success",
-          metadata: { amountNGN: input.amountNGN, newBalance, reason: input.reason },
-        }).catch(() => {});
+          await txDb.insert(auditLog).values({
+            action: "FLOAT_WITHDRAWAL",
+            resource: "agent_float",
+            resourceId: String(input.agentId),
+            status: "success",
+            metadata: { amountNGN: input.amountNGN, newBalance: Number(debited[0]!.balance), reason: input.reason },
+          });
+          return { txRow, newBalance: Number(debited[0]!.balance) };
+        }));
 
-        return { idempotent: false, transaction: tx, newBalanceNGN: newBalance, tbTransferId: tbResult?.id ?? null };
+        return { idempotent: false, transaction: tx.txRow, newBalanceNGN: tx.newBalance, tbTransferId: tbResult?.id ?? null };
       } finally {
         await releaseLock(lockKey);
       }

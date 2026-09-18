@@ -16,6 +16,36 @@ MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 ALIAS="insureportal"
 
+# ── OPS-12: Fail-loud on default root credentials in production ──────────────
+# minioadmin/minioadmin is the publicly-known MinIO default. Running this
+# bootstrap against a default-cred server in production would leave the whole
+# lakehouse (incl. the WORM audit bucket) owned by a guessable login.
+APP_ENV="${APP_ENV:-${NODE_ENV:-development}}"
+if [[ "${APP_ENV}" == "production" ]]; then
+  if [[ "${MINIO_ACCESS_KEY}" == "minioadmin" || "${MINIO_SECRET_KEY}" == "minioadmin" ]]; then
+    echo "[MinIO] ❌ FATAL: default MinIO credentials (minioadmin) detected in production." >&2
+    echo "         Set MINIO_ACCESS_KEY / MINIO_SECRET_KEY to rotated, non-default values." >&2
+    exit 1
+  fi
+  if [[ -z "${MINIO_ACCESS_KEY}" || -z "${MINIO_SECRET_KEY}" ]]; then
+    echo "[MinIO] ❌ FATAL: MINIO_ACCESS_KEY / MINIO_SECRET_KEY must be explicitly set in production." >&2
+    exit 1
+  fi
+fi
+
+# ── OPS-1: WORM (object lock + retention) configuration for the audit bucket ─
+# Object lock can only be enabled AT BUCKET CREATION TIME (mc mb --with-lock).
+# AUDIT_RETENTION_MODE: governance (default; admins with special perms may
+#   shorten) or compliance (absolute — not even root can delete before expiry).
+# AUDIT_RETENTION_DAYS: NAICOM/CBN 7-year retention = 2555 days (default).
+AUDIT_BUCKET="insureportal-audit-logs"
+AUDIT_RETENTION_MODE="${AUDIT_RETENTION_MODE:-governance}"
+AUDIT_RETENTION_DAYS="${AUDIT_RETENTION_DAYS:-2555}"
+case "${AUDIT_RETENTION_MODE}" in
+  governance|compliance) ;;
+  *) echo "[MinIO] ❌ FATAL: AUDIT_RETENTION_MODE must be 'governance' or 'compliance' (got '${AUDIT_RETENTION_MODE}')" >&2; exit 1 ;;
+esac
+
 echo "[MinIO] Configuring mc alias → ${MINIO_ENDPOINT}"
 mc alias set "${ALIAS}" "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4
 
@@ -37,8 +67,16 @@ for BUCKET in "${BUCKETS[@]}"; do
   if mc ls "${ALIAS}/${BUCKET}" &>/dev/null; then
     echo "[MinIO] Bucket already exists: ${BUCKET}"
   else
-    mc mb "${ALIAS}/${BUCKET}"
-    echo "[MinIO] Created bucket: ${BUCKET}"
+    if [[ "${BUCKET}" == "${AUDIT_BUCKET}" ]]; then
+      # OPS-1: object lock MUST be enabled at creation time — this is what
+      # makes the audit bucket actually WORM. A plain `mc mb` bucket can
+      # never have retention enforced afterwards.
+      mc mb --with-lock "${ALIAS}/${BUCKET}"
+      echo "[MinIO] Created bucket WITH OBJECT LOCK (WORM): ${BUCKET}"
+    else
+      mc mb "${ALIAS}/${BUCKET}"
+      echo "[MinIO] Created bucket: ${BUCKET}"
+    fi
   fi
 done
 
@@ -55,10 +93,24 @@ for BUCKET in "${VERSIONED_BUCKETS[@]}"; do
   echo "[MinIO] Versioning enabled: ${BUCKET}"
 done
 
-# ── Set object lock (WORM) on audit logs ─────────────────────────────────────
-# Note: Object lock must be enabled at bucket creation time.
-# Re-create with lock if needed:
-# mc mb --with-lock "${ALIAS}/insureportal-audit-logs"
+# ── OPS-1: Enforce retention (WORM) on the audit bucket ─────────────────────
+# `mc retention set` FAILS LOUDLY if the bucket was created without object
+# lock — that is the desired behaviour: a non-WORM audit bucket is a
+# deployment error, not a warning.
+if mc retention set --default "${AUDIT_RETENTION_MODE}" "${AUDIT_RETENTION_DAYS}d" "${ALIAS}/${AUDIT_BUCKET}"; then
+  echo "[MinIO] ✅ WORM retention set: ${AUDIT_BUCKET} (${AUDIT_RETENTION_MODE}, ${AUDIT_RETENTION_DAYS}d)"
+else
+  echo "[MinIO] ❌ FATAL: could not set retention on ${AUDIT_BUCKET}." >&2
+  echo "         The bucket exists but was created WITHOUT object lock." >&2
+  echo "         Repair (one-time, migrates existing objects):" >&2
+  echo "           1. mc mirror ${ALIAS}/${AUDIT_BUCKET} /tmp/audit-migration" >&2
+  echo "           2. mc rb --force ${ALIAS}/${AUDIT_BUCKET}" >&2
+  echo "           3. mc mb --with-lock ${ALIAS}/${AUDIT_BUCKET}" >&2
+  echo "           4. mc mirror /tmp/audit-migration ${ALIAS}/${AUDIT_BUCKET}" >&2
+  echo "           5. re-run this script" >&2
+  exit 1
+fi
+mc retention info "${ALIAS}/${AUDIT_BUCKET}" || true
 
 # ── Set lifecycle policies ────────────────────────────────────────────────────
 # Transactions: archive after 90 days, delete after 7 years (CBN compliance)

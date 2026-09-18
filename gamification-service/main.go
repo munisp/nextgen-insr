@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -108,6 +110,33 @@ func main() {
 	logger.Info("Server exited properly")
 }
 
+// serviceAuthMiddleware requires a bearer token for all grouped routes.
+// Fail-closed: if GAMIFICATION_SERVICE_TOKEN is unset, production answers 503.
+// DEV_AUTH_BYPASS=true is honoured only outside production.
+func serviceAuthMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			token := os.Getenv("GAMIFICATION_SERVICE_TOKEN")
+			if token == "" {
+				logger.Error("auth misconfigured: GAMIFICATION_SERVICE_TOKEN unset")
+				writeError(w, http.StatusServiceUnavailable, "authentication not configured", logger)
+				return
+			}
+			auth := r.Header.Get("Authorization")
+			if !strings.HasPrefix(auth, "Bearer ") ||
+				subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, "Bearer ")), []byte(token)) != 1 {
+				writeError(w, http.StatusUnauthorized, "invalid or missing bearer token", logger)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.Handler {
 	r := chi.NewRouter()
 
@@ -129,6 +158,9 @@ func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logg
 	r.Get("/live", livenessHandler(logger))
 
 	r.Group(func(r chi.Router) {
+		// AB-15: all mutating / points-moving endpoints require authentication.
+		// Service-to-service bearer token, fail-closed in production.
+		r.Use(serviceAuthMiddleware(logger))
 		// Points
 		r.Get("/api/v1/profile/{userId}", getProfileHandler(pg, redis, logger))
 		r.Post("/api/v1/points/award", awardPointsHandler(pg, redis, logger))
@@ -290,15 +322,25 @@ func awardPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 			return
 		}
 
-		// Look up award rule
+		// Look up award rule — the SERVER decides the points for the action.
 		rule, ok := pointAwardRules[req.Action]
 		if !ok || !rule.Enabled {
 			writeError(w, http.StatusBadRequest, "unknown or disabled action: "+req.Action, logger)
 			return
 		}
 
-		// Anti-gaming: daily limit check
-		if req.Amount > rule.Limit {
+		// AB-15: points are server-computed from the rule; any client-supplied
+		// amount is ignored (previously the client could award arbitrary points).
+		points := rule.Points
+
+		// AB-15: real daily limit — count today's awards for this user+action
+		// instead of comparing a single request's amount against the limit.
+		todayCount, err := pg.CountDailyActions(r.Context(), req.UserID, req.Action)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to check daily limit", logger)
+			return
+		}
+		if todayCount >= rule.Limit {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("max %d %s(s) per day allowed", rule.Limit, req.Action), logger)
 			return
 		}
@@ -325,8 +367,8 @@ func awardPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 			}
 		}
 
-		// Award points
-		tx, err := pg.AwardPoints(r.Context(), req.UserID, req.Amount, models.PointSource(req.Action), req.Action, generateID(), req.Metadata)
+		// Award points (server-computed amount)
+		tx, err := pg.AwardPoints(r.Context(), req.UserID, points, models.PointSource(req.Action), req.Action, generateID(), req.Metadata)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to award points", logger)
 			return
@@ -346,7 +388,7 @@ func awardPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		result := map[string]any{
 			"user_id":                req.UserID,
 			"action":                 req.Action,
-			"points_awarded":         req.Amount,
+			"points_awarded":         points,
 			"new_total":              tx.Balance,
 			"redeemable_value_naira": float64(tx.Balance) * 0.5,
 		}

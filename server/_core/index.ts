@@ -15,6 +15,7 @@
 
 import "dotenv/config";
 import crypto from "crypto";
+import type { EventEmitter } from "events";
 // NOTE: ../temporal-worker, ../tbClient and ../fluvio are imported lazily
 // inside startServer()'s listen callback. They pull in heavyweight optional
 // infra clients (protobufjs-based Temporal codecs etc.) that are only needed
@@ -753,6 +754,7 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
   // Used by Kubernetes readinessProbe to gate traffic routing.
   app.get("/api/ready", async (_req, res) => {
     const checks: Record<string, boolean> = {};
+    const degradedNote: Record<string, string> = {};
     // Check PostgreSQL
     try {
       const { getDb } = await import("../db");
@@ -781,10 +783,80 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
       checks.tigerbeetle = await tbIsHealthy();
     } catch { checks.tigerbeetle = false; }
 
-    const allReady = Object.values(checks).every(Boolean);
-    res.status(allReady ? 200 : 503).json({
-      ready: allReady,
+    // ── OPS-9: additional dependency probes (Kafka, MinIO, Temporal, Keycloak)
+    // These report into `degraded` — a failure marks the pod degraded but only
+    // CRITICAL deps (postgres/redis/tigerbeetle) gate traffic by default.
+    // Promote any probe to critical via READY_CRITICAL_DEPS="kafka,minio,...".
+    const degraded: string[] = [];
+    const httpProbe = async (url: string, timeoutMs = 2000): Promise<boolean> => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        const resp = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(t);
+        return resp.ok;
+      } catch { return false; }
+    };
+    const tcpProbe = async (host: string, port: number, timeoutMs = 2000): Promise<boolean> => {
+      try {
+        const net = await import("node:net");
+        return await new Promise<boolean>(resolve => {
+          const sock = net.connect({ host, port, timeout: timeoutMs });
+          sock.once("connect", () => { sock.destroy(); resolve(true); });
+          sock.once("timeout", () => { sock.destroy(); resolve(false); });
+          sock.once("error", () => { sock.destroy(); resolve(false); });
+        });
+      } catch { return false; }
+    };
+
+    // Kafka (Redpanda/Kafka admin HTTP endpoint; skipped when eventing disabled)
+    if (process.env.KAFKA_ENABLED === "false") {
+      checks.kafka = true; // intentionally disabled
+    } else {
+      const kafkaAdmin = process.env.KAFKA_ADMIN_URL ?? "http://redpanda:9644";
+      checks.kafka = await httpProbe(`${kafkaAdmin}/v1/cluster`);
+    }
+    // MinIO / S3
+    checks.minio = await httpProbe(
+      `${process.env.MINIO_ENDPOINT ?? "http://minio:9000"}/minio/health/live`
+    );
+    // Temporal (gRPC TCP reachability; skipped when Temporal not configured)
+    if (process.env.TEMPORAL_ADDRESS) {
+      const [host, port] = process.env.TEMPORAL_ADDRESS.split(":");
+      checks.temporal = await tcpProbe(host, Number(port ?? 7233));
+    } else {
+      checks.temporal = true; // in-process/optional — nothing to probe
+      degradedNote.temporal = "not configured (node-cron fallback active)";
+    }
+    // Keycloak (OIDC discovery doc)
+    if (process.env.KEYCLOAK_URL) {
+      checks.keycloak = await httpProbe(
+        `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM ?? "master"}/.well-known/openid-configuration`
+      );
+    } else {
+      checks.keycloak = process.env.NODE_ENV === "production" ? false : true;
+      if (process.env.NODE_ENV === "production")
+        degradedNote.keycloak = "KEYCLOAK_URL not configured in production";
+    }
+
+    const criticalDeps = new Set(
+      (process.env.READY_CRITICAL_DEPS ?? "postgres,redis,tigerbeetle")
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean)
+    );
+    for (const [dep, ok] of Object.entries(checks)) {
+      if (!ok && !criticalDeps.has(dep)) degraded.push(dep);
+    }
+    const criticalReady = [...criticalDeps].every(dep => checks[dep] !== false);
+    const allReady = criticalReady && degraded.length === 0;
+    res.status(criticalReady ? 200 : 503).json({
+      ready: criticalReady,
+      status: allReady ? "ready" : criticalReady ? "degraded" : "not_ready",
       checks,
+      degraded,
+      degradedNotes: degradedNote,
+      criticalDeps: [...criticalDeps],
       timestamp: new Date().toISOString(),
     });
   });
@@ -841,7 +913,7 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     const onAlert = (alert: unknown) => {
       res.write(`data: ${JSON.stringify(alert)}\n\n`);
     };
-    let fraudAlertBus: any;
+    let fraudAlertBus: EventEmitter | undefined;
     import("../lib/fraudDetectionEngine")
       .then(mod => {
         fraudAlertBus = mod.fraudAlertBus;
@@ -932,73 +1004,10 @@ async function startServer() {
   });
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────────
-  let shuttingDown = false;
-
-  // P3-3: Enhanced graceful shutdown with connection draining, pool cleanup, and health flip
-  async function gracefulShutdown(signal: string) {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    const shutdownStart = Date.now();
-    logger.info(`[Server] Received ${signal}. Starting graceful shutdown…`);
-
-    // Phase 0: Stop background workers
-    logger.info("[Server] Phase 0: Stopping background workers…");
-    stopArchivalCronWorker();
-
-    // Phase 1: Stop accepting new connections (health checks return 503)
-    logger.info("[Server] Phase 1: Stopping new connections…");
-
-    // Phase 2: Close HTTP server (drain in-flight requests)
-    logger.info("[Server] Phase 2: Draining in-flight HTTP requests…");
-    server.close(async err => {
-      if (err) {
-        logger.error("[Server] Error during HTTP shutdown:: " + String(err));
-      }
-      logger.info("[Server] HTTP server closed.");
-
-      // Phase 3: Close database connection pool
-      logger.info("[Server] Phase 3: Closing database connection pool…");
-      try {
-        const { getPool } = await import("../db");
-        const pool = await getPool();
-        if (pool) {
-          await pool.end();
-          logger.info("[Server] Database pool closed.");
-        }
-      } catch (e) {
-        logger.error("[Server] Error closing DB pool:: " + e);
-      }
-
-      // Phase 4: Close Redis connections
-      logger.info("[Server] Phase 4: Closing Redis connections…");
-      try {
-        const { getRedisClient } = await import("../lib/redisClient");
-        const redis = getRedisClient();
-        if (redis) {
-          await redis.quit();
-          logger.info("[Server] Redis connection closed.");
-        }
-      } catch (e) {
-        logger.error("[Server] Error closing Redis:: " + e);
-      }
-
-      const elapsed = Date.now() - shutdownStart;
-      logger.info(
-        `[Server] Graceful shutdown complete in ${elapsed}ms. Exiting.`
-      );
-      process.exit(0);
-    });
-
-    // Force exit after 30 seconds if connections don't drain
-    setTimeout(() => {
-      const elapsed = Date.now() - shutdownStart;
-      logger.error(`[Server] Forced exit after ${elapsed}ms (30s timeout).`);
-      process.exit(1);
-    }, 30_000).unref();
-  }
-
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  // OPS-10: SIGTERM/SIGINT handling lives ONLY in server/lib/gracefulShutdown.ts
+  // (registered above via setupGracefulShutdown(server)). A second competing
+  // handler used to live here with a different timeout and could process.exit
+  // before the other path finished draining — removed.
 
   // SIGHUP — zero-downtime mTLS certificate rotation
   process.on("SIGHUP", () => {
@@ -1046,3 +1055,4 @@ if (isDirectRun) {
     process.exit(1);
   });
 }
+

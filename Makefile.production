@@ -128,16 +128,25 @@ kafka-topics:
 	@echo "==> Kafka topics created."
 
 # ── Database ──────────────────────────────────────────────────────────────────
+# OPS-2: db-migrate is wired to the backup-gated safe-migration script.
+# `pnpm db:push` (drizzle-kit push) is NOT a deploy path anymore: it diffs
+# live schema and can apply destructive changes outside the reviewed journal.
+# Requires: DATABASE_URL (or POSTGRES_URL), BACKUP_GPG_RECIPIENT or
+# BACKUP_ENCRYPTION_KEY (encrypted pre-migration backup — OPS-3/OPS-4).
 db-migrate:
-	@echo "==> Running Drizzle migrations..."
-	cd /app && pnpm db:push
+	@echo "==> Running backup-gated safe migration (scripts/db-migrate-safe.sh)..."
+	DATABASE_URL="$${DATABASE_URL:-$${POSTGRES_URL}}" bash scripts/db-migrate-safe.sh
 
 db-backup:
-	@echo "==> Backing up PostgreSQL..."
+	@echo "==> Backing up PostgreSQL (GPG-encrypted; set BACKUP_GPG_RECIPIENT or BACKUP_ENCRYPTION_KEY)..."
+	@mkdir -p backups && chmod 700 backups
 	$(COMPOSE_PROD) exec postgres pg_dump \
 	  -U $${POSTGRES_USER} $${POSTGRES_DB} \
-	  | gzip > backups/insureportal-$$(date +%Y%m%d-%H%M%S).sql.gz
-	@echo "==> Backup complete."
+	  | gzip | gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+	      --passphrase "$${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY for encrypted backups}" \
+	  > backups/insureportal-$$(date +%Y%m%d-%H%M%S).sql.gz.gpg
+	@chmod 600 backups/insureportal-*.sql.gz.gpg
+	@echo "==> Encrypted backup complete."
 
 # ── TLS certificates ──────────────────────────────────────────────────────────
 cert-init:

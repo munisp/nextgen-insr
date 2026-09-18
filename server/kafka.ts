@@ -25,6 +25,10 @@ import type { Producer, Consumer} from "kafkajs";
 import { Kafka, logLevel, CompressionTypes } from "kafkajs";
 
 import { logger } from './_core/logger';
+import {
+  buildDlqEnvelope,
+  RETRY_COUNT_HEADER,
+} from "./lib/kafkaDlqEnvelope";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -152,15 +156,61 @@ export async function kafkaConsume(
     await consumer.subscribe({ topic, fromBeginning: false });
 
     await consumer.run({
-      eachMessage: async ({ message }) => {
+      // OPS-5: autoCommit stays enabled ONLY because handler failures are no
+      // longer silent — every failure is routed to the topic's DLQ with the
+      // unified envelope (retryCount carried, poison messages exhaust
+      // retries in kafka-dlq-consumer and are persisted as unrecoverable).
+      eachMessage: async ({ topic: msgTopic, partition, message }) => {
         try {
           const key = message.key?.toString() ?? "";
           const raw = message.value?.toString() ?? "{}";
           const value = JSON.parse(raw) as Record<string, unknown>;
           await handler(key, value);
         } catch (err) {
-          logger.warn(`[Kafka] Handler error for topic ${topic}:: ` + (err as Error).message
+          const errorMessage = (err as Error).message;
+          logger.error(
+            `[Kafka] Handler error for topic ${topic} — routing to DLQ:: ` +
+              errorMessage
           );
+          // Route the failed message to the DLQ instead of dropping it.
+          const { value: dlqValue, envelope } = buildDlqEnvelope({
+            message,
+            sourceTopic: msgTopic ?? topic,
+            partition: partition ?? 0,
+            error: errorMessage,
+          });
+          const prod = await getProducer();
+          if (prod) {
+            try {
+              await prod.send({
+                topic: `${msgTopic ?? topic}.dlq`,
+                messages: [
+                  {
+                    key: message.key,
+                    value: dlqValue,
+                    headers: {
+                      "x-original-topic": msgTopic ?? topic,
+                      [RETRY_COUNT_HEADER]: String(envelope.retryCount),
+                    },
+                  },
+                ],
+              });
+              logger.info(
+                `[Kafka] Failed message routed to ${msgTopic ?? topic}.dlq (retryCount=${envelope.retryCount})`
+              );
+            } catch (dlqErr) {
+              // Fail LOUD: the message is about to be committed with no DLQ
+              // copy — this must page, not warn.
+              logger.error(
+                `[Kafka] CRITICAL: DLQ publish failed for ${topic} — message will be lost on commit:: ` +
+                  (dlqErr as Error).message
+              );
+            }
+          } else {
+            logger.error(
+              `[Kafka] CRITICAL: no producer available — failed message on ${topic} dropped without DLQ route`
+            );
+          }
         }
       },
     });

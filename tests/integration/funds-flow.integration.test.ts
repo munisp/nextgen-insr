@@ -174,12 +174,22 @@ describe("funds-flow integrity (integration, real DB)", () => {
   // ── 2. Idempotency: same key + DIFFERENT payload → explicit rejection ──────
   it("refund conflict: same key + different payload rejected with CONFLICT, nothing written", async () => {
     const caller = callerFor(adminUser);
-    const r1 = await caller.disputeRefund.initiateRefund({ ...refundInput, idempotencyKey: REFUND_KEY_CONFLICT });
+    // PAY-2: distinct disputeId per scenario — one ACTIVE refund per dispute
+    // is now enforced (double-refund block), so scenarios cannot share 5001.
+    // customerId offset: the ±₦100/24h duplicate rule (PAY-2, now really
+    // enforced) would otherwise see test 1's ₦2,500 refund for REFUND_CUSTOMER.
+    // 2026-09-18 (F5/AB-19): the duplicate rule is now keyed on the refund
+    // DESTINATION account, so this scenario also uses its own accountNumber.
+    // The CONFLICT-on-different-payload invariant is unchanged, asserted below.
+    const r1 = await caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: 5002, customerId: REFUND_CUSTOMER + 50, accountNumber: "0123456790", idempotencyKey: REFUND_KEY_CONFLICT });
     expect(r1.success).toBe(true);
 
     await expectTrpcError(
       caller.disputeRefund.initiateRefund({
         ...refundInput,
+        disputeId: 5002,
+        customerId: REFUND_CUSTOMER + 50,
+        accountNumber: "0123456790",
         amount: 9999, // different payload, same key
         idempotencyKey: REFUND_KEY_CONFLICT,
       }),
@@ -194,7 +204,7 @@ describe("funds-flow integrity (integration, real DB)", () => {
     const caller = callerFor(adminUser);
     const results = await Promise.all(
       Array.from({ length: 8 }, () =>
-        caller.disputeRefund.initiateRefund({ ...refundInput, idempotencyKey: REFUND_KEY_PARALLEL })
+        caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: 5003, customerId: REFUND_CUSTOMER + 100, accountNumber: "0123456791", idempotencyKey: REFUND_KEY_PARALLEL })
       )
     );
     const refundIds = new Set(

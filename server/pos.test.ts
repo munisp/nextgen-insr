@@ -20,6 +20,13 @@
  * Tests: agent auth, transaction creation, loyalty, fraud, chat, audit log
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// AUTH-16: revocation checks are fail-CLOSED by default in every environment.
+// This suite mocks `jose` (see below) and has no Redis, so it explicitly opts
+// into the non-production demo flag — exactly the declared escape hatch, not a
+// silent bypass. Revocation behavior itself is covered in auth-f3.test.ts.
+process.env.AUTH_REVOCATION_FAIL_OPEN_DEMO = "true";
+
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 

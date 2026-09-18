@@ -18,6 +18,7 @@ import { z } from "zod";
 import { journeyExecutions, journeyStepEvents, journeySchedules } from "../../drizzle/schema.journeys";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
 
 
@@ -354,6 +355,9 @@ export const insuranceJourneyOrchestratorV2Router = router({
     return { success: true, workflowId, runId, journeyId: "J02" };
   }),
   triggerJ03: protectedProcedure.input(J03Schema).mutation(async ({ input, ctx }) => {
+    // INS-2/23: validate the incident date against the REAL policy period
+    // before starting the claims journey workflow.
+    await assertClaimIncidentValid(input.policyId, input.incidentDate);
     const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", input, ctx.user.id, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J03" };
   }),

@@ -79,6 +79,9 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   "transactions.initiateTransfer": "transfer",
   "transactions.processPayment": "transfer",
   "transactions.reverseTransaction": "reversal",
+  "transactions.reverse": "reversal",
+  "transactions.approveReversal": "reversal",
+  "transactions.rejectReversal": "reversal",
   // Float
   "floatManagement.topUp": "float_topup",
   "floatManagement.debit": "float_debit",
@@ -87,20 +90,35 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   "agentFloatTransfer.approve": "float_topup",
   "agentBanking.processTransaction": "transfer",
   "agentBanking.topUpFloat": "float_topup",
+  "agentBanking.requestTopUp": "float_topup",
   // Premiums
   "insuranceWorkflows.collectPremium": "premium_collect",
   "insuranceWorkflows.bindPolicy": "premium_collect",
+  "insuranceWorkflows.payPremium": "premium_collect",
   "insurancePolicyQuoteManager.purchase": "premium_collect",
   "premiumTopUp.process": "premium_collect",
+  "premiumTopUp.topUp": "premium_collect",
   // Claims
   "insuranceWorkflows.settleClaimPayment": "claim_settle",
   "insuranceWorkflows.approveClaim": "claim_settle",
+  "insuranceWorkflows.adjudicateClaim": "claim_settle",
+  "insuranceWorkflows.cancelPolicy": "refund",
   "disputeRefund.processRefund": "refund",
+  "disputeRefund.initiateRefund": "refund",
   // Commissions
   "commissionPayouts.process": "commission_pay",
   "commissionPayouts.approve": "commission_pay",
   "commissionPayouts.reject": "commission_pay",
   "commissionEngine.payout": "commission_pay",
+  "commissionEngine.approvePayout": "commission_pay",
+  "commissionEngine.triggerBatchPayout": "commission_pay",
+  "commissionEngine.initiateIlpTransfer": "transfer",
+  "commissionEngine.updateTier": "billing_record",
+  "commissionEngine.createTier": "billing_record",
+  "commissionEngine.deleteTier": "billing_record",
+  "commissionEngine.updateSplit": "billing_record",
+  "commissionEngine.createSplit": "billing_record",
+  "commissionEngine.triggerSnapshot": "billing_record",
   // Merchant payout settlement (DD-AUTH: wired onto financialProcedure)
   "merchantPayoutSettlement.initiatePayout": "transfer",
   "merchantPayoutSettlement.approvePayout": "commission_pay",
@@ -113,26 +131,35 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   // Billing
   "billingLedger.record": "billing_record",
   "billingLedger.reconcile": "billing_reconcile",
+  "billingLedger.recordSplit": "billing_record",
   // Airtime/Bills
   "airtimeVending.vend": "transfer",
   "billPayments.pay": "transfer",
   // Remittance
   "remittance.initiate": "transfer",
   "crossBorderRemittanceHub.send": "transfer",
+  "crossBorderRemittanceHub.initiateTransfer": "transfer",
   // Merchant
   "merchantPayments.process": "transfer",
+  "merchantPayments.pay": "transfer",
   "splitPayments.process": "transfer",
+  "splitPayments.createSplit": "transfer",
   // Mobile Money
   "mobileMoney.cashIn": "transfer",
   "mobileMoney.cashOut": "transfer",
   // Reversals
   "transactionReversalWorkflow.initiateReversal": "reversal",
   "transactionReversalWorkflow.executeReversal": "reversal",
+  "transactionReversalWorkflow.create": "reversal",
+  "transactionReversalWorkflow.review": "reversal",
+  "transactionReversalWorkflow.execute": "reversal",
   // Reinsurance
   "reinsuranceTreaty.transferPremium": "billing_record",
+  "insuranceWorkflows.cedePolicyToTreaty": "billing_record",
   // Loan
   "agentLoanFacility.disburse": "transfer",
   "agentLoanFacility.repay": "transfer",
+  "agentLoanFacility.applyLoan": "transfer",
 };
 
 // ── Permify Check Helper ───────────────────────────────────────────────────────
@@ -214,7 +241,7 @@ async function checkFinancialPermission(
  * this middleware is already revocation-clean.
  */
 export const financialProcedure = protectedProcedure.use(
-  async ({ ctx, next, path }) => {
+  async ({ ctx, next, path, type }) => {
     const user = ctx.user;
     if (!user) {
       throw new TRPCError({
@@ -223,8 +250,25 @@ export const financialProcedure = protectedProcedure.use(
       });
     }
 
-    // 1. Determine the operation for this procedure path
-    const operation = ROUTER_OPERATION_MAP[path] ?? "read";
+    // 1. Determine the operation for this procedure path.
+    // AUTH-17: unmapped paths previously defaulted to the weakest op "read".
+    // Mutations on a financialProcedure with no operation mapping are now
+    // DENIED (fail-closed); unmapped read queries keep the "read" op.
+    let operation = ROUTER_OPERATION_MAP[path];
+    if (!operation) {
+      if (type === "mutation") {
+        logger.error({
+          userId: user.id,
+          role: user.role,
+          path,
+        }, "[FinancialProcedure] Unmapped financial mutation — denied (fail-closed)");
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Access denied: no financial operation mapping for '${path}'`,
+        });
+      }
+      operation = "read";
+    }
     const tenantId =
       user.tenantId != null
         ? String(user.tenantId)

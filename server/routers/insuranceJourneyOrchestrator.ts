@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
 
 
@@ -324,6 +325,10 @@ export const insuranceJourneyOrchestratorRouter = router({
   }),
 
   triggerJ03: protectedProcedure.input(J03Schema).mutation(async ({ input, ctx }) => {
+    // INS-2/23: validate the incident date against the REAL policy period
+    // before a claims workflow is even started (fail-fast, same rules as the
+    // direct fileClaim path and the journey activity itself).
+    await assertClaimIncidentValid(input.policyId, input.incidentDate);
     const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", input, ctx.user.id);
     return { success: true, workflowId, runId, journeyId: "J03", message: "Claims settlement journey started" };
   }),

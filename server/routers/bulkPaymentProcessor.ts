@@ -1,6 +1,6 @@
 // Sprint 87: Upgraded from mock data to real DB queries — bulkPaymentProcessor
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { merchantPayouts } from "../../drizzle/schema";
@@ -193,89 +193,32 @@ const getStats = publicProcedure
       });
     }
   });
+// PAY-6: batch payout semantics (per-item status, mid-batch float-exhaustion
+// halt, batch-level rollback) require a real batch model that does not exist
+// in this schema. The previous implementation inserted/read a single
+// merchantPayouts row and returned "processBatch completed" — fake success.
+// Fail-loud until a real batch processor is built; single payouts belong to
+// merchantPayoutSettlement.initiatePayout/processPayout.
 const processBatch = protectedProcedure
-  .input(
-    z.object({
-      id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(merchantPayouts)
-          .where(eq(merchantPayouts.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "processBatch: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "processBatch completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(merchantPayouts)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "processBatch completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .input(z.object({ id: z.number().optional(), data: z.record(z.string(), z.any()).optional() }))
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Batch payout processing is not implemented: there is no batch table, per-item status model, or exhaustion-halt semantics. " +
+        "Use merchantPayoutSettlement for single payouts. This endpoint fails loudly rather than fabricating success.",
+    });
   });
+// PAY-6: see processBatch — no batch model exists to cancel. Fail-loud.
 const cancelBatch = protectedProcedure
-  .input(
-    z.object({
-      id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(merchantPayouts)
-          .where(eq(merchantPayouts.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "cancelBatch: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "cancelBatch completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(merchantPayouts)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "cancelBatch completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .input(z.object({ id: z.number().optional(), data: z.record(z.string(), z.any()).optional() }))
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Batch cancellation is not implemented: no batch lifecycle exists. " +
+        "Cancel individual payouts via merchantPayoutSettlement instead.",
+    });
   });
 
 export const bulkPaymentProcessorRouter = router({

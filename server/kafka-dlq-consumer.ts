@@ -22,18 +22,39 @@ import { notifyOwner } from "./_core/notification";
 import { getDb } from "./db";
 import { dlqMessages } from "../drizzle/schema";
 import { logger } from './_core/logger';
+import {
+  parseDlqMessage,
+  RETRY_COUNT_HEADER,
+  type DlqEnvelope,
+} from "./lib/kafkaDlqEnvelope";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5_000;
 
-interface DlqPayload {
-  originalTopic: string;
-  originalPartition: number;
-  originalOffset: string;
-  errorMessage: string;
-  retryCount: number;
+// OPS-5: the DLQ payload is the UNIFIED envelope shared with the producer
+// side (kafka-event-consumer sendToDLQ / legacy kafkaConsume). Parsing is
+// delegated to parseDlqMessage, which also understands legacy header-only
+// messages. retryCount is carried forward via the x-retry-count header on
+// re-injection and NEVER resets — poison messages exhaust MAX_RETRIES and
+// are persisted as "unrecoverable" instead of looping DLQ→topic→DLQ.
+type DlqPayload = Omit<DlqEnvelope, "payload" | "failedAt" | "schema"> & {
   payload: Record<string, unknown>;
   timestamp: number;
+};
+
+function toLegacyPayload(e: DlqEnvelope): DlqPayload {
+  return {
+    originalTopic: e.originalTopic,
+    originalPartition: e.originalPartition,
+    originalOffset: e.originalOffset,
+    errorMessage: e.errorMessage,
+    retryCount: e.retryCount,
+    payload:
+      e.payload && typeof e.payload === "object"
+        ? (e.payload as Record<string, unknown>)
+        : { raw: e.payload },
+    timestamp: e.failedAt,
+  };
 }
 
 const kafka = new Kafka({
@@ -53,23 +74,19 @@ const kafka = new Kafka({
 let consumer: Consumer | null = null;
 
 function parseMessage(message: KafkaMessage): DlqPayload | null {
-  if (!message.value) return null;
-  try {
-    return JSON.parse(message.value.toString()) as DlqPayload;
-  } catch {
-    return {
-      originalTopic: "unknown",
-      originalPartition: 0,
-      originalOffset: "0",
-      errorMessage: "Failed to parse DLQ message",
-      retryCount: MAX_RETRIES,
-      payload: { raw: message.value.toString() },
-      timestamp: Date.now(),
-    };
-  }
+  const envelope = parseDlqMessage(message);
+  return envelope ? toLegacyPayload(envelope) : null;
 }
 
 async function retryMessage(payload: DlqPayload): Promise<void> {
+  if (!payload.originalTopic || payload.originalTopic === "unknown") {
+    // Fail loud — never publish to an undefined/unknown topic (old bug:
+    // raw-forwarded DLQ messages had originalTopic only in headers, so the
+    // body parse produced topic: undefined and the retry threw).
+    throw new Error(
+      `[DLQ] Cannot retry message without a valid originalTopic (offset=${payload.originalOffset})`
+    );
+  }
   await new Promise<void>(r => setTimeout(r, RETRY_DELAY_MS));
   const producer = kafka.producer();
   await producer.connect();
@@ -78,10 +95,12 @@ async function retryMessage(payload: DlqPayload): Promise<void> {
       topic: payload.originalTopic,
       messages: [
         {
-          value: JSON.stringify({
-            ...payload.payload,
-            _retryCount: (payload.retryCount || 0) + 1,
-          }),
+          value: JSON.stringify(payload.payload),
+          // OPS-5: attempt count travels in the header and is read back by
+          // buildDlqEnvelope on the next failure — it never resets.
+          headers: {
+            [RETRY_COUNT_HEADER]: String((payload.retryCount || 0) + 1),
+          },
         },
       ],
     });

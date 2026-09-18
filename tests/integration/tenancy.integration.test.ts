@@ -50,18 +50,24 @@ const FILE = "tenancy";
 const TENANT_A = 920001;
 const TENANT_B = 920002;
 
+// 2026-09-18 (F3 fail-closed financial RBAC, AUTH-17): disputeRefund.initiateRefund
+// is now a financialProcedure ("refund" op) — the default "user" role is
+// correctly DENIED. These tenant callers therefore carry "admin" (a role the
+// permify map authorizes for refund) so the tenancy contract is exercised.
+// Tenant isolation itself is role-independent (assertTenantOwnership on
+// tenantId), so all isolation assertions below are unchanged in meaning.
 const userA: TestUser = {
   id: 920011,
   email: "user-a@tenant-a.integration",
   name: "Tenant A User",
-  role: "user",
+  role: "admin",
   tenantId: TENANT_A,
 };
 const userB: TestUser = {
   id: 920012,
   email: "user-b@tenant-b.integration",
   name: "Tenant B User",
-  role: "user",
+  role: "admin",
   tenantId: TENANT_B,
 };
 const platformUser: TestUser = {

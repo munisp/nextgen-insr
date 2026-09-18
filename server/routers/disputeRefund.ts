@@ -4,10 +4,14 @@ import { TRPCError } from "@trpc/server";
 import { desc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { disputes, refunds, type Refund } from "../../drizzle/schema";
+import { disputes, refunds, transactions, type Refund } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
+import { tbCreateTransfer, TBLedgerUnavailableError } from "../tbClient";
+import { deriveRefundTerms } from "../lib/refundTerms";
 
 /**
  * Dispute Refund Router
@@ -23,9 +27,12 @@ import { assertTenantOwnership } from "../middleware/tenantIsolation";
  * - Velocity check: Max 5 refunds per customer per 30 days
  * - Duplicate detection: Same amount ± ₦100 to same account within 24h
  *
- * NOTE: No payment rail call is made here. Every initiated refund is
- * persisted to the refunds table with status "pending" (queued) and is
- * only marked processed by a downstream approval/payout flow.
+ * Processing: `processRefund` (PAY-2) is the real payout path — it
+ * atomically claims a queued refund, posts the compensating ledger transfer
+ * via TigerBeetle (refund pool → customer), and transitions the refund to
+ * "processed". Fail-loud: a ledger failure marks the refund "failed" with the
+ * reason and surfaces an error; failed refunds are retryable by re-calling
+ * processRefund (the ledger leg is ref-deduped, so retry is safe).
  */
 
 const REFUND_TIERS = [
@@ -150,7 +157,7 @@ export const disputeRefundRouter = router({
       return { data: enriched, total: totalRows[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
-  initiateRefund: protectedProcedure
+  initiateRefund: financialProcedure
     .input(z.object({
       disputeId: z.number(),
       amount: z.number().positive(),
@@ -164,8 +171,6 @@ export const disputeRefundRouter = router({
       idempotencyKey: z.string().min(8).max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const tier = getRefundTier(input.amount);
-
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -184,8 +189,32 @@ export const disputeRefundRouter = router({
         assertTenantOwnership(linkedDispute.tenantId, tenantId, "Dispute");
       }
 
+      // ── AB-19: amount & destination derived from the ORIGINAL transaction ──
+      // When the disputed transaction is known, the client-supplied amount,
+      // accountNumber and customerId are NOT trusted: the refund may not
+      // exceed the original amount and must return to the source account.
+      let effectiveAmount = input.amount;
+      let effectiveDestination = input.accountNumber;
+      let originalTxId: number | null = null;
+      if (linkedDispute?.transactionId) {
+        const [origTx] = await database
+          .select()
+          .from(transactions)
+          .where(eq(transactions.id, linkedDispute.transactionId))
+          .limit(1);
+        if (origTx) {
+          const terms = deriveRefundTerms(origTx, input);
+          effectiveAmount = terms.effectiveAmount;
+          effectiveDestination = terms.effectiveDestination;
+          originalTxId = terms.originalTxId;
+        }
+      }
+      const tier = getRefundTier(effectiveAmount);
+
       // ── Idempotency: replay or reject before doing any work ─────────────
-      const payloadHash = input.idempotencyKey ? refundPayloadHash(input) : null;
+      const payloadHash = input.idempotencyKey
+        ? refundPayloadHash({ ...input, amount: effectiveAmount, accountNumber: effectiveDestination })
+        : null;
       if (input.idempotencyKey) {
         const [existing] = await database
           .select()
@@ -200,53 +229,131 @@ export const disputeRefundRouter = router({
         if (existing) return replayOrConflict(existing, payloadHash!);
       }
 
-      // Velocity check — real DB query for refunds in last 30 days
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const velocityRows = await database.select({
-        customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
-      }).from(refunds);
-      const customerRefundCount = velocityRows[0]?.customerRefundCount ?? 0;
-      if (Number(customerRefundCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
-        return {
-          success: false,
-          error: "velocity_exceeded",
-          message: `Customer has reached maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days`,
-          recommendation: "Escalate to compliance team for review",
-        };
-      }
-
-      // Persist the refund as a real queued record. No rail call is made
-      // here, so the status is always "pending" — even for the auto tier,
-      // which is queued without requiring manual approval.
+      // PAY-2: ALL pre-checks and the queue insert run in ONE transaction
+      // behind advisory locks, so velocity/duplicate/daily-cap/per-dispute
+      // checks can never TOCTOU-race a concurrent request. AB-19: locks and
+      // velocity are keyed on the AUTHENTICATED USER and the refund
+      // destination account, never the attacker-chosen customerId.
       const refundRef = `REF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
-      // ON CONFLICT DO NOTHING is the race-safe single-effect guarantee: when
-      // concurrent retries with the same key pass the pre-check, exactly one
-      // insert lands; the losers get zero rows back (no error, no aborted
-      // transaction) and replay the winner below.
-      const insertedRows = await database
-        .insert(refunds)
-        .values({
-          ref: refundRef,
-          idempotencyKey: input.idempotencyKey ?? null,
-          payloadHash,
-          disputeId: input.disputeId,
-          agentId: input.agentId ?? 0,
-          customerId: input.customerId,
-          originalAmount: Math.round(input.amount),
-          refundAmount: Math.round(input.amount),
-          currency: "NGN",
-          reason: input.reason,
-          category: "dispute_refund",
-          status: "pending",
-          method: "original_method",
-          notes: `destination_account:${input.accountNumber}`,
-          tenantId: ctx.user?.tenantId ?? null,
-        })
-        .onConflictDoNothing(
-          input.idempotencyKey ? { target: refunds.idempotencyKey } : undefined
-        )
-        .returning();
-      const inserted: Refund | undefined = insertedRows[0];
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+
+      type QueueOutcome =
+        | { blocked: true; response: Record<string, unknown> }
+        | { blocked: false; inserted?: Refund };
+      const queueOutcome = await database.transaction(async (tx): Promise<QueueOutcome> => {
+        // Serialise concurrent refund initiation for this user + destination
+        // (velocity TOCTOU fix): locks release automatically at commit/rollback.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-user-${ctx.user?.id ?? 0}`}))`);
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-dest-${effectiveDestination}`}))`);
+        if (input.agentId != null) {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund-agent-${input.agentId}`}))`);
+        }
+
+        // Velocity check — AB-19: keyed on the AUTHENTICATED USER and the
+        // refund destination account, not the attacker-chosen customerId.
+        // Counts refunds in the last 30 days initiated by this user or sent
+        // to the same destination account.
+        const velocityRows = await tx.select({
+          velocityCount: sql<number>`COUNT(*) FILTER (WHERE "createdAt" >= ${thirtyDaysAgo.toISOString()} AND ("initiatedByUserId" = ${ctx.user?.id ?? -1} OR "destinationAccount" = ${effectiveDestination}))`,
+        }).from(refunds);
+        const velocityCount = Number(velocityRows[0]?.velocityCount ?? 0);
+        if (velocityCount >= MAX_REFUNDS_PER_CUSTOMER_30D) {
+          return { blocked: true, response: {
+            success: false,
+            error: "velocity_exceeded",
+            message: `Maximum ${MAX_REFUNDS_PER_CUSTOMER_30D} refunds in 30 days reached for this user or destination account`,
+            recommendation: "Escalate to compliance team for review",
+          } };
+        }
+
+        // PAY-2 double-refund block: one ACTIVE refund per dispute (backed by
+        // the partial unique index refund_active_dispute_unique, migration
+        // 0061 — the DB enforces it even if this pre-check races).
+        // A row carrying THIS request's idempotency key is excluded: keyed
+        // retries must reach the ON CONFLICT replay path below, not be
+        // blocked by their own winner row.
+        const [activeForDispute] = await tx.select({ ref: refunds.ref, status: refunds.status })
+          .from(refunds)
+          .where(sql`"disputeId" = ${input.disputeId} AND status NOT IN ('rejected','failed') AND "deletedAt" IS NULL
+                AND (${input.idempotencyKey ?? null}::text IS NULL OR "idempotencyKey" IS NULL OR "idempotencyKey" <> ${input.idempotencyKey ?? ""})`)
+          .limit(1);
+        if (activeForDispute) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Dispute ${input.disputeId} already has an active refund (${activeForDispute.ref}, status=${activeForDispute.status}). Refusing to queue a second refund for the same dispute.`,
+          });
+        }
+
+        // PAY-2 duplicate detection: same amount ± ₦100 to the same
+        // destination within 24h is a probable duplicate and is refused loudly.
+        const dupRows = await tx.select({ ref: refunds.ref, refundAmount: refunds.refundAmount })
+          .from(refunds)
+          .where(sql`"destinationAccount" = ${effectiveDestination} AND status NOT IN ('rejected','failed') AND "deletedAt" IS NULL AND "createdAt" >= ${oneDayAgo.toISOString()} AND ABS("refundAmount" - ${Math.round(effectiveAmount)}) <= 100
+                AND (${input.idempotencyKey ?? null}::text IS NULL OR "idempotencyKey" IS NULL OR "idempotencyKey" <> ${input.idempotencyKey ?? ""})`)
+          .limit(1);
+        if (dupRows.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Probable duplicate: refund ${dupRows[0]!.ref} of ₦${dupRows[0]!.refundAmount} was already queued to this destination within 24h (±₦100 tolerance). If this is a genuinely separate refund, wait 24h or escalate to compliance.`,
+          });
+        }
+
+        // PAY-2 daily agent cap (DAILY_AGENT_CAP was declared but never
+        // enforced): sum of today's active refunds for this agent + this
+        // amount must not exceed ₦2,000,000.
+        if (input.agentId != null) {
+          const [{ dayTotal }] = await tx.select({
+            dayTotal: sql<string>`COALESCE(SUM("refundAmount") FILTER (WHERE status NOT IN ('rejected','failed') AND "deletedAt" IS NULL AND "createdAt" >= ${today.toISOString()}), 0)`,
+          }).from(refunds).where(eq(refunds.agentId, input.agentId));
+          if (Number(dayTotal ?? 0) + Math.round(effectiveAmount) > DAILY_AGENT_CAP) {
+            return { blocked: true, response: {
+              success: false,
+              error: "daily_agent_cap_exceeded",
+              message: `Agent daily refund cap of ₦${DAILY_AGENT_CAP.toLocaleString()} exceeded (today: ₦${Number(dayTotal ?? 0).toLocaleString()}, requested: ₦${effectiveAmount.toLocaleString()})`,
+              recommendation: "Escalate to compliance team for review",
+            } };
+          }
+        }
+
+        // Persist the refund as a real queued record. No rail call is made
+        // here, so the status is always "pending" — even for the auto tier,
+        // which is queued without requiring manual approval.
+        // ON CONFLICT DO NOTHING is the race-safe single-effect guarantee for
+        // the idempotency key: when concurrent retries with the same key pass
+        // the pre-check, exactly one insert lands; losers replay the winner.
+        const insertedRows = await tx
+          .insert(refunds)
+          .values({
+            ref: refundRef,
+            idempotencyKey: input.idempotencyKey ?? null,
+            payloadHash,
+            disputeId: input.disputeId,
+            transactionId: originalTxId,
+            agentId: input.agentId ?? 0,
+            customerId: input.customerId,
+            originalAmount: Math.round(effectiveAmount),
+            refundAmount: Math.round(effectiveAmount),
+            currency: "NGN",
+            reason: input.reason,
+            category: "dispute_refund",
+            status: "pending",
+            method: "original_method",
+            notes: `destination_account:${effectiveDestination}`,
+            destinationAccount: effectiveDestination,
+            initiatedByUserId: ctx.user?.id ?? null,
+            tenantId: ctx.user?.tenantId ?? null,
+          })
+          .onConflictDoNothing(
+            input.idempotencyKey ? { target: refunds.idempotencyKey } : undefined
+          )
+          .returning();
+        return { blocked: false, inserted: insertedRows[0] };
+      });
+
+      if (queueOutcome.blocked) return queueOutcome.response as never;
+      const inserted: Refund | undefined = queueOutcome.inserted;
       if (!inserted && input.idempotencyKey) {
         // Lost the race: a row with this key already exists — replay it, or
         // reject explicitly if the payload differs.
@@ -285,6 +392,107 @@ export const disputeRefundRouter = router({
         message: `Refund requires ${tier.approval} approval. SLA: ${tier.sla_hours}h`,
         nextAction: tier.fraud_check ? "fraud_screening" : `${tier.approval}_review`,
       };
+    }),
+
+  /**
+   * PAY-2: the missing refund payout path. Previously refunds were queued
+   * with status "pending" and NOTHING ever processed them — customer funds
+   * were never returned.
+   *
+   * Real semantics (fail-closed):
+   *   1. Atomically claim the refund (pending/approved/failed → processing).
+   *      Exactly one processor wins; everyone else replays or conflicts.
+   *   2. Post the compensating ledger transfer via TigerBeetle: the refund
+   *      pool is debited and the customer is credited back. The transfer ref
+   *      `${refund.ref}-PAYOUT` is ref-deduped by tbClient, so a retry after
+   *      a crash/timeout between the ledger leg and the status update cannot
+   *      double-pay.
+   *   3. Mark the refund "processed" with the ledger transfer id.
+   *   On ledger failure the refund is marked "failed" with the reason (loud)
+   *   and the error propagates — it is retryable by calling processRefund
+   *   again.
+   */
+  processRefund: protectedProcedure
+    .input(z.object({ refundRef: z.string().min(5) }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [refund] = await database
+        .select()
+        .from(refunds)
+        .where(eq(refunds.ref, input.refundRef))
+        .limit(1);
+      if (!refund) throw new TRPCError({ code: "NOT_FOUND", message: "Refund not found" });
+
+      // Tenant isolation (F-05): tenant users may only process their own
+      // tenant's refunds.
+      const tenantId = ctx.user?.tenantId ?? 0;
+      if (refund.tenantId != null) assertTenantOwnership(refund.tenantId, tenantId, "Refund");
+
+      if (refund.status === "processed") {
+        // Idempotent replay — the funds already moved; report, never re-pay.
+        return { success: true, idempotent: true, refundRef: refund.ref, status: "processed" };
+      }
+      if (refund.status === "rejected") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Refund ${refund.ref} was rejected and cannot be processed` });
+      }
+
+      // Atomic claim: exactly one concurrent processor transitions the row.
+      const claimed = await database
+        .update(refunds)
+        .set({ status: "processing", updatedAt: new Date() })
+        .where(sql`ref = ${refund.ref} AND status IN ('pending','approved','failed')`)
+        .returning();
+      if (claimed.length === 0) {
+        const [now] = await database.select().from(refunds).where(eq(refunds.ref, input.refundRef)).limit(1);
+        if (now?.status === "processed") {
+          return { success: true, idempotent: true, refundRef: refund.ref, status: "processed" };
+        }
+        throw new TRPCError({ code: "CONFLICT", message: `Refund ${refund.ref} is being processed concurrently` });
+      }
+
+      const amountKobo = Math.round(Number(refund.refundAmount) * 100);
+      const payoutRef = `${refund.ref}-PAYOUT`;
+      try {
+        const tbResult = await tbCreateTransfer({
+          debitAccountId: "insurer-refund-pool",
+          creditAccountId: `customer-${refund.customerId}`,
+          amount: amountKobo,
+          ledger: 6000,
+          code: 900,
+          ref: payoutRef,
+          txType: "refund_payout",
+          agentId: refund.agentId ? String(refund.agentId) : undefined,
+        });
+
+        await database
+          .update(refunds)
+          .set({
+            status: "processed",
+            processedAt: new Date(),
+            updatedAt: new Date(),
+            metadata: JSON.stringify({ tbTransferId: tbResult?.id ?? null, payoutRef }),
+          })
+          .where(eq(refunds.ref, refund.ref));
+
+        logger.info(`[RefundProcessor] processed ${refund.ref} ₦${refund.refundAmount} → customer ${refund.customerId} | TB: ${tbResult?.id ?? "n/a"}`);
+        return { success: true, idempotent: false, refundRef: refund.ref, status: "processed", tbTransferId: tbResult?.id ?? null };
+      } catch (err) {
+        // FAIL-LOUD: mark failed with the reason so it is visible and
+        // retryable; never leave a silent "processing" wedge.
+        const reason = err instanceof Error ? err.message : String(err);
+        await database
+          .update(refunds)
+          .set({ status: "failed", updatedAt: new Date(), notes: sql`COALESCE(notes,'') || ${" | payout_failed:" + reason.slice(0, 200)}` })
+          .where(eq(refunds.ref, refund.ref))
+          .catch(() => {});
+        logger.error(`[RefundProcessor] payout FAILED for ${refund.ref}: ${reason}`);
+        if (err instanceof TBLedgerUnavailableError) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Refund payout failed (ledger): ${reason}. Refund marked failed and is retryable.` });
+        }
+        throw err;
+      }
     }),
 
   getSummary: protectedProcedure.query(async ({ ctx }) => {

@@ -392,8 +392,11 @@ export function setupGracefulShutdown(
     }, 30_000).unref();
   };
 
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  // OPS-10: skip if the unified shutdown path (lib/gracefulShutdown.ts) is active
+  if (!(globalThis as any).__insureportalUnifiedShutdownActive) {
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
+  }
 }
 
 // ── 5. Connection Draining Middleware ──────────────────────────────────────────
