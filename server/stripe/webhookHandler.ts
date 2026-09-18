@@ -501,7 +501,9 @@ export async function handleStripeWebhook(req: Request, res: Response) {
           tenantId: parseInt((charge.metadata as any)?.tenant_id || "0", 10),
           userId: 0,
           userName: "stripe_webhook",
-          action: "charge_refunded",
+          // billing_audit_action enum has no stripe-specific values; a Stripe
+          // refund IS a processed refund (exact stripe event in metadata).
+          action: "refund_processed",
           resourceType: "charge",
           resourceId: charge.id,
           afterState: {
@@ -549,7 +551,10 @@ export async function handleStripeWebhook(req: Request, res: Response) {
           tenantId: parseInt(dispute.metadata?.tenant_id || "0", 10),
           userId: 0,
           userName: "stripe_webhook",
-          action: lost ? "dispute_lost" : "dispute_closed",
+          // Enum-safe mapping: a lost dispute is a forced refund (chargeback
+          // reversal posted above); a won/closed dispute resolves the
+          // discrepancy. Exact stripe status is preserved in afterState.
+          action: lost ? "refund_processed" : "discrepancy_resolved",
           resourceType: "dispute",
           resourceId: dispute.id,
           afterState: {
