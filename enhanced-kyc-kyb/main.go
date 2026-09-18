@@ -99,11 +99,76 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 		customerID = "IND-" + generateID()[:8]
 	}
 
-	// Determine tier and daily limits
-	tier, dailyLimit := determineTier(req.NIN != "", req.FullName != "", req.Phone != "")
+	// NG-13/NG-15: tier is granted ONLY on VERIFIED identity. Verify NIN/BVN
+	// for real before any tier/limit decision; an unverified string grants
+	// nothing beyond the base tier.
+	identityVerified := false
+	identityMismatch := false
+	verificationPending := false
+	var verificationNotes []string
+
+	if req.NIN != "" {
+		if h.cfg.NINAPIURL == "" {
+			errorResponse(w, http.StatusServiceUnavailable, "NIN verification provider not configured; onboarding cannot proceed")
+			return
+		}
+		res, verr := h.verifyNINWithRetry(req.NIN, req.FullName, req.DOB)
+		if verr != nil {
+			// NG-12: provider outage → queue as verification_pending (resumable)
+			// instead of stalling with nothing persisted.
+			verificationPending = true
+			verificationNotes = append(verificationNotes, fmt.Sprintf("nin verification deferred: %v", verr))
+		} else {
+			adj := adjudicateNIN(res)
+			switch adj {
+			case "verified":
+				identityVerified = true
+			case "mismatch":
+				identityMismatch = true
+				verificationNotes = append(verificationNotes, "nin verified but name/dob/photo mismatch")
+			default:
+				verificationNotes = append(verificationNotes, "nin verification failed: "+res.Status)
+			}
+			h.store.WriteAudit("nin_onboarding_check", "nin", req.NIN, "", r.RemoteAddr, "adjudication="+adj)
+		}
+	}
+	if req.BVN != "" && !verificationPending {
+		if h.cfg.BVNAPIURL == "" {
+			errorResponse(w, http.StatusServiceUnavailable, "BVN verification provider not configured; onboarding cannot proceed")
+			return
+		}
+		res, verr := h.verifyBVNWithRetry(req.BVN, req.FullName)
+		if verr != nil {
+			verificationPending = true
+			verificationNotes = append(verificationNotes, fmt.Sprintf("bvn verification deferred: %v", verr))
+		} else {
+			adj := adjudicateBVN(res)
+			switch adj {
+			case "verified":
+				identityVerified = true
+			case "mismatch":
+				identityMismatch = true
+				verificationNotes = append(verificationNotes, "bvn verified but name/biometric mismatch")
+			default:
+				verificationNotes = append(verificationNotes, "bvn verification failed: "+res.Status)
+			}
+			h.store.WriteAudit("bvn_onboarding_check", "bvn", req.BVN, "", r.RemoteAddr, "adjudication="+adj)
+		}
+	}
+
+	// Tier: presence of an identifier string is NOT identity. Tier 2+ requires
+	// a verified NIN/BVN adjudication.
+	tier, dailyLimit := determineTier(identityVerified, req.FullName != "", req.Phone != "")
 
 	verificationDate := time.Now().UTC()
 	expiresAt := verificationDate.Add(h.cfg.KYCTTL)
+
+	status := models.Submitted
+	if verificationPending {
+		status = models.PendingRefresh // pending external verification (resumable)
+	} else if identityMismatch {
+		status = models.UnderReview // mismatch adjudication path
+	}
 
 	kyc := &models.IndividualKYC{
 		ID:               generateID(),
@@ -113,7 +178,7 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 		FullName:         req.FullName,
 		Tier:             tier,
 		DailyLimit:       dailyLimit,
-		Status:           models.Submitted,
+		Status:           status,
 		RiskLevel:        models.RiskLow,
 		VerificationDate: verificationDate,
 		ExpiresAt:        expiresAt,
@@ -156,57 +221,74 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 		_ = h.store.StoreDocument(&kycDoc)
 	}
 
-	// Check cache first
-	if h.cache != nil {
-		if cached, err := h.cache.GetCachedKYCResult(customerID); err == nil && cached != nil {
-			kyc.RiskLevel = cached.RiskLevel
-			kyc.Status = cached.Status
-		}
-	}
-
-	// Calculate risk score and determine status
-	riskScore, flags := h.calculateIndividualRiskScore(kyc)
-	kyc.RiskLevel = scoreToRiskLevel(riskScore)
-	kyc.Status = determineStatus(riskScore)
-
-	if err := h.store.UpdateKYCStatus(customerID, kyc.Status, string(kyc.RiskLevel)); err != nil {
-		h.log.Error("failed to update KYC status", zap.Error(err))
-	}
-
 	// Record audit trail
 	h.store.WriteAudit("kyc_submitted", "individual", customerID, "", r.RemoteAddr,
-		fmt.Sprintf("NIN=%s BVN=%s tier=%d risk=%s", req.NIN, req.BVN, tier, string(kyc.RiskLevel)))
+		fmt.Sprintf("NIN=%s BVN=%s tier=%d verified=%t mismatch=%t pending=%t", req.NIN, req.BVN, tier, identityVerified, identityMismatch, verificationPending))
 
-	result := models.VerificationResult{
-		Success:   true,
-		Status:    kyc.Status,
-		Score:     riskScore,
-		RiskLevel: kyc.RiskLevel,
-		Details:   []string{"KYC record created, pending verification"},
-		Flags:     flags,
-	}
-
-	if len(flags) > 0 {
-		result.Details = append(result.Details, "requires manual review")
-		kyc.Status = models.UnderReview
-		_ = h.store.UpdateKYCStatus(customerID, kyc.Status)
-	}
-
-	if h.cache != nil {
-		_ = h.cache.CacheKYCResult(customerID, &result)
+	if verificationPending {
+		// NG-12: 202 Accepted — record persisted, verification resumable via
+		// /api/v1/kyc/refresh once the provider recovers.
+		jsonResponse(w, http.StatusAccepted, map[string]interface{}{
+			"customer_id":          customerID,
+			"status":               kyc.Status,
+			"tier":                 tier,
+			"daily_limit":          dailyLimit,
+			"verification_pending": true,
+			"notes":                verificationNotes,
+			"expires_at":           kyc.ExpiresAt.Format(time.RFC3339),
+		})
+		return
 	}
 
 	jsonResponse(w, http.StatusCreated, map[string]interface{}{
 		"customer_id":     customerID,
 		"status":          kyc.Status,
-		"risk_level":      kyc.RiskLevel,
-		"risk_score":      riskScore,
 		"tier":            tier,
 		"daily_limit":     dailyLimit,
+		"verified":        identityVerified,
+		"notes":           verificationNotes,
 		"expires_at":      kyc.ExpiresAt.Format(time.RFC3339),
-		"flags":           flags,
-		"requires_review": len(flags) > 0,
+		"requires_review": identityMismatch,
 	})
+}
+
+// adjudicateNIN applies the mismatch policy (NG-15): a "verified" provider
+// status with a failed name/DOB/photo match is NOT a pass — it is routed to
+// manual review ("mismatch"). Only an all-clear result returns "verified".
+func adjudicateNIN(res *models.NINResult) string {
+	if res == nil {
+		return "failed"
+	}
+	if res.Status != "verified" {
+		return "failed"
+	}
+	if res.NameMatch != nil && !*res.NameMatch {
+		return "mismatch"
+	}
+	if res.DOBMatch != nil && !*res.DOBMatch {
+		return "mismatch"
+	}
+	if res.PhotoMatch != nil && !*res.PhotoMatch {
+		return "mismatch"
+	}
+	return "verified"
+}
+
+// adjudicateBVN mirrors adjudicateNIN for BVN results.
+func adjudicateBVN(res *models.BVNResult) string {
+	if res == nil {
+		return "failed"
+	}
+	if res.Status != "verified" {
+		return "failed"
+	}
+	if res.NameMatch != nil && !*res.NameMatch {
+		return "mismatch"
+	}
+	if res.BiometricMatch != nil && !*res.BiometricMatch {
+		return "mismatch"
+	}
+	return "verified"
 }
 
 // =====================================================================
@@ -256,6 +338,11 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 
 	// Parse directors and screen for PEP
 	if len(req.Directors) > 0 {
+		// NG-15: REAL PEP screening — fail loud when no provider is configured.
+		if h.cfg.PEPAPIURL == "" {
+			errorResponse(w, http.StatusServiceUnavailable, "PEP screening provider not configured (PEP_API_URL); KYB with directors cannot proceed")
+			return
+		}
 		directors := make([]models.DirectorInfo, 0, len(req.Directors))
 		for _, d := range req.Directors {
 			doj := time.Time{}
@@ -264,13 +351,19 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 					doj = dob
 				}
 			}
+			pepMatch, err := h.screenPEP(d.Name, d.DateOfBirth, d.Nationality)
+			if err != nil {
+				h.log.Error("PEP screening failed", zap.String("director", d.Name), zap.Error(err))
+				errorResponse(w, http.StatusBadGateway, fmt.Sprintf("PEP screening failed for director %q; KYB not recorded", d.Name))
+				return
+			}
 			directors = append(directors, models.DirectorInfo{
 				Name:        d.Name,
 				IDNumber:    d.IDNumber,
 				DateOfBirth: doj,
 				Nationality: d.Nationality,
 				PEPScreened: true,
-				PEPMatch:    false, // mock screening; in production call PEP list API
+				PEPMatch:    pepMatch,
 			})
 		}
 		kyc.Directors = directors
@@ -347,6 +440,13 @@ func (h *Handler) getKYCStatus(w http.ResponseWriter, r *http.Request) {
 	// Try individual KYC
 	ind, indErr := h.store.GetIndividualKYC(customerID)
 	if indErr == nil {
+		// NG-22: expired KYC is not usable — enforce at read time, not only in
+		// the background sweeper.
+		if ind.Status != models.Expired && time.Now().After(ind.ExpiresAt) {
+			_ = h.store.UpdateKYCStatus(customerID, models.Expired)
+			h.store.WriteAudit("kyc_expired", "individual", customerID, "", r.RemoteAddr, "expired at read time")
+			ind.Status = models.Expired
+		}
 		tier := ind.Tier
 		if tier == 0 {
 			tier = 1
@@ -452,10 +552,15 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 	// Check cache
 	if h.cache != nil {
 		if cached, err := h.cache.GetCachedNINLookup(req.NIN); err == nil && cached != nil {
+			// NG-14: reflect the CACHED status — a previously failed result must
+			// not be reported as verified. Non-terminal results are never cached.
 			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"nin":         req.NIN,
-				"verified":    true,
-				"status":      "verified",
+				"verified":    cached.Status == "verified" && adjudicateNIN(cached) == "verified",
+				"status":      cached.Status,
+				"name_match":  cached.NameMatch,
+				"dob_match":   cached.DOBMatch,
+				"photo_match": cached.PhotoMatch,
 				"cached":      true,
 				"verified_at": time.Now().UTC().Format(time.RFC3339),
 			})
@@ -489,8 +594,8 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to store NIN verification", zap.Error(err))
 	}
 
-	// Cache result
-	if h.cache != nil {
+	// Cache result — terminal statuses only (NG-14)
+	if h.cache != nil && (ninResult.Status == "verified" || ninResult.Status == "failed") {
 		_ = h.cache.CacheNINLookup(req.NIN, ninResult)
 	}
 
@@ -553,12 +658,15 @@ func (h *Handler) verifyBVN(w http.ResponseWriter, r *http.Request) {
 	// Check cache
 	if h.cache != nil {
 		if cached, err := h.cache.GetCachedBVNLookup(req.BVN); err == nil && cached != nil {
+			// NG-14: reflect the CACHED status — never hardcode verified:true.
 			jsonResponse(w, http.StatusOK, map[string]interface{}{
-				"bvn":         req.BVN,
-				"verified":    true,
-				"status":      "verified",
-				"cached":      true,
-				"verified_at": time.Now().UTC().Format(time.RFC3339),
+				"bvn":             req.BVN,
+				"verified":        cached.Status == "verified" && adjudicateBVN(cached) == "verified",
+				"status":          cached.Status,
+				"name_match":      cached.NameMatch,
+				"biometric_match": cached.BiometricMatch,
+				"cached":          true,
+				"verified_at":     time.Now().UTC().Format(time.RFC3339),
 			})
 			return
 		}
@@ -589,8 +697,8 @@ func (h *Handler) verifyBVN(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to store BVN verification", zap.Error(err))
 	}
 
-	// Cache result
-	if h.cache != nil {
+	// Cache result — terminal statuses only (NG-14)
+	if h.cache != nil && (bvnResult.Status == "verified" || bvnResult.Status == "failed") {
 		_ = h.cache.CacheBVNLookup(req.BVN, bvnResult)
 	}
 
@@ -1392,4 +1500,39 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 		return 0, fmt.Errorf("parameter %s must be an integer", key)
 	}
 	return n, nil
+}
+
+// screenPEP performs a REAL PEP/sanctions screening call against the
+// configured provider (NG-15). Fail-closed: any error is returned to the
+// caller; no result is ever fabricated.
+func (h *Handler) screenPEP(name, dob, nationality string) (bool, error) {
+	if h.cfg.PEPAPIURL == "" {
+		return false, fmt.Errorf("PEP provider not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"name": name, "dob": dob, "nationality": nationality,
+	})
+	req, err := http.NewRequest(http.MethodPost, h.cfg.PEPAPIURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if h.cfg.PEPAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+h.cfg.PEPAPIKey)
+	}
+	resp, err := h.httpCl.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("PEP screening request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("PEP provider returned status %d", resp.StatusCode)
+	}
+	var out struct {
+		Match bool `json:"match"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, fmt.Errorf("PEP response decode: %w", err)
+	}
+	return out.Match, nil
 }

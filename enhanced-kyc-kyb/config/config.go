@@ -36,6 +36,10 @@ type Config struct {
 	RateLimitNIN     int
 	RateLimitBVN     int
 	RateLimitWindow  time.Duration
+	// PEPAPIURL: sanctions/PEP screening provider. When directors are
+	// submitted and this is unset, KYB fails LOUD (no mock screening).
+	PEPAPIURL string
+	PEPAPIKey string
 }
 
 func Load() *Config {
@@ -68,6 +72,8 @@ func Load() *Config {
 		RateLimitNIN:     getEnvInt("RATE_LIMIT_NIN", 10),
 		RateLimitBVN:     getEnvInt("RATE_LIMIT_BVN", 10),
 		RateLimitWindow:  getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Hour),
+		PEPAPIURL:        getEnv("PEP_API_URL", ""),
+		PEPAPIKey:        getEnv("PEP_API_KEY", ""),
 	}
 }
 
