@@ -241,7 +241,7 @@ export const offlinePosModeRouter = router({
           action: "OFFLINE_SESSION_ENDED",
           resource: "offline_session",
           resourceId: input.sessionId,
-          status: totalsMismatch ? "flagged" : "success",
+          status: totalsMismatch ? "warning" : "success",
           metadata: {
             agentCode: session.agentId,
             clientTransactionsProcessed: input.transactionsProcessed,
@@ -454,7 +454,7 @@ export const offlinePosModeRouter = router({
         action: "OFFLINE_SYNC_PUSH",
         resource: "offline_session",
         resourceId: input.sessionId,
-        status: conflicts.length > 0 ? "conflict" : "success",
+        status: conflicts.length > 0 ? "warning" : "success",
         metadata: { applied, duplicates, conflicts: conflicts.length },
       });
 
