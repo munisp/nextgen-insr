@@ -48,5 +48,14 @@ export async function requireAgent(req: Request): Promise<Agent> {
     err.code = "NOT_FOUND";
     throw err;
   }
+  // H-wave (2026-09): revocation-equivalent for the stateless-JWT tree.
+  // Suspended/deleted agents are rejected here on EVERY request — since this
+  // middleware re-reads the agent row each call, the bulk suspend/delete
+  // cascade (agent.ts) kills live sessions at the next request. Fail-closed.
+  if (!agent.isActive || agent.deletedAt) {
+    const err = new Error("Agent account is suspended or deleted") as any;
+    err.code = "FORBIDDEN";
+    throw err;
+  }
   return agent;
 }

@@ -17,37 +17,95 @@ import {
   merchants,
   transactions,
   merchantSettlements,
+  merchantSettlementChangeRequests,
   disputes,
+  auditLog,
 } from "@schema";
 import { router, protectedProcedure } from "../_core/trpc";
+import type { TrpcContext } from "../_core/context";
+import { sendSms } from "../termii";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
 /**
- * Extracts merchant session from cookie or Authorization header.
- * In production this would validate a JWT; here we use a simple lookup
- * by merchantCode passed in the X-Merchant-Code header (for demo purposes).
+ * H-wave (2026-09, verifier-falsified finding): the LEGACY static
+ * X-Merchant-Code bearer path is REMOVED — not deprecated — from this
+ * deployed service. Merchant identity is the authenticated Keycloak
+ * principal bound to a merchant row via merchants.keycloakSub (same
+ * contract as platform G1): no principal → 401, no bound merchant → 403,
+ * DB unavailable → 503-class fail-closed, suspended merchant → 403.
  */
 async function getMerchantFromRequest(
-  req: any
-): Promise<{ id: number; merchantCode: string; businessName: string } | null> {
-  const merchantCode = req.headers?.["x-merchant-code"] as string | undefined;
-  if (!merchantCode) return null;
-  const db = (await getDb())!;
-  if (!db) throw new Error("Database connection unavailable");
+  ctx: TrpcContext
+): Promise<{ id: number; merchantCode: string; businessName: string }> {
+  const user = ctx.user;
+  if (!user?.keycloakSub) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Merchant session required",
+    });
+  }
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // FAIL-CLOSED (503-class): never degrade to anonymous/unbound access.
+    console.error(
+      `[merchant] identity lookup DB unavailable: ${err instanceof Error ? err.message : String(err)}`
+    );
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Merchant identity service unavailable",
+    });
+  }
+  if (!db) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Merchant identity service unavailable",
+    });
+  }
   const rows = await db
     .select({
       id: merchants.id,
       merchantCode: merchants.merchantCode,
       businessName: merchants.businessName,
+      status: merchants.status,
     })
     .from(merchants)
     .where(
-      and(eq(merchants.merchantCode, merchantCode), isNull(merchants.deletedAt))
+      and(
+        eq(merchants.keycloakSub, user.keycloakSub),
+        isNull(merchants.deletedAt)
+      )
     )
     .limit(1);
-  return rows[0] ?? null;
+  const merchant = rows[0];
+  if (!merchant) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "No merchant account is bound to this identity",
+    });
+  }
+  if (merchant.status === "suspended") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Merchant account is suspended",
+    });
+  }
+  return merchant;
+}
+
+// ─── Settlement-change OTP (H-wave; mirrors platform G1 CRIT-3) ──────────────
+
+const SETTLEMENT_OTP_EXPIRY_MINUTES = 10;
+const SETTLEMENT_OTP_MAX_ATTEMPTS = 5;
+/** Cooling-off: payouts are blocked to a freshly-changed settlement account. */
+const SETTLEMENT_HOLD_HOURS = 24;
+
+function generateOtp(): string {
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -58,7 +116,7 @@ export const merchantRouter = router({
    */
   getProfile: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const merchant = await getMerchantFromRequest(ctx.req);
+      const merchant = await getMerchantFromRequest(ctx);
       if (!merchant)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -123,19 +181,15 @@ export const merchantRouter = router({
         email: z.string().email().optional(),
         phone: z.string().min(10).max(20).optional(),
         address: z.string().max(512).optional(),
-        settlementAccountNumber: z.string().max(20).optional(),
-        settlementBankCode: z.string().max(10).optional(),
-        settlementBankName: z.string().max(64).optional(),
+        // H-wave (2026-09): settlement (payout destination) fields are GONE
+        // from this inline update — a silent swap of the payout account was
+        // full merchant-takeover cash-out. Use requestSettlementChange +
+        // confirmSettlementChange (OTP + audit + hold).
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const merchant = await getMerchantFromRequest(ctx.req);
-        if (!merchant)
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Merchant session required",
-          });
+        const merchant = await getMerchantFromRequest(ctx);
 
         const db = (await getDb())!;
         if (!db)
@@ -148,18 +202,225 @@ export const merchantRouter = router({
         if (input.email !== undefined) updateData.email = input.email;
         if (input.phone !== undefined) updateData.phone = input.phone;
         if (input.address !== undefined) updateData.address = input.address;
-        if (input.settlementAccountNumber !== undefined)
-          updateData.settlementAccountNumber = input.settlementAccountNumber;
-        if (input.settlementBankCode !== undefined)
-          updateData.settlementBankCode = input.settlementBankCode;
-        if (input.settlementBankName !== undefined)
-          updateData.settlementBankName = input.settlementBankName;
 
         await db
           .update(merchants)
           .set(updateData)
           .where(eq(merchants.id, merchant.id));
         return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  /**
+   * H-wave: request a settlement-account change. Never applies inline —
+   * creates a pending request and sends a 6-digit OTP to the merchant's
+   * REGISTERED phone (the number on file, not caller-supplied).
+   */
+  requestSettlementChange: protectedProcedure
+    .input(
+      z.object({
+        newAccountNumber: z.string().min(10).max(20),
+        newBankCode: z.string().min(3).max(10),
+        newBankName: z.string().min(2).max(64),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const merchant = await getMerchantFromRequest(ctx);
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        const [profile] = await db
+          .select({ phone: merchants.phone, email: merchants.email })
+          .from(merchants)
+          .where(eq(merchants.id, merchant.id))
+          .limit(1);
+        if (!profile?.phone)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "No registered phone on file for OTP delivery",
+          });
+
+        // One live request at a time: expire any existing pending rows.
+        await db
+          .update(merchantSettlementChangeRequests)
+          .set({ status: "expired" })
+          .where(
+            and(
+              eq(merchantSettlementChangeRequests.merchantId, merchant.id),
+              eq(merchantSettlementChangeRequests.status, "pending")
+            )
+          );
+
+        const otp = generateOtp();
+        const hashedOtp = await bcrypt.hash(otp, 10);
+        const otpExpiresAt = new Date(
+          Date.now() + SETTLEMENT_OTP_EXPIRY_MINUTES * 60 * 1000
+        );
+        const [request] = await db
+          .insert(merchantSettlementChangeRequests)
+          .values({
+            merchantId: merchant.id,
+            newAccountNumber: input.newAccountNumber,
+            newBankCode: input.newBankCode,
+            newBankName: input.newBankName,
+            hashedOtp,
+            otpExpiresAt,
+            requestedBy: ctx.user!.id,
+            status: "pending",
+          })
+          .returning({ id: merchantSettlementChangeRequests.id });
+
+        const smsResult = await sendSms(
+          profile.phone,
+          `Your merchant settlement-account change code is: ${otp}. Valid for ${SETTLEMENT_OTP_EXPIRY_MINUTES} minutes. If you did not request this, contact support immediately.`
+        );
+        if (!smsResult.success) {
+          // FAIL-CLOSED: without OTP delivery there is no verified channel.
+          await db
+            .update(merchantSettlementChangeRequests)
+            .set({ status: "rejected" })
+            .where(eq(merchantSettlementChangeRequests.id, request.id));
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              "Could not deliver the verification code; settlement change aborted",
+          });
+        }
+
+        return {
+          success: true,
+          requestId: request.id,
+          message: `A verification code has been sent to your registered phone. The change takes effect only after confirmation and a ${SETTLEMENT_HOLD_HOURS}h payout hold.`,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  /**
+   * H-wave: confirm a settlement-account change with the OTP sent to the
+   * registered phone. Applies the change, writes an audit row, and starts a
+   * payout hold (cooling-off) on the new account.
+   */
+  confirmSettlementChange: protectedProcedure
+    .input(
+      z.object({
+        requestId: z.number().int(),
+        otp: z.string().length(6),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const merchant = await getMerchantFromRequest(ctx);
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        const [request] = await db
+          .select()
+          .from(merchantSettlementChangeRequests)
+          .where(
+            and(
+              eq(merchantSettlementChangeRequests.id, input.requestId),
+              eq(merchantSettlementChangeRequests.merchantId, merchant.id)
+            )
+          )
+          .limit(1);
+        if (!request || request.status !== "pending")
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No pending settlement change request",
+          });
+        if (request.otpAttempts >= SETTLEMENT_OTP_MAX_ATTEMPTS) {
+          await db
+            .update(merchantSettlementChangeRequests)
+            .set({ status: "locked" })
+            .where(eq(merchantSettlementChangeRequests.id, request.id));
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Verification code locked after too many attempts; request a new code",
+          });
+        }
+        if (request.otpExpiresAt.getTime() < Date.now()) {
+          await db
+            .update(merchantSettlementChangeRequests)
+            .set({ status: "expired" })
+            .where(eq(merchantSettlementChangeRequests.id, request.id));
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Verification code expired",
+          });
+        }
+        const ok = await bcrypt.compare(input.otp, request.hashedOtp);
+        if (!ok) {
+          await db
+            .update(merchantSettlementChangeRequests)
+            .set({ otpAttempts: request.otpAttempts + 1 })
+            .where(eq(merchantSettlementChangeRequests.id, request.id));
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Invalid verification code",
+          });
+        }
+
+        const now = new Date();
+        const holdUntil = new Date(
+          now.getTime() + SETTLEMENT_HOLD_HOURS * 3600 * 1000
+        );
+        await db.transaction(async tx => {
+          await tx
+            .update(merchants)
+            .set({
+              settlementAccountNumber: request.newAccountNumber,
+              settlementBankCode: request.newBankCode,
+              settlementBankName: request.newBankName,
+              updatedAt: now,
+            })
+            .where(eq(merchants.id, merchant.id));
+          await tx
+            .update(merchantSettlementChangeRequests)
+            .set({ status: "applied", appliedAt: now, holdUntil })
+            .where(eq(merchantSettlementChangeRequests.id, request.id));
+          await tx.insert(auditLog).values({
+            action: "MERCHANT_SETTLEMENT_ACCOUNT_CHANGED",
+            resource: "merchants",
+            resourceId: String(merchant.id),
+            status: "success",
+            metadata: {
+              requestId: request.id,
+              requestedBy: request.requestedBy,
+              confirmedBy: ctx.user!.id,
+              holdUntil: holdUntil.toISOString(),
+            },
+          });
+        });
+
+        return {
+          success: true,
+          holdUntil,
+          message: `Settlement account updated. Payouts to the new account are held until ${holdUntil.toISOString()}.`,
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -182,7 +443,7 @@ export const merchantRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const merchant = await getMerchantFromRequest(ctx.req);
+        const merchant = await getMerchantFromRequest(ctx);
         if (!merchant)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -251,7 +512,7 @@ export const merchantRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const merchant = await getMerchantFromRequest(ctx.req);
+        const merchant = await getMerchantFromRequest(ctx);
         if (!merchant)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -300,7 +561,7 @@ export const merchantRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const merchant = await getMerchantFromRequest(ctx.req);
+        const merchant = await getMerchantFromRequest(ctx);
         if (!merchant)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -370,7 +631,7 @@ export const merchantRouter = router({
    */
   getDashboard: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const merchant = await getMerchantFromRequest(ctx.req);
+      const merchant = await getMerchantFromRequest(ctx);
       if (!merchant)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -480,7 +741,7 @@ export const merchantRouter = router({
         settlementBankName: z.string().min(2).max(64),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db)
@@ -488,6 +749,39 @@ export const merchantRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
+
+        // H-wave (2026-09): registration is bound to the authenticated
+        // Keycloak principal; re-registering with the same identity is
+        // IDEMPOTENT (returns the existing application).
+        const keycloakSub = ctx.user?.keycloakSub;
+        if (!keycloakSub)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Authenticated identity required",
+          });
+        const [bound] = await db
+          .select({
+            id: merchants.id,
+            merchantCode: merchants.merchantCode,
+          })
+          .from(merchants)
+          .where(
+            and(
+              eq(merchants.keycloakSub, keycloakSub),
+              isNull(merchants.deletedAt)
+            )
+          )
+          .limit(1);
+        if (bound) {
+          return {
+            success: true,
+            idempotent: true as const,
+            merchantCode: bound.merchantCode,
+            message:
+              "A merchant application already exists for this identity.",
+          };
+        }
+
         // Check for duplicate email
         const existing = await db
           .select({ id: merchants.id })
@@ -520,6 +814,7 @@ export const merchantRouter = router({
             settlementAccountNumber: input.settlementAccountNumber,
             settlementBankCode: input.settlementBankCode,
             settlementBankName: input.settlementBankName,
+            keycloakSub,
             walletBalance: "0.00",
             totalVolume: "0.00",
             totalTransactions: 0,
@@ -532,6 +827,7 @@ export const merchantRouter = router({
           });
         return {
           success: true,
+          idempotent: false as const,
           merchantCode: merchant.merchantCode,
           message:
             "Registration submitted successfully. Your account is pending review and will be activated within 1-3 business days.",

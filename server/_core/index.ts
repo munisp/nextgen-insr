@@ -47,6 +47,7 @@ import { serveStatic, setupVite } from "./vite";
 import { loadVaultSecrets } from "../_core/vault";
 import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
 import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
+import { runPolicyLifecycleSweep } from "../cron/policyLifecycleSweep";
 import {
   startArchivalCronWorker,
   stopArchivalCronWorker,
@@ -955,11 +956,21 @@ async function startServer() {
   // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
   cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
   cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+  // H-wave (2026-09): the INS-1 lapse/expiry sweeper existed but was never
+  // scheduled — wire it onto the same node-cron pattern, daily at 3 AM.
+  // The sweep is idempotent and error-logged (see cron/policyLifecycleSweep).
+  cron.schedule("0 3 * * *", () => {
+    runPolicyLifecycleSweep().catch(err =>
+      logger.error(
+        `[Cron] policyLifecycleSweep rejected: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+  }); // Daily at 3 AM
 
   // SAR retry cron — every 15 minutes, retries pending NFIU submissions
   startSarRetryCronSchedule();
   logger.info(
-    "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily 06:00) and SAR retry (15min) registered"
+    "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily 06:00), policy lifecycle sweep (daily 03:00) and SAR retry (15min) registered"
   );
 
   // ── Start listening ───────────────────────────────────────────────────────────

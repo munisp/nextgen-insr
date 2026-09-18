@@ -6,6 +6,7 @@
  */
 import {
   boolean,
+  index,
   integer,
   numeric,
   pgTable,
@@ -83,3 +84,33 @@ export const loyaltyTransactions = pgTable("loyalty_transactions", {
 
 export type LoyaltyTransaction = typeof loyaltyTransactions.$inferSelect;
 export type InsertLoyaltyTransaction = typeof loyaltyTransactions.$inferInsert;
+
+// ─── Coupon Redemptions (H-wave, 2026-09) ────────────────────────────────────
+// Platform-side redemption ledger. The redeem path previously incremented
+// promotions.usedCount with ZERO limits and a check-then-insert per-customer
+// limit (TOCTOU). Race-safety is enforced in the procedure via a transaction
+// with pg_advisory_xact_lock(promoId, customerId) around the per-customer
+// count+insert, plus an atomic guarded UPDATE on the global usage counter.
+// Mirrored by drizzle/0083_coupon_redemption_race_safety.sql.
+export const couponRedemptions = pgTable(
+  "coupon_redemptions",
+  {
+    id: serial("id").primaryKey(),
+    promoId: integer("promoId")
+      .references(() => promotions.id)
+      .notNull(),
+    customerId: integer("customerId").notNull(),
+    orderId: integer("orderId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    promoCustomerIdx: index("coupon_redemptions_promo_customer_idx").on(
+      t.promoId,
+      t.customerId
+    ),
+    promoIdx: index("coupon_redemptions_promo_idx").on(t.promoId),
+  })
+);
+
+export type CouponRedemption = typeof couponRedemptions.$inferSelect;
+export type InsertCouponRedemption = typeof couponRedemptions.$inferInsert;
