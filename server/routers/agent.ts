@@ -1118,14 +1118,17 @@ export const agentRouter = router({
     }),
 
   // ── Bulk tier upgrade ─────────────────────────────────────────────────────
-  bulkSetTier: protectedProcedure
+  // H-wave (adversarial verifier #3): tier is a PRIVILEGE attribute (G3
+  // audit #3 made it admin-only on agent.update) — bulk assignment must be
+  // admin-only too, with the actor recorded.
+  bulkSetTier: adminProcedure
     .input(
       z.object({
         ids: z.array(z.number().int().positive()).min(1).max(100),
         tier: z.enum(["Bronze", "Silver", "Gold", "Platinum"]),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -1138,7 +1141,11 @@ export const agentRouter = router({
           resource: "agent",
           resourceId: input.ids.join(","),
           status: "success",
-          metadata: { count: input.ids.length, tier: input.tier },
+          metadata: {
+            count: input.ids.length,
+            tier: input.tier,
+            actor: `user:${ctx.user?.id}`,
+          },
         });
         return { success: true, count: input.ids.length };
       } catch (error) {
