@@ -26,6 +26,7 @@ import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
 import { daprPublish } from "./daprClient";
 import { getDb } from "./db";
+import { encryptPii } from "./lib/piiCrypto";
 import { fluvioProduce } from "./fluvio";
 import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import {
@@ -103,8 +104,8 @@ export async function createOrFetchCustomer(input: {
     lastName,
     phone: input.phone,
     email: input.email ?? null,
-    nin: input.nin ?? null,
-    bvn: input.bvn ?? null,
+    nin: encryptPii(input.nin),
+    bvn: encryptPii(input.bvn),
     preferredAgentId: input.agentId ?? null,
     externalId: customerCode,
     status: "pending_kyc",

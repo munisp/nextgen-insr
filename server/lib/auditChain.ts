@@ -38,7 +38,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { asc } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { auditLog, type AuditLog } from "../../drizzle/schema";
@@ -133,6 +133,8 @@ export interface AuditChainVerification {
   checkedRows: number;
   /** Rows with NULL hashes (legacy or direct-insert bypass). */
   unchainedRows: number;
+  /** Rows PII-redacted under GDPR/NDPR erasure (OPS-4) — linkage still verified. */
+  redactedRows: number;
   /** Total rows examined (capped by maxRows). */
   totalRows: number;
   genesisId: number | null;
@@ -175,6 +177,7 @@ export async function verifyAuditChain(
 
   let checkedRows = 0;
   let unchainedRows = 0;
+  let redactedRows = 0;
   let genesisId: number | null = null;
   let tipId: number | null = null;
   let tipHash: string | null = null;
@@ -185,6 +188,7 @@ export async function verifyAuditChain(
     ok: failure === null,
     checkedRows,
     unchainedRows,
+    redactedRows,
     totalRows: scan.length,
     genesisId,
     tipId,
@@ -193,6 +197,15 @@ export async function verifyAuditChain(
   });
 
   for (const row of scan) {
+    // OPS-4: rows redacted by redactAuditLogPii (GDPR/NDPR erasure) have
+    // their PII payload intentionally replaced with a tombstone AFTER the
+    // hash was written. Their content no longer reproduces entryHash BY
+    // DESIGN — skip the content recompute, but still enforce prevHash
+    // linkage, so chain integrity (append-only evidence) is preserved while
+    // the PII is gone.
+    const isRedacted = row.redactedAt != null;
+    if (isRedacted) redactedRows++;
+
     if (!row.entryHash) {
       unchainedRows++;
       if (strict) {
@@ -209,8 +222,9 @@ export async function verifyAuditChain(
     }
 
     // 1. Content integrity: recompute the entry hash from stored fields.
+    //    (Skipped for OPS-4 redacted rows — see redactAuditLogPii.)
     const recomputed = computeEntryHash(row.prevHash ?? null, entryFieldsFromRow(row));
-    if (recomputed !== row.entryHash) {
+    if (!isRedacted && recomputed !== row.entryHash) {
       return result({
         rowId: row.id,
         reason: "entry-hash-mismatch",
@@ -240,4 +254,93 @@ export async function verifyAuditChain(
   }
 
   return result(null);
+}
+
+// ─── OPS-4: GDPR/NDPR erasure — PII redaction with chain preservation ───────
+
+/** Minimal db surface needed for redaction (drizzle node-postgres). */
+export type AuditRedactionDb = Pick<
+  NodePgDatabase<Record<string, never>>,
+  "update"
+>;
+
+export interface AuditRedactionCriteria {
+  /** Redact rows recorded against this customer (resource='customer'). */
+  customerId?: number;
+  /** Redact rows whose metadata embeds any of these PII strings (phone, email, agent code …). */
+  piiFragments?: string[];
+  /** Free-text reason recorded in the tombstone (never PII itself). */
+  reason: string;
+}
+
+export interface AuditRedactionResult {
+  redactedRows: number;
+  redactedAt: Date;
+}
+
+/**
+ * Redact PII from audit_log entries WITHOUT breaking the hash chain.
+ *
+ * Mechanism (resolves the documented erasure-vs-immutability conflict):
+ *   - metadata   → tombstone {"redacted": true, reason, redactedAt}
+ *   - ipAddress  → NULL
+ *   - userAgent  → NULL
+ *   - redactedAt → now
+ *   - prevHash / entryHash / action / resource / resourceId / createdAt are
+ *     UNTOUCHED — the chain linkage (prevHash → entryHash) still verifies;
+ *     verifyAuditChain skips content recompute for redacted rows only.
+ *
+ * This is crypto-shredding by tombstone: the erased subject's PII is
+ * irrecoverable from audit_log, while the tamper-evident append-only
+ * structure survives. WORM offload of the chain to MinIO (object-locked
+ * bucket, OPS-1) remains the owner-side complement for superuser-rewrite
+ * defence.
+ *
+ * Idempotent: already-redacted rows are skipped. Fail-loud: a criteria set
+ * matching nothing is an error to the caller (returns 0; caller decides).
+ */
+export async function redactAuditLogPii(
+  db: AuditRedactionDb,
+  criteria: AuditRedactionCriteria
+): Promise<AuditRedactionResult> {
+  const now = new Date();
+  const conditions = [];
+  if (criteria.customerId !== undefined) {
+    conditions.push(
+      and(
+        eq(auditLog.resource, "customer"),
+        eq(auditLog.resourceId, String(criteria.customerId))
+      )
+    );
+  }
+  for (const fragment of criteria.piiFragments ?? []) {
+    if (!fragment || fragment.length < 3) continue; // refuse trivially broad matches
+    conditions.push(
+      sql`CAST(${auditLog.metadata} AS text) LIKE ${"%" + fragment.replace(/[%_]/g, "") + "%"}`
+    );
+  }
+  if (conditions.length === 0) {
+    throw new Error(
+      "[auditChain] redactAuditLogPii requires at least one usable criterion (customerId or piiFragments >= 3 chars)"
+    );
+  }
+
+  const tombstone = {
+    redacted: true,
+    reason: criteria.reason,
+    redactedAt: now.toISOString(),
+  };
+
+  const updated = await db
+    .update(auditLog)
+    .set({
+      metadata: tombstone,
+      ipAddress: null,
+      userAgent: null,
+      redactedAt: now,
+    })
+    .where(and(isNull(auditLog.redactedAt), or(...conditions)))
+    .returning({ id: auditLog.id });
+
+  return { redactedRows: updated.length, redactedAt: now };
 }

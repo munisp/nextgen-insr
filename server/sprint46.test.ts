@@ -302,7 +302,13 @@ describe("Sprint 46: Data Integrity", () => {
     // compliance_chat_sessions, compliance_chat_messages). Honest-count
     // drift, not a weakening — the gate still counts information_schema
     // at runtime.
-    expect(stats.totalTables).toBe(207);
+    // 2026-09-18: count updated 207 → 209 — audit wave F1 (payments) added
+    // two REAL tables via migrations 0061/0062: tb_transfer_registry
+    // (client-side TB transfer idempotency registry) and
+    // payment_discrepancies (real reconciliation findings). Honest-count
+    // drift, not a weakening — the gate still counts information_schema at
+    // runtime.
+    expect(stats.totalTables).toBe(209);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

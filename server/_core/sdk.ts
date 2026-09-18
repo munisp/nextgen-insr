@@ -163,6 +163,24 @@ class SDKServer {
   }
 
   /**
+   * OPS-8: dual-key verification window for session JWT rotation.
+   * Signing always uses the CURRENT secret; verification accepts the current
+   * secret and, when configured, JWT_SECRET_PREVIOUS (or
+   * COOKIE_SECRET_PREVIOUS) so a rotation does not invalidate every live
+   * session. The previous key is dropped once the rotation window (one max
+   * session lifetime) has elapsed.
+   */
+  private getSessionVerifySecrets(): Uint8Array[] {
+    const secrets = [this.getSessionSecret()];
+    const previous =
+      process.env.JWT_SECRET_PREVIOUS ?? process.env.COOKIE_SECRET_PREVIOUS;
+    if (previous && previous !== ENV.cookieSecret) {
+      secrets.push(new TextEncoder().encode(previous));
+    }
+    return secrets;
+  }
+
+  /**
    * Create a session token for a Manus user openId
    * @example
    * const sessionToken = await sdk.createSessionToken(userInfo.openId);
@@ -195,7 +213,7 @@ class SDKServer {
       appId: payload.appId,
       name: payload.name,
     })
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "session-key:v1" })
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
@@ -208,12 +226,32 @@ class SDKServer {
       return null;
     }
 
-    try {
-      const secretKey = this.getSessionSecret();
-      const { payload } = await jwtVerify(cookieValue, secretKey, {
-        algorithms: ["HS256"],
-      });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+    // OPS-8: dual-key verify (current + previous) with explicit clock-skew
+    // tolerance (jose default is 0 — any skew vs other verifiers rejected).
+    const CLOCK_TOLERANCE_S = 30;
+    let payload: Record<string, unknown> | null = null;
+    let lastError: unknown = null;
+    for (const secretKey of this.getSessionVerifySecrets()) {
+      try {
+        const verified = await jwtVerify(cookieValue, secretKey, {
+          algorithms: ["HS256"],
+          clockTolerance: CLOCK_TOLERANCE_S,
+        });
+        payload = verified.payload as Record<string, unknown>;
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (!payload) {
+      logger.warn(
+        "[Auth] Session verification failed with all configured keys:: " +
+          (lastError as Error)?.message
+      );
+      return null;
+    }
+    {
+      const { openId, appId, name } = payload;
 
       if (
         !isNonEmptyString(openId) ||
@@ -229,9 +267,6 @@ class SDKServer {
         appId,
         name,
       };
-    } catch (error) {
-      logger.warn("[Auth] Session verification failed: " + String(error));
-      return null;
     }
   }
 

@@ -575,6 +575,12 @@ export const auditLog = pgTable(
     // inserts) — such rows are reported as "unchained" by verification.
     prevHash: varchar("prevHash", { length: 64 }),
     entryHash: varchar("entryHash", { length: 64 }),
+    // OPS-4: GDPR/NDPR erasure tombstone. When set, the row's PII-bearing
+    // payload (metadata, ipAddress, userAgent) has been redacted by
+    // redactAuditLogPii(); entryHash/prevHash are RETAINED so chain linkage
+    // stays verifiable — verification skips content recompute for redacted
+    // rows but still enforces prevHash linkage (see auditChain.ts).
+    redactedAt: timestamp("redactedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -1086,8 +1092,11 @@ export const kycSessions = pgTable(
       .default(sql`gen_random_uuid()`),
     type: varchar("type", { length: 32 }).default("agent_onboarding").notNull(),
     status: varchar("status", { length: 32 }).default("pending").notNull(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
+    // OPS-3: widened to text — BVN/NIN are stored AES-256-GCM encrypted at
+    // rest (server/lib/piiCrypto.ts envelope "pii:v1:..."); plaintext was
+    // varchar(11). Migration 0073 widens existing columns.
+    bvn: text("bvn"),
+    nin: text("nin"),
     selfieUrl: text("selfieUrl"),
     idDocUrl: text("idDocUrl"),
     idDocType: varchar("idDocType", { length: 32 }),
@@ -1407,9 +1416,11 @@ export const customers = pgTable(
     lastName: varchar("lastName", { length: 64 }).notNull(),
     email: varchar("email", { length: 320 }),
     phone: varchar("phone", { length: 20 }).notNull().unique(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
-    dateOfBirth: varchar("dateOfBirth", { length: 10 }),
+    // OPS-3: BVN/NIN/DOB encrypted at rest via server/lib/piiCrypto.ts
+    // (self-describing "pii:v1:..." envelope) — widened to text (migration 0073).
+    bvn: text("bvn"),
+    nin: text("nin"),
+    dateOfBirth: text("dateOfBirth"),
     address: text("address"),
     status: customerStatusEnum("status").default("pending_kyc").notNull(),
     kycLevel: integer("kycLevel").default(0).notNull(),
@@ -5518,6 +5529,23 @@ export const policyLifecycleStates = pgTable(
     waitingPeriodResetAt: timestamp("waitingPeriodResetAt"),
     arrearsAmount: numeric("arrearsAmount", { precision: 18, scale: 2 }).default("0").notNull(),
     lastSweptAt: timestamp("lastSweptAt"),
+
+// ─── Audit wave F1 (payments) — append-only additions ────────────────────────
+
+// PAY-3: durable idempotency registry for TigerBeetle transfers. The
+// tb-sidecar is a transparent proxy (no dedup), so retry-after-timeout safety
+// is established client-side: ref → payloadHash + deterministic transferId +
+// outcome. See server/tbClient.ts.
+export const tbTransferRegistry = pgTable(
+  "tb_transfer_registry",
+  {
+    ref: varchar("ref", { length: 128 }).primaryKey(),
+    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+    transferId: varchar("transferId", { length: 128 }),
+    // indeterminate = attempt timed out (commit state unknown);
+    // committed = upstream confirmed.
+    status: varchar("status", { length: 16 }).default("indeterminate").notNull(),
+    response: text("response"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
@@ -5551,3 +5579,35 @@ export const claimAppeals = pgTable(
 );
 export type ClaimAppeal = typeof claimAppeals.$inferSelect;
 export type InsertClaimAppeal = typeof claimAppeals.$inferInsert;
+
+    statusIdx: index("tbreg_status_idx").on(t.status),
+  })
+);
+export type TbTransferRegistryRow = typeof tbTransferRegistry.$inferSelect;
+
+// PAY-6: real reconciliation findings. runReconciliation writes one row per
+// detected divergence; resolveDiscrepancy performs a real status transition.
+export const paymentDiscrepancies = pgTable(
+  "payment_discrepancies",
+  {
+    id: serial("id").primaryKey(),
+    runId: varchar("runId", { length: 64 }).notNull(),
+    kind: varchar("kind", { length: 64 }).notNull(),
+    ref: varchar("ref", { length: 128 }),
+    agentId: integer("agentId"),
+    expectedAmount: numeric("expectedAmount", { precision: 18, scale: 2 }),
+    actualAmount: numeric("actualAmount", { precision: 18, scale: 2 }),
+    detail: text("detail"),
+    status: varchar("status", { length: 16 }).default("open").notNull(),
+    resolvedBy: varchar("resolvedBy", { length: 128 }),
+    resolvedAt: timestamp("resolvedAt"),
+    resolutionNote: text("resolutionNote"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    runIdx: index("pdisc_run_idx").on(t.runId),
+    statusIdx: index("pdisc_status_idx").on(t.status),
+    refIdx: index("pdisc_ref_idx").on(t.ref),
+  })
+);
+export type PaymentDiscrepancy = typeof paymentDiscrepancies.$inferSelect;

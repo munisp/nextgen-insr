@@ -17,7 +17,7 @@ import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { tbCreateTransfer, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
 
 export const premiumTopUpRouter = router({
   topUp: protectedProcedure
@@ -77,7 +77,7 @@ export const premiumTopUpRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payment in progress" });
 
       try {
-        const tbResult = await tbCreateTransfer({
+        const tbReq = {
           debitAccountId: `customer-${policy.customerId}`,
           creditAccountId: "insurer-premium-pool",
           amount: Math.round(input.amountNGN * 100),
@@ -86,7 +86,8 @@ export const premiumTopUpRouter = router({
           ref: input.reference,
           txType: "premium_payment",
           agentId: input.agentId ? String(input.agentId) : undefined,
-        });
+        };
+        const tbResult = await tbCreateTransfer(tbReq);
 
         // F-02: ALL PostgreSQL effects (transaction row, premium ledger row,
         // lapsed-policy reactivation) commit or roll back as ONE unit. The
@@ -98,7 +99,11 @@ export const premiumTopUpRouter = router({
         type TopUpOutcome =
           | { replay: true }
           | { replay: false; tx: typeof transactions.$inferSelect; premium: typeof premiums.$inferSelect };
-        const outcome = await db.transaction(async (tx): Promise<TopUpOutcome> => {
+        // PAY-1 (orphan transfer): the TB leg above is already committed. If
+        // the PG transaction fails, post a compensating reversal (ref-REV)
+        // and rethrow loudly — value must never exist in the ledger without
+        // the corresponding durable PG record.
+        const outcome = await withTbCompensation("premiumTopUp.topUp", tbReq, () => db.transaction(async (tx): Promise<TopUpOutcome> => {
           const reserved = await tx.insert(transactions).values({
             ref: input.reference,
             agentId: txAgentId,
@@ -162,7 +167,7 @@ export const premiumTopUpRouter = router({
           }
 
           return { replay: false, tx: linkedTx ?? reserved[0]!, premium: premiumRecord };
-        });
+        }));
 
         if (outcome.replay) {
           const [winner] = await db.select().from(transactions)

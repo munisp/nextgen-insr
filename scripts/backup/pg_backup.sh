@@ -136,8 +136,10 @@ fi
 sha256sum "${BACKUP_DIR}/${BACKUP_NAME}.dump" > "${BACKUP_DIR}/${BACKUP_NAME}.sha256"
 log "Checksum: $(cat "${BACKUP_DIR}/${BACKUP_NAME}.sha256")"
 
-# ─── Encrypt (if key provided) ───────────────────────────────────────────────
-
+# ─── Encrypt (OPS-4: mandatory in production — fail closed) ─────────────────
+# Dumps contain full PII (BVN/NIN/DOB). Plaintext backups are a critical data
+# protection violation; in production a missing encryption key is FATAL.
+APP_ENV="${APP_ENV:-${NODE_ENV:-production}}"
 if [ -n "${BACKUP_ENCRYPTION_KEY:-}" ]; then
     log "Step 3b: Encrypting backup..."
     gpg --batch --yes --recipient "${BACKUP_ENCRYPTION_KEY}" \
@@ -145,6 +147,13 @@ if [ -n "${BACKUP_ENCRYPTION_KEY:-}" ]; then
         --encrypt "${BACKUP_DIR}/${BACKUP_NAME}.dump"
     rm "${BACKUP_DIR}/${BACKUP_NAME}.dump"
     log "Encrypted backup created"
+elif [ "${APP_ENV}" = "production" ]; then
+    rm -f "${BACKUP_DIR}/${BACKUP_NAME}.dump"   # do not leave plaintext behind
+    log "ERROR: BACKUP_ENCRYPTION_KEY is required in production — refusing to store an unencrypted dump"
+    echo "[pg_backup] FATAL: BACKUP_ENCRYPTION_KEY unset in production" >&2
+    exit 1
+else
+    log "WARNING: BACKUP_ENCRYPTION_KEY unset — storing UNENCRYPTED dump (non-production only)"
 fi
 
 # ─── Upload to S3 (if configured) ────────────────────────────────────────────

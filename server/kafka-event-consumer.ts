@@ -32,6 +32,11 @@ import type {
   EachMessagePayload,
 } from "kafkajs";
 
+import {
+  buildDlqEnvelope,
+  RETRY_COUNT_HEADER,
+} from "./lib/kafkaDlqEnvelope";
+
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 export interface KafkaConsumerConfig {
@@ -530,19 +535,31 @@ export class PosEventConsumer {
   ): Promise<void> {
     if (!this.producer) return;
 
+    // OPS-5: unified DLQ envelope (server/lib/kafkaDlqEnvelope.ts). The
+    // envelope carries originalTopic + retryCount IN THE BODY — the DLQ
+    // consumer parses the same schema, so retries target a real topic and
+    // the attempt count never resets (poison messages exhaust maxRetries
+    // and are persisted as unrecoverable instead of looping forever).
+    const { value, envelope } = buildDlqEnvelope({
+      message,
+      sourceTopic,
+      partition,
+      error,
+    });
+
     try {
       await this.producer.send({
         topic: this.config.dlqTopic,
         messages: [
           {
             key: message.key,
-            value: message.value,
+            value,
             headers: {
               "x-original-topic": sourceTopic,
               "x-original-partition": String(partition),
               "x-error": error,
-              "x-failed-at": String(Date.now()),
-              "x-retry-count": String(this.config.maxRetries),
+              "x-failed-at": String(envelope.failedAt),
+              [RETRY_COUNT_HEADER]: String(envelope.retryCount),
             },
           },
         ],

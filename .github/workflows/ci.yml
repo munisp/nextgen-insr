@@ -169,7 +169,10 @@ jobs:
 
       - name: Apply database schema
         # Same as integration.yml — without this, DB-touching tests fail 42P01
-        run: pnpm exec drizzle-kit push --force
+        run: pnpm exec drizzle-kit push
+        # OPS-2: --force removed — push must fail loud on any destructive/data-loss
+        # statement instead of auto-accepting it. Review drift and write a proper
+        # migration when push refuses.
         env:
           POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
 
