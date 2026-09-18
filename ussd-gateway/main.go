@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,6 +35,16 @@ type Config struct {
 	RedisPass   string
 	RedisDB     int
 	LogLevel    string
+	// PINPepper is the server-side secret mixed into PIN hashes (fail-closed:
+	// financial ops are blocked when unset, since PINs could not be verified
+	// safely).
+	PINPepper string
+	// PINMaxAttempts before lockout; PINLockSeconds is the lockout duration.
+	PINMaxAttempts int
+	PINLockSeconds int
+	// CashOutCoolingHours is the cooling period after a phone rebind before
+	// cash-out (float claim) is allowed.
+	CashOutCoolingHours int
 }
 
 func loadConfig() Config {
@@ -62,6 +75,19 @@ func loadConfig() Config {
 	}
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
+	}
+	cfg.PINPepper = os.Getenv("PIN_PEPPER")
+	cfg.PINMaxAttempts = 3
+	if v, err := strconv.Atoi(os.Getenv("PIN_MAX_ATTEMPTS")); err == nil && v > 0 {
+		cfg.PINMaxAttempts = v
+	}
+	cfg.PINLockSeconds = 900
+	if v, err := strconv.Atoi(os.Getenv("PIN_LOCK_SECONDS")); err == nil && v > 0 {
+		cfg.PINLockSeconds = v
+	}
+	cfg.CashOutCoolingHours = 24
+	if v, err := strconv.Atoi(os.Getenv("CASHOUT_COOLING_HOURS")); err == nil && v >= 0 {
+		cfg.CashOutCoolingHours = v
 	}
 
 	return cfg
@@ -234,6 +260,12 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 		return app.stateAgentRegisterComplete(sess, input)
 	case "agent_float_input":
 		return app.stateAgentFloatInput(sess, input)
+	case "agent_pin_enter":
+		return app.stateAgentPINEnter(sess, input)
+	case "agent_pin_set":
+		return app.stateAgentPINSet(sess, input)
+	case "agent_pin_set_confirm":
+		return app.stateAgentPINSetConfirm(sess, input)
 	case "agent_float_confirm":
 		return app.stateAgentFloatConfirm(sess, input)
 	case "agent_float_complete":
@@ -514,12 +546,26 @@ func (app *Application) renderAgentFloatConfirm(sess *models.SessionData) models
 }
 
 func (app *Application) stateProductConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
-	if strings.ToUpper(input) == "0" || input == "BACK" || input == "CANCEL" {
+	if isCancelInput(input) {
 		// Restart enrollment from beginning.
 		sess.State = "product_enroll"
 		sess.Data["field_index"] = 0
 		sess.Data["collected_data"] = map[string]string{}
 		return app.renderProductField(sess), nil
+	}
+
+	// NG-1: ONLY an explicit "1" confirms. Any other input re-prompts so a
+	// typo or ambiguous callback payload cannot trigger enrollment.
+	if !isConfirmInput(input) {
+		summary, _ := sess.Data["summary"].(string)
+		if summary == "" {
+			summary = "1. Confirm\n0. Cancel"
+		}
+		return models.USSDResponse{
+			Text:         "Invalid input.\n\n" + summary,
+			CloseSession: false,
+			Action:       "confirm",
+		}, nil
 	}
 
 	// Create the enrollment transaction.
@@ -555,7 +601,10 @@ func (app *Application) stateProductConfirm(sess *models.SessionData, input stri
 	}
 
 	ctx := context.Background()
-	txn, err := app.pg.CreateTransaction(ctx, txn)
+	// NG-1: idempotency key on (session base, type, product) — telco callback
+	// redelivery or post-drop resume dedups to the original pending txn.
+	idemKey := fmt.Sprintf("enroll:%s:%s", idempotencyBase(sess), productID)
+	txn, dup, err := app.pg.CreateTransactionIdempotent(ctx, txn, idemKey)
 	if err != nil {
 		app.log.Error("create transaction", zap.Error(err))
 		sess.State = "end"
@@ -564,6 +613,10 @@ func (app *Application) stateProductConfirm(sess *models.SessionData, input stri
 			CloseSession: true,
 			Action:       "end",
 		}, nil
+	}
+	if dup {
+		app.log.Info("duplicate enrollment callback deduplicated",
+			zap.String("idempotency_key", idemKey), zap.String("reference", txn.Reference))
 	}
 
 	// Store reference for display.
@@ -606,9 +659,30 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 			}, nil
 		}
 		sess.Data["agent_id"] = agent.ID
-		sess.State = "agent_float_input"
+		// USSD identity: float claim (cash-out) requires PIN verification.
+		pinState, err := app.pg.GetAgentPINState(context.Background(), agent.ID)
+		if err != nil {
+			app.log.Error("pin state lookup", zap.Error(err))
+			return models.USSDResponse{
+				Text:         "Service unavailable. Please try again later.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
+		if msg, blocked := app.financialOpsBlocked(pinState); blocked {
+			return models.USSDResponse{Text: msg, CloseSession: true, Action: "end"}, nil
+		}
+		if pinState.PINHash == "" {
+			sess.State = "agent_pin_set"
+			return models.USSDResponse{
+				Text:         "Set a 4-6 digit PIN to secure your float account.\nEnter new PIN:",
+				CloseSession: false,
+				Action:       "continue",
+			}, nil
+		}
+		sess.State = "agent_pin_enter"
 		return models.USSDResponse{
-			Text:         fmt.Sprintf("AGENT FLOAT CLAIM\nCurrent balance: ₦%s\n\nEnter claim amount:", formatCurrency(agent.FloatBalance)),
+			Text:         "Enter your agent PIN to continue:",
 			CloseSession: false,
 			Action:       "continue",
 		}, nil
@@ -720,12 +794,21 @@ func (app *Application) stateAgentRegisterBank(sess *models.SessionData, input s
 }
 
 func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
-	if strings.ToUpper(input) == "0" || input == "BACK" || input == "CANCEL" {
+	if isCancelInput(input) {
 		sess.State = "agent_menu"
 		return models.USSDResponse{
 			Text:         "Registration cancelled. Returning to Agent Services.",
 			CloseSession: false,
 			Action:       "continue",
+		}, nil
+	}
+
+	// NG-1: only explicit "1" confirms registration.
+	if !isConfirmInput(input) {
+		return models.USSDResponse{
+			Text:         "Invalid input. Reply 1 to Confirm or 0 to Cancel.",
+			CloseSession: false,
+			Action:       "confirm",
 		}, nil
 	}
 
@@ -813,7 +896,7 @@ func (app *Application) stateAgentFloatInput(sess *models.SessionData, input str
 }
 
 func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
-	if strings.ToUpper(input) == "0" || input == "BACK" || input == "CANCEL" {
+	if isCancelInput(input) {
 		sess.State = "agent_menu"
 		return models.USSDResponse{
 			Text:         "Claim cancelled.",
@@ -822,15 +905,53 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 		}, nil
 	}
 
+	// NG-1: only explicit "1" confirms; anything else re-prompts.
+	if !isConfirmInput(input) {
+		return models.USSDResponse{
+			Text:         "Invalid input. Reply 1 to Confirm or 0 to Cancel.",
+			CloseSession: false,
+			Action:       "confirm",
+		}, nil
+	}
+
+	// PIN must have been verified in this session (fail-closed).
+	if pinOK, _ := sess.Data["pin_verified"].(bool); !pinOK {
+		sess.State = "agent_menu"
+		return models.USSDResponse{
+			Text:         "PIN verification required before float claims. Start again from Agent Services.",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+
 	amount := sess.Data["claim_amount"].(float64)
 	agentID := sess.Data["agent_id"].(string)
+	ctx := context.Background()
 
-	// Deduct the float balance.
-	balance, _ := app.pg.GetAgentBalance(context.Background(), agentID)
-	newBalance := balance - amount
-	_ = app.pg.UpdateAgentBalance(context.Background(), agentID, newBalance)
+	// NG-4: atomic conditional deduction — the balance check and the debit
+	// happen in ONE SQL statement, so concurrent/duplicate confirms cannot
+	// both pass the balance check. Fail-closed on any error.
+	newBalance, err := app.pg.DeductAgentBalance(ctx, agentID, amount)
+	if err != nil {
+		if err == db.ErrInsufficientFloat {
+			balance, _ := app.pg.GetAgentBalance(ctx, agentID)
+			sess.State = "agent_float_input"
+			return models.USSDResponse{
+				Text:         fmt.Sprintf("Insufficient float balance. Available: ₦%s\n\nEnter claim amount:", formatCurrency(balance)),
+				CloseSession: false,
+				Action:       "continue",
+			}, nil
+		}
+		app.log.Error("float deduction failed", zap.Error(err))
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Processing failed. No funds were deducted. Please try again later.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
 
-	// Record the transaction.
+	// Record the transaction (idempotent on session+amount).
 	txn := &models.TransactionRecord{
 		SessionID:   sess.SessionID,
 		PhoneNumber: sess.PhoneNumber,
@@ -839,18 +960,22 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 		Amount:      amount,
 		Status:      "completed",
 	}
-	ctx := context.Background()
-	txn, err := app.pg.CreateTransaction(ctx, txn)
+	idemKey := fmt.Sprintf("float:%s:%s:%s", idempotencyBase(sess), agentID, strconv.FormatFloat(amount, 'f', 2, 64))
+	txn, _, err = app.pg.CreateTransactionIdempotent(ctx, txn, idemKey)
 	if err != nil {
 		app.log.Error("float claim txn", zap.Error(err))
 	}
+	reference := "PENDING"
+	if txn != nil {
+		reference = txn.Reference
+	}
 
-	sess.Data["reference"] = txn.Reference
+	sess.Data["reference"] = reference
 	sess.Data["new_balance"] = newBalance
 	sess.State = "agent_float_complete"
 
 	return models.USSDResponse{
-		Text:         fmt.Sprintf("Float claim of ₦%s processed successfully!\nNew balance: ₦%s\nReference: %s", formatCurrency(amount), formatCurrency(newBalance), txn.Reference),
+		Text:         fmt.Sprintf("Float claim of ₦%s processed successfully!\nNew balance: ₦%s\nReference: %s", formatCurrency(amount), formatCurrency(newBalance), reference),
 		CloseSession: true,
 		Action:       "end",
 	}, nil
@@ -1034,11 +1159,42 @@ func (app *Application) getOrCreateSession(ctx context.Context, req *models.USSD
 		return nil, err
 	}
 	if sess != nil {
-		// Also try Postgres for persistence.
-		if pgSession, _ := app.pg.GetSessionState(ctx, req.SessionID); pgSession != nil {
-			return pgSession, nil
-		}
+		// NG-3: Redis holds the freshest copy (writes go Redis-first); only
+		// fall back to Postgres when Redis has no record.
 		return sess, nil
+	}
+
+	// Redis miss: try Postgres copy of this session ID.
+	if pgSession, _ := app.pg.GetSessionState(ctx, req.SessionID); pgSession != nil {
+		return pgSession, nil
+	}
+
+	// NG-2: session drop recovery — the telco issued a new SessionID. Look up
+	// the phone's most recent live session; if it sits in a resumable
+	// mid-transaction state, resume it under the new SessionID instead of
+	// silently restarting at the main menu.
+	if prior, _ := app.pg.GetLatestSessionByPhone(ctx, req.PhoneNumber); prior != nil && resumableStates[prior.State] {
+		app.log.Info("resuming dropped session",
+			zap.String("old_session_id", prior.SessionID),
+			zap.String("new_session_id", req.SessionID),
+			zap.String("state", prior.State),
+		)
+		resumed := &models.SessionData{
+			SessionID:   req.SessionID,
+			PhoneNumber: req.PhoneNumber,
+			State:       prior.State,
+			Data:        prior.Data,
+			ExpiresAt:   time.Now().Add(180 * time.Second),
+		}
+		if resumed.Data == nil {
+			resumed.Data = make(map[string]interface{})
+		}
+		resumed.Data["idempotency_base"] = prior.SessionID
+		resumed.Data["resumed"] = true
+		if err := app.saveSession(ctx, resumed); err != nil {
+			return nil, err
+		}
+		return resumed, nil
 	}
 
 	// Create a new session.
@@ -1378,4 +1534,314 @@ func titleASCII(s string) string {
 		prevBoundary = !isLetter
 	}
 	return string(b)
+}
+
+// ---------------------------------------------------------------------------
+// F4 audit additions (nigeria.md NG-1..NG-4 + USSD identity)
+// ---------------------------------------------------------------------------
+
+// hashPIN derives a salted, peppered SHA-256 hash for a PIN. The salt is the
+// agent ID; the pepper is the server-side secret so DB-only leaks are useless.
+func hashPIN(pin, agentID, pepper string) string {
+	h := sha256.Sum256([]byte("ussd-pin-v1:" + pepper + ":" + agentID + ":" + pin))
+	return hex.EncodeToString(h[:])
+}
+
+// verifyPIN compares a PIN against its stored hash in constant time.
+func verifyPIN(pin, agentID, pepper, expectedHash string) bool {
+	if expectedHash == "" || pepper == "" {
+		return false
+	}
+	actual := hashPIN(pin, agentID, pepper)
+	return subtle.ConstantTimeCompare([]byte(actual), []byte(expectedHash)) == 1
+}
+
+// validPINFormat enforces 4-6 digit numeric PINs.
+func validPINFormat(pin string) bool {
+	if len(pin) < 4 || len(pin) > 6 {
+		return false
+	}
+	for _, c := range pin {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isConfirmInput accepts ONLY an explicit "1" as confirmation (NG-1: any
+// other non-cancel input must re-prompt, never confirm).
+func isConfirmInput(input string) bool {
+	return strings.TrimSpace(input) == "1"
+}
+
+// isCancelInput detects explicit cancellation input.
+func isCancelInput(input string) bool {
+	up := strings.ToUpper(strings.TrimSpace(input))
+	return up == "0" || up == "BACK" || up == "CANCEL"
+}
+
+// resumableStates are states a dropped session can be resumed into under a
+// new telco SessionID (NG-2). Terminal/menu states restart cleanly instead.
+var resumableStates = map[string]bool{
+	"product_enroll":         true,
+	"product_confirm":        true,
+	"agent_register_name":    true,
+	"agent_register_state":   true,
+	"agent_register_lga":     true,
+	"agent_register_bank":    true,
+	"agent_register_confirm": true,
+	"agent_float_input":      true,
+	"agent_float_confirm":    true,
+	"claim_status_input":     true,
+}
+
+// idempotencyBase returns the stable base for transaction idempotency keys.
+// A resumed session keeps the ORIGINAL session's base so a post-resume confirm
+// dedups against the pre-drop attempt (NG-1/NG-2).
+func idempotencyBase(sess *models.SessionData) string {
+	if base, ok := sess.Data["idempotency_base"].(string); ok && base != "" {
+		return base
+	}
+	return sess.SessionID
+}
+
+// financialOpsBlocked reports whether cash-out is blocked: PIN pepper must be
+// configured (fail-closed) and the phone-binding cooling period must have
+// elapsed since the last rebind (NG-20 mitigation for SIM-swap cash-out).
+func (app *Application) financialOpsBlocked(pinState *db.AgentPINState) (string, bool) {
+	if app.cfg.PINPepper == "" {
+		return "Financial operations are temporarily unavailable. Please contact support.", true
+	}
+	if app.cfg.CashOutCoolingHours > 0 && !pinState.PhoneBoundAt.IsZero() {
+		coolingEnd := pinState.PhoneBoundAt.Add(time.Duration(app.cfg.CashOutCoolingHours) * time.Hour)
+		if time.Now().Before(coolingEnd) {
+			return fmt.Sprintf("For your security, cash-out is enabled %d hours after a phone number change. Please try again after %s.",
+				app.cfg.CashOutCoolingHours, coolingEnd.Format("02-Jan 15:04")), true
+		}
+	}
+	return "", false
+}
+
+// -- State: PIN verification / setup for financial operations -----------------
+
+// stateAgentPINEnter verifies the agent's PIN with attempt lockout before a
+// float claim (NG identity: PIN requirement for financial ops).
+func (app *Application) stateAgentPINEnter(sess *models.SessionData, input string) (models.USSDResponse, error) {
+	agentID := sess.Data["agent_id"].(string)
+	ctx := context.Background()
+
+	if app.cfg.PINPepper == "" {
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Financial operations are temporarily unavailable. Please contact support.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+
+	st, err := app.pg.GetAgentPINState(ctx, agentID)
+	if err != nil {
+		app.log.Error("pin state", zap.Error(err))
+		sess.State = "end"
+		return models.USSDResponse{Text: "Service unavailable. Try again later.", CloseSession: true, Action: "end"}, nil
+	}
+	if st.LockedUntil != nil && time.Now().Before(*st.LockedUntil) {
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         fmt.Sprintf("PIN locked after too many attempts. Try again after %s.", st.LockedUntil.Format("15:04")),
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+
+	pin := strings.TrimSpace(input)
+	if !verifyPIN(pin, agentID, app.cfg.PINPepper, st.PINHash) {
+		locked, rerr := app.pg.RecordPINFailure(ctx, agentID, app.cfg.PINMaxAttempts, time.Duration(app.cfg.PINLockSeconds)*time.Second)
+		if rerr != nil {
+			app.log.Error("pin failure record", zap.Error(rerr))
+		}
+		if locked {
+			sess.State = "end"
+			return models.USSDResponse{
+				Text:         "Too many wrong PIN attempts. Account locked temporarily.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
+		return models.USSDResponse{
+			Text:         "Wrong PIN. Enter your agent PIN:",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+
+	_ = app.pg.ResetPINFailures(ctx, agentID)
+	sess.Data["pin_verified"] = true
+	sess.State = "agent_float_input"
+	balance, _ := app.pg.GetAgentBalance(ctx, agentID)
+	return models.USSDResponse{
+		Text:         fmt.Sprintf("AGENT FLOAT CLAIM\nCurrent balance: ₦%s\n\nEnter claim amount:", formatCurrency(balance)),
+		CloseSession: false,
+		Action:       "continue",
+	}, nil
+}
+
+// stateAgentPINSet collects a new PIN (first-time setup before financial ops).
+func (app *Application) stateAgentPINSet(sess *models.SessionData, input string) (models.USSDResponse, error) {
+	if app.cfg.PINPepper == "" {
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Financial operations are temporarily unavailable. Please contact support.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+	pin := strings.TrimSpace(input)
+	if !validPINFormat(pin) {
+		return models.USSDResponse{
+			Text:         "PIN must be 4-6 digits. Enter new PIN:",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+	sess.Data["pin_pending"] = pin
+	sess.State = "agent_pin_set_confirm"
+	return models.USSDResponse{
+		Text:         "Re-enter your new PIN to confirm:",
+		CloseSession: false,
+		Action:       "continue",
+	}, nil
+}
+
+func (app *Application) stateAgentPINSetConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
+	agentID := sess.Data["agent_id"].(string)
+	pending, _ := sess.Data["pin_pending"].(string)
+	if strings.TrimSpace(input) != pending {
+		sess.State = "agent_pin_set"
+		return models.USSDResponse{
+			Text:         "PINs do not match. Enter new PIN:",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+	ctx := context.Background()
+	if err := app.pg.SetAgentPIN(ctx, agentID, hashPIN(pending, agentID, app.cfg.PINPepper)); err != nil {
+		app.log.Error("set pin", zap.Error(err))
+		sess.State = "end"
+		return models.USSDResponse{Text: "Could not set PIN. Try again later.", CloseSession: true, Action: "end"}, nil
+	}
+	delete(sess.Data, "pin_pending")
+	sess.Data["pin_verified"] = true
+	sess.State = "agent_float_input"
+	balance, _ := app.pg.GetAgentBalance(ctx, agentID)
+	return models.USSDResponse{
+		Text:         fmt.Sprintf("PIN set successfully.\nAGENT FLOAT CLAIM\nCurrent balance: ₦%s\n\nEnter claim amount:", formatCurrency(balance)),
+		CloseSession: false,
+		Action:       "continue",
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Phone-number change / rebind (NG-20)
+// ---------------------------------------------------------------------------
+
+// handlePhoneRebind rebinds an agent account to a new phone number (SIM swap /
+// number change). Verification: caller must prove control of the account with
+// the agent PIN. The rebind restarts the cash-out cooling period and writes an
+// audit row. Fail-closed: 503 when PIN verification cannot be performed.
+func (app *Application) handlePhoneRebind(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		OldPhone string `json:"old_phone"`
+		NewPhone string `json:"new_phone"`
+		PIN      string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.OldPhone == "" || req.NewPhone == "" || req.PIN == "" {
+		jsonError(w, http.StatusBadRequest, "old_phone, new_phone and pin are required")
+		return
+	}
+	if req.OldPhone == req.NewPhone {
+		jsonError(w, http.StatusBadRequest, "new_phone must differ from old_phone")
+		return
+	}
+	if app.cfg.PINPepper == "" {
+		jsonError(w, http.StatusServiceUnavailable, "rebind unavailable: PIN verification not configured")
+		return
+	}
+
+	ctx := r.Context()
+	agent, err := app.pg.GetAgentByPhone(ctx, req.OldPhone)
+	if err != nil || agent == nil {
+		jsonError(w, http.StatusNotFound, "agent not found for old_phone")
+		return
+	}
+	if existing, _ := app.pg.GetAgentByPhone(ctx, req.NewPhone); existing != nil {
+		jsonError(w, http.StatusConflict, "new_phone is already bound to another account")
+		return
+	}
+
+	st, err := app.pg.GetAgentPINState(ctx, agent.ID)
+	if err != nil {
+		app.log.Error("pin state", zap.Error(err))
+		jsonError(w, http.StatusInternalServerError, "verification failed")
+		return
+	}
+	if st.PINHash == "" {
+		jsonError(w, http.StatusPreconditionFailed, "no PIN set on account; set a PIN via USSD first")
+		return
+	}
+	if st.LockedUntil != nil && time.Now().Before(*st.LockedUntil) {
+		jsonError(w, http.StatusLocked, "PIN locked; try again later")
+		return
+	}
+	if !verifyPIN(req.PIN, agent.ID, app.cfg.PINPepper, st.PINHash) {
+		locked, rerr := app.pg.RecordPINFailure(ctx, agent.ID, app.cfg.PINMaxAttempts, time.Duration(app.cfg.PINLockSeconds)*time.Second)
+		if rerr != nil {
+			app.log.Error("pin failure record", zap.Error(rerr))
+		}
+		if locked {
+			jsonError(w, http.StatusLocked, "too many wrong PIN attempts; account locked")
+			return
+		}
+		jsonError(w, http.StatusUnauthorized, "invalid PIN")
+		return
+	}
+	_ = app.pg.ResetPINFailures(ctx, agent.ID)
+
+	if err := app.pg.RebindAgentPhone(ctx, agent.ID, req.OldPhone, req.NewPhone, "pin"); err != nil {
+		app.log.Error("phone rebind", zap.Error(err))
+		jsonError(w, http.StatusInternalServerError, "rebind failed")
+		return
+	}
+
+	jsonOK(w, http.StatusOK, map[string]interface{}{
+		"message":               "phone number rebound; cash-out cooling period restarted",
+		"agent_id":              agent.ID,
+		"new_phone":             req.NewPhone,
+		"cashout_cooling_hours": app.cfg.CashOutCoolingHours,
+	})
+}
+
+// handlePendingTransaction returns the latest pending transaction for a phone
+// (session-drop reconciliation, NG-2).
+func (app *Application) handlePendingTransaction(w http.ResponseWriter, r *http.Request) {
+	phone, err := validateQueryParam(r, "phone", 32)
+	if err != nil || phone == "" {
+		jsonError(w, http.StatusBadRequest, "phone query parameter is required")
+		return
+	}
+	txn, err := app.pg.GetLatestPendingTransactionByPhone(r.Context(), phone)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if txn == nil {
+		jsonError(w, http.StatusNotFound, "no pending transaction")
+		return
+	}
+	jsonOK(w, http.StatusOK, txn)
 }
