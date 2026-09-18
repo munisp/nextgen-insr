@@ -31,6 +31,7 @@ import { eq } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
 
+import type { TokenResponse } from "./keycloak";
 import {
   buildAuthorizationUrl,
   buildLogoutUrl,
@@ -52,7 +53,6 @@ import {
   revokeAllUserTokens,
 } from "../lib/redisClient";
 import {
-  agentSessionRevocationKey,
   hashSessionToken,
   revocationFailClosed,
 } from "../middleware/agentAuth";
@@ -247,7 +247,7 @@ async function isRefreshTokenUsed(token: string): Promise<boolean> {
 }
 
 export type RotateSessionResult =
-  | { ok: true; tokens: import("./keycloak").TokenResponse }
+  | { ok: true; tokens: TokenResponse }
   | { ok: false; reason: "no_session_tokens" | "reuse_detected" | "refresh_failed" };
 
 /**
