@@ -67,6 +67,22 @@ const PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? "t1";
 // intended ONLY for short-lived disaster-recovery scenarios.
 const PERMIFY_FAIL_OPEN = process.env.PERMIFY_FAIL_OPEN === "true";
 
+// MED-18 (G1 fix-wave, 2026-06): deployment guard. Fail-open authorization
+// is an incident-only posture; in production the process REFUSES TO BOOT
+// with PERMIFY_FAIL_OPEN=true unless an explicit incident acknowledgement
+// token is also set. Merchant financial endpoints must never degrade to an
+// unauthenticated-role bypass by accident of an env var.
+if (
+  PERMIFY_FAIL_OPEN &&
+  process.env.NODE_ENV === "production" &&
+  process.env.PERMIFY_FAIL_OPEN_INCIDENT_ACK !== "true"
+) {
+  throw new Error(
+    "[Permify] PERMIFY_FAIL_OPEN=true is forbidden in production without " +
+      "PERMIFY_FAIL_OPEN_INCIDENT_ACK=true (declared-incident acknowledgement). Refusing to start."
+  );
+}
+
 if (PERMIFY_FAIL_OPEN) {
   logger.error(
     "═══════════════════════════════════════════════════════════════════\n" +

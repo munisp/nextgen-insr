@@ -3,7 +3,7 @@ import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { merchants } from "../../drizzle/schema";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
 
@@ -13,7 +13,7 @@ import { getDb } from "../db";
 // processor integration is wired in this service.
 
 export const merchantAcquirerGatewayRouter = router({
-  list: protectedProcedure
+  list: adminProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
@@ -50,7 +50,7 @@ export const merchantAcquirerGatewayRouter = router({
       }
     }),
 
-  getById: protectedProcedure
+  getById: adminProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -130,7 +130,7 @@ export const merchantAcquirerGatewayRouter = router({
     }
   }),
 
-  listMerchants: protectedProcedure.query(async () => {
+  listMerchants: adminProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0 };
     const rows = await database

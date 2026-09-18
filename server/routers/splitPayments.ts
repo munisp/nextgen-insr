@@ -19,7 +19,7 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, agents, auditLog } from "../../drizzle/schema";
+import { transactions, agents, auditLog, merchants } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
@@ -30,11 +30,22 @@ import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 const MIN_SPLIT_AMOUNT = 100;
 const MAX_PARTIES = 10;
 
-const SplitPartySchema = z.object({
-  agentId: z.number(),
-  percentage: z.number().min(0.01).max(100),
-  description: z.string().optional(),
-});
+// MED-15 (G1 fix-wave, 2026-06): a party may be an AGENT (agentId) or a
+// VERIFIED MERCHANT (merchantId) — matching the documented rule "all parties
+// must be active agents or verified merchants". Merchant parties are loaded
+// from the merchants table and must be status=active; before this fix the
+// documented merchant path did not exist at all and every beneficiary was an
+// unchecked caller-picked agent ID.
+const SplitPartySchema = z
+  .object({
+    agentId: z.number().optional(),
+    merchantId: z.number().optional(),
+    percentage: z.number().min(0.01).max(100),
+    description: z.string().optional(),
+  })
+  .refine(p => (p.agentId != null) !== (p.merchantId != null), {
+    message: "Each party must specify exactly one of agentId or merchantId",
+  });
 
 export const splitPaymentsRouter = router({
   // ── Create split payment ─────────────────────────────────────────────────────
@@ -89,13 +100,30 @@ export const splitPaymentsRouter = router({
         });
       }
 
-      // Load all party agents
+      // Load all parties: agent parties must be active agents; merchant
+      // parties must be ACTIVE merchants (MED-15 — the counterparty
+      // verification the doc line always promised).
       const partyAgents = await Promise.all(
-        input.parties.map(p => db.select().from(agents).where(eq(agents.id, p.agentId)).limit(1).then(r => r[0]))
+        input.parties.map(p =>
+          p.agentId != null
+            ? db.select().from(agents).where(eq(agents.id, p.agentId)).limit(1).then(r => r[0])
+            : Promise.resolve(undefined))
       );
-      for (let i = 0; i < partyAgents.length; i++) {
-        if (!partyAgents[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party agent ${input.parties[i].agentId} not found` });
-        if (!partyAgents[i].isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${input.parties[i].agentId} is not active` });
+      const partyMerchants = await Promise.all(
+        input.parties.map(p =>
+          p.merchantId != null
+            ? db.select().from(merchants).where(eq(merchants.id, p.merchantId)).limit(1).then(r => r[0])
+            : Promise.resolve(undefined))
+      );
+      for (let i = 0; i < input.parties.length; i++) {
+        const party = input.parties[i];
+        if (party.agentId != null) {
+          if (!partyAgents[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party agent ${party.agentId} not found` });
+          if (!partyAgents[i].isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${party.agentId} is not active` });
+        } else {
+          if (!partyMerchants[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party merchant ${party.merchantId} not found` });
+          if (partyMerchants[i].status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party merchant ${party.merchantId} is not active` });
+        }
       }
 
       // Acquire lock on the SOURCE AGENT (not the split reference): all
@@ -115,10 +143,15 @@ export const splitPaymentsRouter = router({
           .where(eq(transactions.ref, input.reference)).limit(1);
         if (existingLocked.length > 0) return { idempotent: true, splitRef: input.reference };
 
-        // Ensure all TB accounts exist
+        // Ensure all TB accounts exist (agent floats; merchant TB accounts
+        // are addressed as merchant-<merchantCode> like merchantPayments).
         await Promise.all([
           tbEnsureAgentAccount(sourceAgent.agentId),
-          ...partyAgents.map(a => tbEnsureAgentAccount(a.agentId)),
+          ...input.parties.map((p, i) =>
+            p.agentId != null
+              ? tbEnsureAgentAccount(partyAgents[i]!.agentId)
+              : Promise.resolve()
+          ),
         ]);
 
         // Execute each split leg via TigerBeetle
@@ -128,9 +161,13 @@ export const splitPaymentsRouter = router({
           const partyAmountNGN = Math.round((party.percentage / 100) * input.totalAmountNGN * 100) / 100;
           const legRef = `${input.reference}-LEG${i + 1}`;
 
+          const creditAccountId =
+            party.agentId != null
+              ? `float-${partyAgents[i]!.agentId}`
+              : `merchant-${partyMerchants[i]!.merchantCode}`;
           const tbResult = await tbCreateTransfer({
             debitAccountId: `float-${sourceAgent.agentId}`,
-            creditAccountId: `float-${partyAgent.agentId}`,
+            creditAccountId,
             amount: Math.round(partyAmountNGN * 100),
             ledger: 2000,
             code: 300,
@@ -139,7 +176,12 @@ export const splitPaymentsRouter = router({
             agentId: sourceAgent.agentId,
           });
 
-          legs.push({ agentId: party.agentId, amountNGN: partyAmountNGN, tbId: tbResult?.id ?? null });
+          legs.push({
+            agentId: party.agentId ?? null,
+            merchantId: party.merchantId ?? null,
+            amountNGN: partyAmountNGN,
+            tbId: tbResult?.id ?? null,
+          });
           if (tbResult?.id) tbTransferIds.push(tbResult.id);
         }
 
@@ -166,15 +208,29 @@ export const splitPaymentsRouter = router({
           }
 
           for (let i = 0; i < input.parties.length; i++) {
-            const credited = await tx.update(agents)
-              .set({ premiumReserve: sql`${agents.premiumReserve} + ${legs[i].amountNGN}`, updatedAt: new Date() })
-              .where(eq(agents.id, input.parties[i].agentId))
-              .returning({ id: agents.id });
-            if (credited.length === 0) {
-              throw new TRPCError({
-                code: "NOT_FOUND",
-                message: `Party agent ${input.parties[i].agentId} disappeared concurrently — split rolled back`,
-              });
+            const party = input.parties[i];
+            if (party.agentId != null) {
+              const credited = await tx.update(agents)
+                .set({ premiumReserve: sql`${agents.premiumReserve} + ${legs[i].amountNGN}`, updatedAt: new Date() })
+                .where(eq(agents.id, party.agentId))
+                .returning({ id: agents.id });
+              if (credited.length === 0) {
+                throw new TRPCError({
+                  code: "NOT_FOUND",
+                  message: `Party agent ${party.agentId} disappeared concurrently — split rolled back`,
+                });
+              }
+            } else {
+              const credited = await tx.update(merchants)
+                .set({ walletBalance: sql`${merchants.walletBalance} + ${legs[i].amountNGN}`, updatedAt: new Date() })
+                .where(eq(merchants.id, party.merchantId!))
+                .returning({ id: merchants.id });
+              if (credited.length === 0) {
+                throw new TRPCError({
+                  code: "NOT_FOUND",
+                  message: `Party merchant ${party.merchantId} disappeared concurrently — split rolled back`,
+                });
+              }
             }
           }
 
@@ -202,7 +258,10 @@ export const splitPaymentsRouter = router({
           for (let i = 0; i < input.parties.length; i++) {
             await tx.insert(transactions).values({
               ref: `${input.reference}-LEG${i + 1}`,
-              agentId: input.parties[i].agentId,
+              // transactions.agentId is NOT NULL; merchant legs are recorded
+              // against the source agent with the merchant party marked in
+              // the parent metadata.legs entry.
+              agentId: input.parties[i].agentId ?? input.sourceAgentId,
               type: "Float Transfer Received",
               amount: String(legs[i].amountNGN),
               fee: "0",

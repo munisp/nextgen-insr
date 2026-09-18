@@ -7,8 +7,12 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { merchantKycDocs } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
+import {
+  merchantKycDocs,
+  merchantKycStages,
+  merchants,
+} from "../../drizzle/schema";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
 
@@ -31,7 +35,9 @@ const KYC_STAGES = [
 ];
 
 export const merchantKycOnboardingRouter = router({
-  listDocs: protectedProcedure
+  // HIGH-7/#20 (G1 fix-wave, 2026-06): KYB documents (incl. raw doc URLs
+  // and CAC/TIN/BVN numbers) are PII — admin/auditor view only.
+  listDocs: adminProcedure
     .input(
       z.object({
         page: z.number().default(1),
@@ -73,30 +79,72 @@ export const merchantKycOnboardingRouter = router({
       }
     }),
 
+  // HIGH-7 (G1 fix-wave, 2026-06): uploads were previously accepted for ANY
+  // merchantId from ANY authenticated user. Now the caller must be an admin
+  // or the merchant bound to the caller's Keycloak identity.
+  // MED-20: docUrl must point at our controlled document storage
+  // (MERCHANT_DOC_URL_PREFIX), not an arbitrary external URL.
   uploadDoc: protectedProcedure
     .input(
       z.object({
         merchantId: z.number(),
-        docType: z.string(),
-        docUrl: z.string(),
-        docNumber: z.string().optional(),
+        docType: z.enum([
+          "cac_certificate",
+          "tin_certificate",
+          "utility_bill",
+          "bank_statement",
+          "id_card",
+          "passport",
+          "bvn_verification",
+          "memart",
+        ]),
+        docUrl: z.string().url().max(1024),
         expiryDate: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
+
+        if (ctx.user.role !== "admin") {
+          const [own] = await db
+            .select({ id: merchants.id })
+            .from(merchants)
+            .where(
+              and(
+                eq(merchants.id, input.merchantId),
+                eq(merchants.keycloakSub, ctx.user.keycloakSub),
+                sql`${merchants.deletedAt} IS NULL`
+              )
+            )
+            .limit(1);
+          if (!own)
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Documents can only be uploaded for your own merchant account",
+            });
+        }
+
+        const prefix = process.env.MERCHANT_DOC_URL_PREFIX;
+        if (prefix && !input.docUrl.startsWith(prefix)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "docUrl must reference the platform document storage bucket",
+          });
+        }
+
         const [doc] = await db
           .insert(merchantKycDocs)
           .values({
             merchantId: input.merchantId,
             docType: input.docType,
             docUrl: input.docUrl,
-            docNumber: input.docNumber,
-            expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,
+            expiresAt: input.expiryDate ? new Date(input.expiryDate) : null,
             status: "pending",
-          } as any)
+          })
           .returning();
         return { doc };
       } catch (error) {
@@ -109,7 +157,10 @@ export const merchantKycOnboardingRouter = router({
       }
     }),
 
-  verifyDoc: protectedProcedure
+  // HIGH-7 (G1 fix-wave, 2026-06): document approval/rejection is an
+  // admin-only KYB decision. Guarded transition: only pending docs can be
+  // decided, so concurrent decisions can't overwrite each other.
+  verifyDoc: adminProcedure
     .input(
       z.object({
         docId: z.number(),
@@ -121,15 +172,34 @@ export const merchantKycOnboardingRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
+        const claimed = await db
           .update(merchantKycDocs)
           .set({
             status: input.approved ? "approved" : "rejected",
-            verifiedBy: ctx.user?.id,
+            verifiedBy: ctx.user.id,
             verifiedAt: new Date(),
-            rejectionReason: input.rejectionReason,
+            rejectionReason: input.approved ? null : input.rejectionReason,
           })
-          .where(eq(merchantKycDocs.id, input.docId));
+          .where(
+            and(
+              eq(merchantKycDocs.id, input.docId),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .returning({ id: merchantKycDocs.id });
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select({ status: merchantKycDocs.status })
+            .from(merchantKycDocs)
+            .where(eq(merchantKycDocs.id, input.docId))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Document already decided (status: ${current.status})`,
+          });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -170,10 +240,29 @@ export const merchantKycOnboardingRouter = router({
         const progress = Math.round(
           (approved.length / KYC_DOC_TYPES.length) * 100
         );
-        let stage = KYC_STAGES[0];
-        if (submitted.length === KYC_DOC_TYPES.length) stage = KYC_STAGES[1];
-        if (approved.length > KYC_DOC_TYPES.length / 2) stage = KYC_STAGES[2];
-        if (approved.length === KYC_DOC_TYPES.length) stage = KYC_STAGES[4];
+        // MED-16 (G1 fix-wave, 2026-06): the stage is PERSISTED, not derived
+        // from doc counts. Derived stages made "approval" unreachable and let
+        // doc counts alone jump to "activation". Document progress can only
+        // advance the stage as far as compliance_review; "approval" and
+        // "activation" are assigned exclusively by the admin
+        // merchantOnboardingPortal.approveMerchant path after the KYB gate.
+        const derived =
+          approved.length === KYC_DOC_TYPES.length
+            ? KYC_STAGES[2] // compliance_review — ready for admin decision
+            : submitted.length === KYC_DOC_TYPES.length
+              ? KYC_STAGES[1] // verification
+              : KYC_STAGES[0]; // document_collection
+        const [persisted] = await db
+          .select({ stage: merchantKycStages.stage })
+          .from(merchantKycStages)
+          .where(eq(merchantKycStages.merchantId, input.merchantId))
+          .limit(1);
+        const ORDER = KYC_STAGES;
+        const stage =
+          persisted &&
+          ORDER.indexOf(persisted.stage) > ORDER.indexOf(derived)
+            ? persisted.stage
+            : derived;
         return {
           required: KYC_DOC_TYPES,
           submitted,

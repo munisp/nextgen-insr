@@ -559,10 +559,11 @@ export const merchantRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
+        // G1 fix-wave (audit CRIT-2, 2026-06): return STATUS ONLY — the
+        // merchantCode is the merchant credential and must never be an
+        // email-keyed oracle.
         const [merchant] = await db
           .select({
-            merchantCode: merchants.merchantCode,
-            businessName: merchants.businessName,
             status: merchants.status,
             createdAt: merchants.createdAt,
           })
@@ -572,7 +573,11 @@ export const merchantRouter = router({
           )
           .limit(1);
         if (!merchant) return { found: false as const };
-        return { found: true as const, ...merchant };
+        return {
+          found: true as const,
+          status: merchant.status,
+          createdAt: merchant.createdAt,
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

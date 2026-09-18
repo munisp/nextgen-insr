@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, desc, sql, count, and } from "drizzle-orm";
 import { merchants, merchantKycDocs, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
@@ -66,21 +66,60 @@ export const merchantOnboardingPortalRouter = router({
         });
       }
     }),
-  approveMerchant: protectedProcedure
+  // CRIT-4 (G1 fix-wave, 2026-06): admin-only + KYB-complete precondition +
+  // guarded transition + approver attribution (mirrors the platform fix).
+  approveMerchant: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        await db
+        const docs = await db
+          .select({
+            docType: merchantKycDocs.docType,
+            status: merchantKycDocs.status,
+          })
+          .from(merchantKycDocs)
+          .where(eq(merchantKycDocs.merchantId, input.id))
+          .limit(200);
+        const approvedTypes = new Set(
+          docs.filter(d => d.status === "approved").map(d => d.docType)
+        );
+        const REQUIRED = [
+          "cac_certificate", "tin_certificate", "utility_bill",
+          "bank_statement", "id_card", "passport", "bvn_verification",
+          "memart",
+        ];
+        const missing = REQUIRED.filter(t => !approvedTypes.has(t));
+        if (missing.length > 0) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `KYB incomplete — missing approved documents: ${missing.join(", ")}`,
+          });
+        }
+        const claimed = await db
           .update(merchants)
           .set({ status: "active" })
-          .where(eq(merchants.id, input.id));
+          .where(and(eq(merchants.id, input.id), eq(merchants.status, "pending")))
+          .returning({ id: merchants.id });
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select({ status: merchants.status })
+            .from(merchants)
+            .where(eq(merchants.id, input.id))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({ code: "NOT_FOUND", message: "Merchant not found" });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Merchant is not pending approval (current: ${current.status})`,
+          });
+        }
         await db.insert(auditLog).values({
           action: "merchant_approved",
           resource: "merchants",
           resourceId: String(input.id),
           status: "success",
-          metadata: {},
+          metadata: { approvedBy: ctx.user.id, approverEmail: ctx.user.email },
         });
         return { success: true };
       } catch (error) {

@@ -40,6 +40,14 @@ type Config struct {
 	// submitted and this is unset, KYB fails LOUD (no mock screening).
 	PEPAPIURL string
 	PEPAPIKey string
+	// CACAPIURL / TINAPIURL: registry verification providers (CAC public
+	// search / FIRS TIN). G1 fix-wave (2026-06): when an RC number or TIN is
+	// submitted and the matching provider is unset, KYB fails LOUD (503) —
+	// presence of a number string is NEVER treated as verification.
+	CACAPIURL string
+	CACAPIKey string
+	TINAPIURL string
+	TINAPIKey string
 }
 
 func Load() *Config {
@@ -73,6 +81,10 @@ func Load() *Config {
 		RateLimitBVN:     getEnvInt("RATE_LIMIT_BVN", 10),
 		RateLimitWindow:  getEnvDuration("RATE_LIMIT_WINDOW", 1*time.Hour),
 		PEPAPIURL:        getEnv("PEP_API_URL", ""),
+		CACAPIURL:        getEnv("CAC_API_URL", ""),
+		CACAPIKey:        getEnv("CAC_API_KEY", ""),
+		TINAPIURL:        getEnv("TIN_API_URL", ""),
+		TINAPIKey:        getEnv("TIN_API_KEY", ""),
 		PEPAPIKey:        getEnv("PEP_API_KEY", ""),
 	}
 }

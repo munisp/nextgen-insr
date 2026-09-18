@@ -47,6 +47,11 @@ import { systemHealthMonitorRouter } from "../../../server/routers/systemHealthM
 import { networkStatusDashboardRouter } from "../../../server/routers/networkStatusDashboard";
 import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
 import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
+import { merchantRouter } from "../../../server/routers/merchant";
+import { merchantOnboardingPortalRouter } from "../../../server/routers/merchantOnboardingPortal";
+import { merchantKycOnboardingRouter } from "../../../server/routers/merchantKycOnboarding";
+import { merchantPayoutSettlementRouter } from "../../../server/routers/merchantPayoutSettlement";
+import { merchantPaymentsRouter } from "../../../server/routers/merchantPayments";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -98,6 +103,13 @@ export const integrationRouter = router({
   // B12 + B13 (wave-2c): same mount paths as production.
   ussdAnalytics: ussdAnalyticsRouter,
   complianceChatbot: complianceChatbotRouter,
+  // G1 fix-wave (2026-06): merchant-onboarding routers under the REAL
+  // middleware chain, same mount paths as production (server/routers.ts).
+  merchant: merchantRouter,
+  merchantOnboardingPortal: merchantOnboardingPortalRouter,
+  merchantKycOnboarding: merchantKycOnboardingRouter,
+  merchantPayoutSettlement: merchantPayoutSettlementRouter,
+  merchantPayments: merchantPaymentsRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
@@ -105,6 +117,8 @@ export type IntegrationRouter = typeof integrationRouter;
 export type TestUser = Pick<User, "id" | "email" | "name" | "role"> & {
   /** Optional tenant assignment; undefined/null = platform-level (unscoped). */
   tenantId?: number | null;
+  /** G1 fix-wave: merchant identity binding (merchants.keycloakSub). */
+  keycloakSub?: string;
 };
 
 export const adminUser: TestUser = {

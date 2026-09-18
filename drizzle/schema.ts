@@ -1748,6 +1748,23 @@ export const merchants = pgTable(
     statusIdx: index("merchants_status_idx").on(t.status),
     tenantIdIdx: index("merchants_tenantId_idx").on(t.tenantId),
     deletedAtIdx: index("merchants_deletedAt_idx").on(t.deletedAt),
+    // G1 fix-wave (audit #9, 2026-06): duplicate-identity controls. One
+    // merchant per email / RC(CAC) / TIN / phone among live rows; Postgres
+    // unique indexes admit multiple NULLs, so optional registry numbers stay
+    // optional. The partial WHERE keeps soft-deleted merchants out of the
+    // uniqueness domain. Mirrored by drizzle/0075.
+    emailIdentityIdx: uniqueIndex("merchants_email_identity_uidx")
+      .on(t.email)
+      .where(sql`"email" IS NOT NULL AND "deletedAt" IS NULL`),
+    rcIdentityIdx: uniqueIndex("merchants_rc_identity_uidx")
+      .on(t.rcNumber)
+      .where(sql`"rcNumber" IS NOT NULL AND "deletedAt" IS NULL`),
+    tinIdentityIdx: uniqueIndex("merchants_tin_identity_uidx")
+      .on(t.tinNumber)
+      .where(sql`"tinNumber" IS NOT NULL AND "deletedAt" IS NULL`),
+    phoneIdentityIdx: uniqueIndex("merchants_phone_identity_uidx")
+      .on(t.phone)
+      .where(sql`"deletedAt" IS NULL`),
   })
 );
 
@@ -5759,3 +5776,117 @@ export const smsMessages = pgTable(
   })
 );
 export type SmsMessage = typeof smsMessages.$inferSelect;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// G1 fix-wave (merchant-onboarding audit, 2026-06): settlement-change
+// verification, per-merchant commercial terms, registry verification records,
+// and the honest persisted KYC stage. Mirrored by drizzle/0076.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Merchant Settlement Change Requests (CRIT-3) ────────────────────────────
+// Settlement (payout destination) changes NEVER apply inline. A request row is
+// created, a 6-digit OTP (bcrypt hash) is sent to the merchant's registered
+// phone, and the change applies only on OTP confirmation. A hold window
+// (holdUntil) blocks payouts to the new account for a cooling-off period.
+export const merchantSettlementChangeRequests = pgTable(
+  "merchant_settlement_change_requests",
+  {
+    id: serial("id").primaryKey(),
+    merchantId: integer("merchantId")
+      .references(() => merchants.id)
+      .notNull(),
+    newAccountNumber: varchar("newAccountNumber", { length: 20 }).notNull(),
+    newBankCode: varchar("newBankCode", { length: 10 }).notNull(),
+    newBankName: varchar("newBankName", { length: 64 }).notNull(),
+    hashedOtp: varchar("hashedOtp", { length: 128 }).notNull(),
+    otpExpiresAt: timestamp("otpExpiresAt").notNull(),
+    // SECURITY: online brute-force guard for the 6-digit OTP (same policy as
+    // pinReset): locked after 5 failed confirmations.
+    otpAttempts: integer("otpAttempts").default(0).notNull(),
+    status: varchar("status", { length: 16 }).default("pending").notNull(), // pending | applied | expired | locked | rejected
+    requestedBy: integer("requestedBy").notNull(), // users.id of the authenticated caller
+    appliedAt: timestamp("appliedAt"),
+    holdUntil: timestamp("holdUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    merchantIdx: index("mscr_merchantId_idx").on(t.merchantId),
+    statusIdx: index("mscr_status_idx").on(t.status),
+  })
+);
+export type MerchantSettlementChangeRequest =
+  typeof merchantSettlementChangeRequests.$inferSelect;
+
+// ─── Per-merchant fees & limits (MED-13) ─────────────────────────────────────
+// Absent row = platform defaults (merchantPayments constants). Amounts in NGN.
+export const merchantFeeLimits = pgTable(
+  "merchant_fee_limits",
+  {
+    id: serial("id").primaryKey(),
+    merchantId: integer("merchantId")
+      .references(() => merchants.id)
+      .notNull(),
+    mdrBps: integer("mdrBps"), // e.g. 150 = 1.50%
+    minAmount: numeric("minAmount", { precision: 15, scale: 2 }),
+    maxAmount: numeric("maxAmount", { precision: 15, scale: 2 }),
+    dailyLimit: numeric("dailyLimit", { precision: 20, scale: 2 }),
+    updatedBy: integer("updatedBy").notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    merchantUidx: uniqueIndex("mfl_merchantId_uidx").on(t.merchantId),
+  })
+);
+export type MerchantFeeLimit = typeof merchantFeeLimits.$inferSelect;
+
+// ─── Registry (CAC/TIN) verification records (HIGH-8) ────────────────────────
+// Presence of an rcNumber/tinNumber string is NOT verification. A row here is
+// written only after a real provider check; verified=false rows are honest
+// negatives (provider reachable, number not confirmed).
+export const merchantRegistryVerifications = pgTable(
+  "merchant_registry_verifications",
+  {
+    id: serial("id").primaryKey(),
+    merchantId: integer("merchantId")
+      .references(() => merchants.id)
+      .notNull(),
+    kind: varchar("kind", { length: 8 }).notNull(), // "cac" | "tin"
+    registryNumber: varchar("registryNumber", { length: 32 }).notNull(),
+    verified: boolean("verified").default(false).notNull(),
+    provider: varchar("provider", { length: 64 }).notNull(),
+    providerRef: varchar("providerRef", { length: 128 }),
+    detail: text("detail"),
+    verifiedAt: timestamp("verifiedAt").defaultNow().notNull(),
+  },
+  t => ({
+    merchantKindIdx: index("mrv_merchantId_kind_idx").on(t.merchantId, t.kind),
+  })
+);
+export type MerchantRegistryVerification =
+  typeof merchantRegistryVerifications.$inferSelect;
+
+// ─── Persisted merchant KYC stage (MED-16) ───────────────────────────────────
+// The derived doc-count stage machine made "approval" unreachable. Stage is
+// now persisted and advanced only by privileged transitions:
+//   document_collection -> verification -> compliance_review -> approval
+//   -> activation. "approval" is set exclusively by the admin
+//   merchantOnboardingPortal.approveMerchant path after the KYB-complete gate.
+export const merchantKycStages = pgTable(
+  "merchant_kyc_stages",
+  {
+    id: serial("id").primaryKey(),
+    merchantId: integer("merchantId")
+      .references(() => merchants.id)
+      .notNull(),
+    stage: varchar("stage", { length: 32 })
+      .default("document_collection")
+      .notNull(),
+    updatedBy: integer("updatedBy"),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    merchantUidx: uniqueIndex("mks_merchantId_uidx").on(t.merchantId),
+  })
+);
+export type MerchantKycStage = typeof merchantKycStages.$inferSelect;
