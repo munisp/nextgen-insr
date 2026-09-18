@@ -7,6 +7,7 @@ import { z } from "zod";
 import { disputes, refunds, type Refund } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, TBLedgerUnavailableError } from "../tbClient";
@@ -155,7 +156,7 @@ export const disputeRefundRouter = router({
       return { data: enriched, total: totalRows[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
-  initiateRefund: protectedProcedure
+  initiateRefund: financialProcedure
     .input(z.object({
       disputeId: z.number(),
       amount: z.number().positive(),

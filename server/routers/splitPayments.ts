@@ -22,6 +22,7 @@ import { z } from "zod";
 import { transactions, agents, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
@@ -37,7 +38,7 @@ const SplitPartySchema = z.object({
 
 export const splitPaymentsRouter = router({
   // ── Create split payment ─────────────────────────────────────────────────────
-  createSplit: protectedProcedure
+  createSplit: financialProcedure
     .input(z.object({
       totalAmountNGN: z.number().positive(),
       reference: z.string().min(5),

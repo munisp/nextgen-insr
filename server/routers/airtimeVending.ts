@@ -21,6 +21,7 @@ import { z } from "zod";
 import { transactions, agents, auditLog, type Transaction } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import {
   dispatchProviderOperation,
@@ -70,7 +71,7 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export const airtimeVendingRouter = router({
-  vend: protectedProcedure
+  vend: financialProcedure
     .input(z.object({
       agentId: z.number(),
       network: z.enum(NETWORKS),

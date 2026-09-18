@@ -132,6 +132,41 @@ export const ussdGatewayRouter = router({
           });
         }
         sessionId = created.data.sessionId;
+      } else {
+        // AUTH-6 (TS side): bind a supplied sessionId to its original
+        // phoneNumber. A session whose telemetry was recorded under a
+        // different MSISDN is hijack evidence — reject fail-closed.
+        try {
+          const database = await getDb();
+          if (database) {
+            const priorPhones = await database
+              .selectDistinct({ phoneNumber: ussdSessionEvents.phoneNumber })
+              .from(ussdSessionEvents)
+              .where(eq(ussdSessionEvents.sessionId, sessionId))
+              .limit(2);
+            if (
+              priorPhones.length > 0 &&
+              !priorPhones.some(p => p.phoneNumber === input.phoneNumber)
+            ) {
+              logger.warn(
+                { sessionId, phoneNumber: input.phoneNumber },
+                "[ussd] session binding mismatch — rejecting (possible session hijack)"
+              );
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: "USSD session does not belong to this phone number",
+              });
+            }
+          }
+        } catch (err) {
+          if (err instanceof TRPCError) throw err;
+          // Telemetry lookup failure: fail-closed for session resumption.
+          logger.error({ err, sessionId }, "[ussd] session binding check failed — rejecting (fail-closed)");
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "USSD session verification unavailable",
+          });
+        }
       }
       const result = await handleCallback(sessionId, input.input);
       if (!result.success || !result.data) {

@@ -11,6 +11,7 @@ import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
@@ -19,7 +20,7 @@ import { cacheSet } from "../redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
 
 export const premiumTopUpRouter = router({
-  topUp: protectedProcedure
+  topUp: financialProcedure
     .input(z.object({
       policyId: z.number(),
       amountNGN: z.number().positive(),

@@ -5564,3 +5564,30 @@ export const paymentDiscrepancies = pgTable(
   })
 );
 export type PaymentDiscrepancy = typeof paymentDiscrepancies.$inferSelect;
+
+
+// ─── Impersonation Events (AUTH-19, append-only) ─────────────────────────────
+// Audit trail for admin-acting-as-agent operations. Written by
+// resolveAgentScope (server/middleware/agentAuth.ts) whenever a Keycloak admin
+// acts on an agent record that is not their own session.
+export const impersonationEvents = pgTable(
+  "impersonation_events",
+  {
+    id: serial("id").primaryKey(),
+    adminUserId: integer("adminUserId").notNull(),
+    adminSub: varchar("adminSub", { length: 128 }),
+    targetAgentId: integer("targetAgentId").notNull(),
+    action: varchar("action", { length: 128 }).notNull(),
+    path: varchar("path", { length: 256 }),
+    ipAddress: varchar("ipAddress", { length: 64 }),
+    userAgent: varchar("userAgent", { length: 512 }),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    adminIdx: index("impersonation_admin_idx").on(t.adminUserId, t.createdAt),
+    targetIdx: index("impersonation_target_idx").on(t.targetAgentId, t.createdAt),
+  })
+);
+export type ImpersonationEvent = typeof impersonationEvents.$inferSelect;
+export type InsertImpersonationEvent = typeof impersonationEvents.$inferInsert;
