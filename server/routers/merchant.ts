@@ -12,6 +12,7 @@
 import crypto from "crypto";
 
 import { TRPCError } from "@trpc/server";
+import bcrypt from "bcryptjs";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -24,18 +25,17 @@ import {
   disputes,
   auditLog,
 } from "../../drizzle/schema";
+import type { TrpcContext } from "../_core/context";
+import { logger } from "../_core/logger";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { logger } from "../_core/logger";
-import { sendSms } from "../termii";
 import {
   verifyCacNumber,
   verifyTinNumber,
   RegistryVerificationUnavailableError,
   registryUnavailableTrpcError,
 } from "../lib/merchantRegistry";
-import type { TrpcContext } from "../_core/context";
-import bcrypt from "bcryptjs";
+import { sendSms } from "../termii";
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 

@@ -191,8 +191,14 @@ function StatusCheck({ onBack }: { onBack: () => void }) {
           >
             {statusQ.data.found ? (
               <>
+                {/* G1 fix-wave (audit CRIT-2, 2026-06): the status check is a
+                    public email-keyed endpoint and deliberately returns ONLY
+                    {found,status,createdAt} — the merchantCode credential and
+                    business name are no longer leaked here. The merchant's
+                    name/code are available via the authenticated
+                    merchant.getProfile procedure after sign-in. */}
                 <div className="text-sm font-bold text-white">
-                  {statusQ.data.businessName}
+                  Application found
                 </div>
                 <div className="flex items-center gap-2">
                   <span
@@ -208,7 +214,10 @@ function StatusCheck({ onBack }: { onBack: () => void }) {
                     className="text-xs text-gray-500"
                     style={{ fontFamily: MONO }}
                   >
-                    {statusQ.data.merchantCode}
+                    Registered{" "}
+                    {statusQ.data.createdAt
+                      ? new Date(statusQ.data.createdAt).toLocaleDateString()
+                      : ""}
                   </span>
                 </div>
                 {statusQ.data.status === "pending" && (

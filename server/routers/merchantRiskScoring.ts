@@ -105,20 +105,27 @@ async function loadMerchantStats(
   database: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   merchantId: number
 ): Promise<{ disputeCount: number; txLast24h: number; txPrev30dDailyAvg: number }> {
-  const [d] = await database
-    .select({ total: count() })
-    .from(disputes)
-    .where(eq(disputes.raisedByRef, String(merchantId)))
-    .limit(1);
   // Transaction linkage to merchants goes via preferredAgentId.
   const [m] = await database
     .select({ preferredAgentId: merchants.preferredAgentId, merchantCode: merchants.merchantCode })
     .from(merchants)
     .where(eq(merchants.id, merchantId))
     .limit(1);
+  // Disputes link to transactions (disputes.transactionId); the merchant's
+  // dispute count is disputes over transactions processed for the merchant's
+  // preferred agent. (The disputes table has no merchant reference column —
+  // an earlier draft of this query read a nonexistent raisedByRef column.)
+  let disputeCount = 0;
   let txLast24h = 0;
   let txPrev30dDailyAvg = 0;
   if (m?.preferredAgentId) {
+    const [d] = await database
+      .select({ total: count() })
+      .from(disputes)
+      .innerJoin(transactions, eq(disputes.transactionId, transactions.id))
+      .where(eq(transactions.agentId, m.preferredAgentId))
+      .limit(1);
+    disputeCount = Number(d?.total ?? 0);
     const since24h = new Date(Date.now() - 24 * 3600 * 1000);
     const since30d = new Date(Date.now() - 30 * 24 * 3600 * 1000);
     const [c24] = await database
@@ -138,7 +145,7 @@ async function loadMerchantStats(
     txLast24h = Number(c24?.total ?? 0);
     txPrev30dDailyAvg = Number(c30?.total ?? 0) / 30;
   }
-  return { disputeCount: Number(d?.total ?? 0), txLast24h, txPrev30dDailyAvg };
+  return { disputeCount, txLast24h, txPrev30dDailyAvg };
 }
 
 export const merchantRiskScoringRouter = router({
@@ -157,7 +164,7 @@ export const merchantRiskScoringRouter = router({
       const totalRows = await database.select({ total: count() }).from(merchants);
 
       const scored = await Promise.all(
-        results.map(async (m: any) => ({
+        results.map(async m => ({
           ...m,
           riskAssessment: calculateMerchantRiskScore(
             m,
@@ -165,7 +172,7 @@ export const merchantRiskScoringRouter = router({
           ),
         }))
       );
-      const filtered = input.riskCategory === "all" ? scored : scored.filter((m: any) => m.riskAssessment.category === input.riskCategory);
+      const filtered = input.riskCategory === "all" ? scored : scored.filter(m => m.riskAssessment.category === input.riskCategory);
 
       return { data: filtered, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),

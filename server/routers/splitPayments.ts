@@ -102,7 +102,9 @@ export const splitPaymentsRouter = router({
 
       // Load all parties: agent parties must be active agents; merchant
       // parties must be ACTIVE merchants (MED-15 — the counterparty
-      // verification the doc line always promised).
+      // verification the doc line always promised). Resolution is
+      // FAIL-CLOSED: a party row that cannot be resolved aborts the split
+      // (no undefined counterparty ever reaches a funds movement).
       const partyAgents = await Promise.all(
         input.parties.map(p =>
           p.agentId != null
@@ -115,16 +117,21 @@ export const splitPaymentsRouter = router({
             ? db.select().from(merchants).where(eq(merchants.id, p.merchantId)).limit(1).then(r => r[0])
             : Promise.resolve(undefined))
       );
-      for (let i = 0; i < input.parties.length; i++) {
-        const party = input.parties[i];
+      type ResolvedParty =
+        | { kind: "agent"; agent: (typeof agents.$inferSelect); percentage: number }
+        | { kind: "merchant"; merchant: (typeof merchants.$inferSelect); percentage: number };
+      const resolvedParties: ResolvedParty[] = input.parties.map((party, i) => {
         if (party.agentId != null) {
-          if (!partyAgents[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party agent ${party.agentId} not found` });
-          if (!partyAgents[i].isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${party.agentId} is not active` });
-        } else {
-          if (!partyMerchants[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party merchant ${party.merchantId} not found` });
-          if (partyMerchants[i].status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party merchant ${party.merchantId} is not active` });
+          const a = partyAgents[i];
+          if (!a) throw new TRPCError({ code: "NOT_FOUND", message: `Party agent ${party.agentId} not found` });
+          if (!a.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${party.agentId} is not active` });
+          return { kind: "agent" as const, agent: a, percentage: party.percentage };
         }
-      }
+        const m = partyMerchants[i];
+        if (!m) throw new TRPCError({ code: "NOT_FOUND", message: `Party merchant ${party.merchantId} not found` });
+        if (m.status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party merchant ${party.merchantId} is not active` });
+        return { kind: "merchant" as const, merchant: m, percentage: party.percentage };
+      });
 
       // Acquire lock on the SOURCE AGENT (not the split reference): all
       // balance mutations for one agent must serialize against each other,
@@ -134,7 +141,12 @@ export const splitPaymentsRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Split payment in progress" });
 
       const tbTransferIds: string[] = [];
-      const legs: Array<{ agentId: number; amountNGN: number; tbId: string | null }> = [];
+      const legs: Array<{
+        agentId: number | null;
+        merchantId: number | null;
+        amountNGN: number;
+        tbId: string | null;
+      }> = [];
 
       try {
         // Re-check idempotency inside the lock (the pre-check above ran
@@ -147,24 +159,23 @@ export const splitPaymentsRouter = router({
         // are addressed as merchant-<merchantCode> like merchantPayments).
         await Promise.all([
           tbEnsureAgentAccount(sourceAgent.agentId),
-          ...input.parties.map((p, i) =>
-            p.agentId != null
-              ? tbEnsureAgentAccount(partyAgents[i]!.agentId)
+          ...resolvedParties.map(rp =>
+            rp.kind === "agent"
+              ? tbEnsureAgentAccount(rp.agent.agentId)
               : Promise.resolve()
           ),
         ]);
 
         // Execute each split leg via TigerBeetle
-        for (let i = 0; i < input.parties.length; i++) {
-          const party = input.parties[i];
-          const partyAgent = partyAgents[i];
-          const partyAmountNGN = Math.round((party.percentage / 100) * input.totalAmountNGN * 100) / 100;
+        for (let i = 0; i < resolvedParties.length; i++) {
+          const rp = resolvedParties[i];
+          const partyAmountNGN = Math.round((rp.percentage / 100) * input.totalAmountNGN * 100) / 100;
           const legRef = `${input.reference}-LEG${i + 1}`;
 
           const creditAccountId =
-            party.agentId != null
-              ? `float-${partyAgents[i]!.agentId}`
-              : `merchant-${partyMerchants[i]!.merchantCode}`;
+            rp.kind === "agent"
+              ? `float-${rp.agent.agentId}`
+              : `merchant-${rp.merchant.merchantCode}`;
           const tbResult = await tbCreateTransfer({
             debitAccountId: `float-${sourceAgent.agentId}`,
             creditAccountId,
@@ -177,8 +188,8 @@ export const splitPaymentsRouter = router({
           });
 
           legs.push({
-            agentId: party.agentId ?? null,
-            merchantId: party.merchantId ?? null,
+            agentId: rp.kind === "agent" ? rp.agent.id : null,
+            merchantId: rp.kind === "merchant" ? rp.merchant.id : null,
             amountNGN: partyAmountNGN,
             tbId: tbResult?.id ?? null,
           });
@@ -207,28 +218,37 @@ export const splitPaymentsRouter = router({
             });
           }
 
-          for (let i = 0; i < input.parties.length; i++) {
-            const party = input.parties[i];
-            if (party.agentId != null) {
+          for (let i = 0; i < resolvedParties.length; i++) {
+            const rp = resolvedParties[i];
+            const leg = legs[i];
+            if (!leg) {
+              // Fail-closed: a missing leg row must roll back the whole
+              // split rather than skip a credit.
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: `Split leg ${i + 1} missing — split rolled back`,
+              });
+            }
+            if (rp.kind === "agent") {
               const credited = await tx.update(agents)
-                .set({ premiumReserve: sql`${agents.premiumReserve} + ${legs[i].amountNGN}`, updatedAt: new Date() })
-                .where(eq(agents.id, party.agentId))
+                .set({ premiumReserve: sql`${agents.premiumReserve} + ${leg.amountNGN}`, updatedAt: new Date() })
+                .where(eq(agents.id, rp.agent.id))
                 .returning({ id: agents.id });
               if (credited.length === 0) {
                 throw new TRPCError({
                   code: "NOT_FOUND",
-                  message: `Party agent ${party.agentId} disappeared concurrently — split rolled back`,
+                  message: `Party agent ${rp.agent.id} disappeared concurrently — split rolled back`,
                 });
               }
             } else {
               const credited = await tx.update(merchants)
-                .set({ walletBalance: sql`${merchants.walletBalance} + ${legs[i].amountNGN}`, updatedAt: new Date() })
-                .where(eq(merchants.id, party.merchantId!))
+                .set({ walletBalance: sql`${merchants.walletBalance} + ${leg.amountNGN}`, updatedAt: new Date() })
+                .where(eq(merchants.id, rp.merchant.id))
                 .returning({ id: merchants.id });
               if (credited.length === 0) {
                 throw new TRPCError({
                   code: "NOT_FOUND",
-                  message: `Party merchant ${party.merchantId} disappeared concurrently — split rolled back`,
+                  message: `Party merchant ${rp.merchant.id} disappeared concurrently — split rolled back`,
                 });
               }
             }
@@ -255,13 +275,14 @@ export const splitPaymentsRouter = router({
           }).returning();
 
           // Record leg transactions
-          for (let i = 0; i < input.parties.length; i++) {
+          for (let i = 0; i < resolvedParties.length; i++) {
+            const rpRow = resolvedParties[i];
             await tx.insert(transactions).values({
               ref: `${input.reference}-LEG${i + 1}`,
               // transactions.agentId is NOT NULL; merchant legs are recorded
               // against the source agent with the merchant party marked in
               // the parent metadata.legs entry.
-              agentId: input.parties[i].agentId ?? input.sourceAgentId,
+              agentId: rpRow.kind === "agent" ? rpRow.agent.id : input.sourceAgentId,
               type: "Float Transfer Received",
               amount: String(legs[i].amountNGN),
               fee: "0",
