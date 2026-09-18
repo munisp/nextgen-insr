@@ -552,12 +552,12 @@ mod tests {
             destination_bank: Some("GTB".into()), destination_account: Some("0123".into()),
             channel: None, payload_json: None, idempotency_key: None,
         };
-        let k1 = natural_idempotency_key(&base, "{"a":1}");
-        let k2 = natural_idempotency_key(&base, "{"a":1}");
+        let k1 = natural_idempotency_key(&base, "{\"a\":1}");
+        let k2 = natural_idempotency_key(&base, "{\"a\":1}");
         assert_eq!(k1, k2, "same natural key must dedup");
         let mut changed = base.clone();
         changed.amount = 200.0;
-        let k3 = natural_idempotency_key(&changed, "{"a":1}");
+        let k3 = natural_idempotency_key(&changed, "{\"a\":1}");
         assert_ne!(k1, k3, "different amount must not dedup");
     }
 
