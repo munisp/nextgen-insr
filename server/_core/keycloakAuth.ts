@@ -25,6 +25,8 @@
  * downstream services that accept Bearer tokens (e.g. API Gateway).
  */
 
+import { createHash } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
@@ -33,6 +35,7 @@ import {
   buildAuthorizationUrl,
   buildLogoutUrl,
   exchangeCodeForTokens,
+  refreshAccessToken,
   verifyKeycloakToken,
   mapKeycloakRoleToPlatformRole,
   keycloakConfig,
@@ -46,8 +49,13 @@ import {
   getRedisClient,
   isTokenBlacklisted,
   isUserTokenRevoked,
+  revokeAllUserTokens,
 } from "../lib/redisClient";
-import { hashSessionToken } from "../middleware/agentAuth";
+import {
+  agentSessionRevocationKey,
+  hashSessionToken,
+  revocationFailClosed,
+} from "../middleware/agentAuth";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -141,9 +149,144 @@ async function deleteSessionTokens(jti: string): Promise<void> {
   }
 }
 
+// ── Role re-sync (AUTH-13) ────────────────────────────────────────────────────
+// The platform role used by adminProcedure etc. must reflect the CURRENT
+// Keycloak realm roles, not the role captured at login time. On each session
+// verification we re-derive the role from the live Keycloak access token
+// (JWKS verification is local crypto over a cached key set). Results are
+// cached for 60s per access token to bound the per-request cost; a demotion
+// propagates within at most one cache window instead of "until next login".
+const ROLE_RESYNC_CACHE_MS = 60_000;
+const roleResyncCache = new Map<
+  string,
+  { role: SessionPayload["role"]; expiresAt: number }
+>();
+
+async function resyncRoleFromAccessToken(
+  accessToken: string
+): Promise<SessionPayload["role"] | null> {
+  const key = createHash("sha256").update(accessToken).digest("hex");
+  const cached = roleResyncCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.role;
+  try {
+    const kcPayload = await verifyKeycloakToken(accessToken);
+    const role = mapKeycloakRoleToPlatformRole(kcPayload);
+    roleResyncCache.set(key, {
+      role,
+      expiresAt: Date.now() + ROLE_RESYNC_CACHE_MS,
+    });
+    return role;
+  } catch {
+    // Access token expired/invalid (they live ~5min inside an 8h session) —
+    // keep the session role; the refresh endpoint mints a fresh session.
+    return null;
+  }
+}
+
+/** Persist a role change discovered via token re-sync (fire-and-forget). */
+async function persistRoleChange(sub: string, role: SessionPayload["role"]) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(users.keycloakSub, sub));
+  } catch (err) {
+    logger.warn("[Keycloak] Role re-sync DB persist failed:: " + String(err));
+  }
+}
+
 /** Stable Redis key namespace for per-user session revocation (F6-1). */
 export function kcSessionRevocationKey(sub: string): string {
   return `kc:${sub}`;
+}
+
+// ── Refresh-token rotation + reuse detection (AUTH-14) ────────────────────────
+// Keycloak rotates refresh tokens on each use. We store every rotated-out
+// refresh token hash for the remainder of the session lifetime; if a rotated
+// token is ever presented again (token-store replay/theft), the whole session
+// — and all of the user's sessions — is revoked immediately.
+
+const usedRefreshTokenKey = (hash: string): string => `refresh:used:${hash}`;
+const hashRefreshToken = (token: string): string =>
+  createHash("sha256").update(token).digest("hex");
+
+async function markRefreshTokenUsed(token: string): Promise<void> {
+  try {
+    const client = getRedisClient();
+    await client.set(
+      usedRefreshTokenKey(hashRefreshToken(token)),
+      "1",
+      "EX",
+      SESSION_MAX_AGE_SECONDS
+    );
+  } catch (err) {
+    logger.warn("[Keycloak] Used-refresh-token mark failed:: " + String(err));
+  }
+}
+
+async function isRefreshTokenUsed(token: string): Promise<boolean> {
+  try {
+    const client = getRedisClient();
+    return (
+      (await client.get(usedRefreshTokenKey(hashRefreshToken(token)))) !== null
+    );
+  } catch (err) {
+    // Fail per the environment-wide revocation policy (AUTH-16): a store
+    // outage must not let a replayed refresh token through.
+    if (revocationFailClosed()) {
+      logger.error(
+        "[Keycloak] Used-refresh-token check failed — treating as reused (fail-closed):: " +
+          String(err)
+      );
+      return true;
+    }
+    return false;
+  }
+}
+
+export type RotateSessionResult =
+  | { ok: true; tokens: import("./keycloak").TokenResponse }
+  | { ok: false; reason: "no_session_tokens" | "reuse_detected" | "refresh_failed" };
+
+/**
+ * Rotate the session's Keycloak tokens. Reuse of an already-rotated refresh
+ * token revokes the session AND all sessions for the user (RFC 6819 §5.2.2.3).
+ */
+export async function rotateSessionTokens(
+  jti: string,
+  sub: string
+): Promise<RotateSessionResult> {
+  const stored = await getSessionTokens(jti);
+  if (!stored?.refreshToken) {
+    return { ok: false, reason: "no_session_tokens" };
+  }
+
+  if (await isRefreshTokenUsed(stored.refreshToken)) {
+    logger.error(
+      { sub },
+      "[Keycloak] REFRESH TOKEN REUSE DETECTED — revoking all user sessions"
+    );
+    await deleteSessionTokens(jti);
+    await revokeAllUserTokens(kcSessionRevocationKey(sub));
+    return { ok: false, reason: "reuse_detected" };
+  }
+
+  try {
+    const tokens = await refreshAccessToken(stored.refreshToken);
+    // Rotation: the old refresh token is spent; persist the new set
+    // fail-closed (a session we cannot rotate is killed, not left stale).
+    await markRefreshTokenUsed(stored.refreshToken);
+    await storeSessionTokens(jti, {
+      refreshToken: tokens.refresh_token ?? stored.refreshToken,
+      idToken: tokens.id_token ?? stored.idToken,
+    });
+    return { ok: true, tokens };
+  } catch (err) {
+    logger.warn("[Keycloak] Token refresh failed:: " + String(err));
+    return { ok: false, reason: "refresh_failed" };
+  }
 }
 
 /**
@@ -158,7 +301,9 @@ export async function verifySessionJwt(
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
-    const failClosed = process.env.NODE_ENV === "production";
+    // AUTH-16: fail-closed in every environment unless the explicit
+    // non-production demo flag AUTH_REVOCATION_FAIL_OPEN_DEMO=true is set.
+    const failClosed = revocationFailClosed();
     if (await isTokenBlacklisted(hashSessionToken(token), failClosed)) {
       return null;
     }
@@ -173,7 +318,22 @@ export async function verifySessionJwt(
     ) {
       return null;
     }
-    return payload as unknown as SessionPayload;
+    const session = payload as unknown as SessionPayload;
+    // AUTH-13: re-sync the role from the current Keycloak token on every
+    // request so a realm-level demotion takes effect without waiting for
+    // re-login. The token-derived role always wins (least privilege).
+    if (session.accessToken) {
+      const liveRole = await resyncRoleFromAccessToken(session.accessToken);
+      if (liveRole && liveRole !== session.role) {
+        logger.info(
+          { sub: session.sub, from: session.role, to: liveRole },
+          "[Keycloak] Role re-synced from token"
+        );
+        session.role = liveRole;
+        void persistRoleChange(session.sub, liveRole);
+      }
+    }
+    return session;
   } catch {
     return null;
   }
@@ -359,6 +519,78 @@ export function registerKeycloakAuthRoutes(app: Express): void {
     } catch (err) {
       logger.error("[Keycloak] Callback error:: " + err);
       res.redirect("/?auth_error=callback_failed");
+    }
+  });
+
+  /**
+   * POST /api/auth/refresh
+   * Rotates the Keycloak tokens for the current session (AUTH-14) and mints
+   * a fresh session JWT carrying the new access token and the re-synced role
+   * (AUTH-13). Refresh-token reuse revokes all of the user's sessions.
+   */
+  app.post("/api/auth/refresh", async (req: Request, res: Response) => {
+    const cookies = parseCookies(req.headers.cookie ?? "");
+    const sessionToken = cookies.get(KC_SESSION_COOKIE);
+    if (!sessionToken) {
+      res.status(401).json({ error: "not_authenticated" });
+      return;
+    }
+    const session = await verifySessionJwt(sessionToken);
+    if (!session || typeof session.jti !== "string") {
+      res.status(401).json({ error: "invalid_session" });
+      return;
+    }
+
+    const rotated = await rotateSessionTokens(session.jti, session.sub);
+    if (!rotated.ok) {
+      if (rotated.reason === "reuse_detected") {
+        // Kill this session token too — the cookie holder may be the attacker.
+        try {
+          const { payload } = await jwtVerify(sessionToken, getJwtSecret());
+          await blacklistToken(
+            hashSessionToken(sessionToken),
+            typeof payload.exp === "number"
+              ? payload.exp
+              : Math.floor(Date.now() / 1000)
+          );
+        } catch {
+          /* token already unusable */
+        }
+        res.clearCookie(KC_SESSION_COOKIE, { path: "/" });
+        res.status(401).json({ error: "refresh_token_reuse_detected" });
+        return;
+      }
+      res.status(401).json({ error: rotated.reason });
+      return;
+    }
+
+    try {
+      const kcPayload = await verifyKeycloakToken(rotated.tokens.access_token);
+      const role = mapKeycloakRoleToPlatformRole(kcPayload);
+      const newSession: SessionPayload = {
+        ...session,
+        role,
+        accessToken: rotated.tokens.access_token,
+      };
+      await upsertUserFromKeycloak(newSession);
+      const sessionJwt = await createSessionJwt(newSession);
+      // Blacklist the superseded session JWT so only the fresh one is valid.
+      try {
+        const { payload } = await jwtVerify(sessionToken, getJwtSecret());
+        await blacklistToken(
+          hashSessionToken(sessionToken),
+          typeof payload.exp === "number"
+            ? payload.exp
+            : Math.floor(Date.now() / 1000)
+        );
+      } catch {
+        /* best-effort */
+      }
+      res.cookie(KC_SESSION_COOKIE, sessionJwt, sessionCookieOptions(req));
+      res.json({ authenticated: true, role });
+    } catch (err) {
+      logger.error("[Keycloak] Refresh post-processing failed:: " + err);
+      res.status(500).json({ error: "refresh_failed" });
     }
   });
 

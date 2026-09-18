@@ -11,6 +11,7 @@ import { transactions, agents, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
@@ -22,7 +23,7 @@ const MIN_AMOUNT = 100, MAX_AMOUNT = 1_000_000, DAILY_LIMIT = 5_000_000;
 const MDR = 0.015; // Merchant Discount Rate
 
 export const merchantPaymentsRouter = router({
-  pay: protectedProcedure
+  pay: financialProcedure
     .input(z.object({
       agentId: z.number(), merchantId: z.string().min(5),
       amountNGN: z.number().min(MIN_AMOUNT).max(MAX_AMOUNT),

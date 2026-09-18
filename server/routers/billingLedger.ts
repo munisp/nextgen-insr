@@ -20,6 +20,7 @@ import {
 } from "../../drizzle/schema";
 import type { TrpcContext } from "../_core/context";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 
 async function requireDb() {
@@ -98,7 +99,7 @@ export const billingLedgerRouter = router({
    * idempotency key (unique index pbl_tx_ref_unique, F-02) — duplicate
    * submissions are rejected loudly instead of double-recording.
    */
-  recordSplit: protectedProcedure
+  recordSplit: financialProcedure
     .input(
       z.object({
         transactionId: z.number().int(),

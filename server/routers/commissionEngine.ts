@@ -72,6 +72,7 @@ import {
 } from "../../drizzle/schema";
 import logger from "../_core/logger";
 import { router, protectedProcedure } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import {
   publishCommissionEvent,
@@ -396,7 +397,7 @@ export const commissionEngineRouter = router({
   }),
 
   // ── Update a tier (DB-backed with audit) ────────────────────────────────
-  updateTier: protectedProcedure
+  updateTier: financialProcedure
     .input(
       z.object({
         id: z.string(),
@@ -476,7 +477,7 @@ export const commissionEngineRouter = router({
     }),
 
   // ── Create a new tier (DB-backed) ───────────────────────────────────────
-  createTier: protectedProcedure
+  createTier: financialProcedure
     .input(
       z.object({
         name: z.string().min(1),
@@ -558,7 +559,7 @@ export const commissionEngineRouter = router({
     }),
 
   // ── Delete (deactivate) a tier ──────────────────────────────────────────
-  deleteTier: protectedProcedure
+  deleteTier: financialProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -641,7 +642,7 @@ export const commissionEngineRouter = router({
   }),
 
   // ── Update a split (DB-backed with validation) ──────────────────────────
-  updateSplit: protectedProcedure
+  updateSplit: financialProcedure
     .input(
       z.object({
         id: z.string(),
@@ -733,7 +734,7 @@ export const commissionEngineRouter = router({
     }),
 
   // ── Create a new split (DB-backed) ──────────────────────────────────────
-  createSplit: protectedProcedure
+  createSplit: financialProcedure
     .input(
       z.object({
         transactionType: z.string().min(1),
@@ -1014,7 +1015,7 @@ export const commissionEngineRouter = router({
     }),
 
   // ── Approve a payout (DB-backed with TigerBeetle) ──────────────────────
-  approvePayout: protectedProcedure
+  approvePayout: financialProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -1227,7 +1228,7 @@ export const commissionEngineRouter = router({
     }),
 
   /** [Temporal] Trigger batch payout workflow */
-  triggerBatchPayout: protectedProcedure
+  triggerBatchPayout: financialProcedure
     .input(z.object({ period: z.string(), agentIds: z.array(z.number()) }))
     .mutation(async ({ input }) => {
       try {
@@ -1254,7 +1255,7 @@ export const commissionEngineRouter = router({
     }),
 
   /** [Mojaloop] Initiate ILP commission transfer for cross-border agents */
-  initiateIlpTransfer: protectedProcedure
+  initiateIlpTransfer: financialProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -1285,7 +1286,7 @@ export const commissionEngineRouter = router({
     }),
 
   /** [Lakehouse] Trigger daily commission snapshot */
-  triggerSnapshot: protectedProcedure
+  triggerSnapshot: financialProcedure
     .input(z.object({ date: z.string().optional() }))
     .mutation(async ({ input }) => {
       try {

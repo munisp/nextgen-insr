@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { reversalRequests, transactions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 import { tbCreateTransfer } from "../tbClient";
 
@@ -58,7 +59,7 @@ export const transactionReversalWorkflowRouter = router({
     }),
 
   // Initiate a reversal request
-  create: protectedProcedure
+  create: financialProcedure
     .input(
       z.object({
         transactionId: z.string().min(1),
@@ -127,7 +128,7 @@ export const transactionReversalWorkflowRouter = router({
     }),
 
   // Approve or reject a reversal
-  review: protectedProcedure
+  review: financialProcedure
     .input(
       z.object({
         id: z.number(),
@@ -163,7 +164,7 @@ export const transactionReversalWorkflowRouter = router({
     }),
 
   // Process an approved reversal (execute the actual reversal)
-  execute: protectedProcedure
+  execute: financialProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();

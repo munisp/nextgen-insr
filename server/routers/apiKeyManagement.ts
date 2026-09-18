@@ -1,11 +1,24 @@
 // Sprint 87: Upgraded from mock data to real DB queries — apiKeyManagement
+// AUTH-8/9: revoke/rotate are REAL DB mutations (checked at auth time via
+// developerPortal.validateKey: status!=="active" || revokedAt → 401), and
+// getStats is no longer public.
+import crypto from "node:crypto";
+
 import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { apiKeys } from "../../drizzle/schema";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+
+/** Same format as developerPortal.generateApiKey — raw shown ONCE. */
+function generateApiKey(): { raw: string; hash: string; prefix: string } {
+  const raw = `54lk_${crypto.randomBytes(32).toString("hex")}`;
+  const prefix = raw.slice(0, 12);
+  const hash = crypto.createHash("sha256").update(raw).digest("hex");
+  return { raw, hash, prefix };
+}
 
 const listKeys = protectedProcedure
   .input(
@@ -40,30 +53,51 @@ const listKeys = protectedProcedure
       });
     }
   });
+/**
+ * AUTH-8: REAL rotation. Generates a fresh secret, atomically replaces the
+ * stored hash/prefix on the existing key record, and returns the new raw key
+ * exactly once. The old secret stops authenticating immediately because
+ * auth-time validation hashes the presented key and compares to keyHash.
+ */
 const rotateKey = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      id: z.number(),
     })
   )
-  .query(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
+      const [existing] = await db
         .select()
         .from(apiKeys)
-        .orderBy(desc(apiKeys.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(apiKeys)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
+        .where(eq(apiKeys.id, input.id))
+        .limit(1);
+      if (!existing)
+        throw new TRPCError({ code: "NOT_FOUND", message: "rotateKey: record not found" });
+      if (existing.status !== "active" || existing.revokedAt)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "rotateKey: cannot rotate a revoked/inactive key",
+        });
+      // Ownership/tenant scoping: a non-admin may only rotate their own keys.
+      if (ctx.user.role !== "admin" && existing.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "rotateKey: not your key" });
+      }
+      const { raw, hash, prefix } = generateApiKey();
+      const [row] = await db
+        .update(apiKeys)
+        .set({ keyHash: hash, keyPrefix: prefix })
+        .where(eq(apiKeys.id, input.id))
+        .returning();
+      return {
+        success: true,
+        id: row.id,
+        keyPrefix: row.keyPrefix,
+        rawKey: raw, // shown once — never stored
+        message: "rotateKey completed — store the new key; it will not be shown again",
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -106,7 +140,7 @@ const getUsage = protectedProcedure
       });
     }
   });
-const getStats = publicProcedure
+const getStats = protectedProcedure // AUTH-9: was publicProcedure — key inventory is not public
   .input(
     z.object({
       page: z.number().optional(),
@@ -162,36 +196,41 @@ const getStats = publicProcedure
 const createKey = protectedProcedure
   .input(
     z.object({
-      id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
+      // AUTH-8: whitelisted fields only — caller can no longer smuggle
+      // keyHash/status/userId through a free-form `data` bag.
+      name: z.string().min(1).max(128),
+      description: z.string().max(1024).optional(),
+      scopes: z.array(z.string()).optional(),
+      rateLimit: z.number().int().positive().max(100000).optional(),
+      expiresAt: z.coerce.date().optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(apiKeys)
-          .where(eq(apiKeys.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createKey: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createKey completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
+      const { raw, hash, prefix } = generateApiKey();
       const [row] = await db
         .insert(apiKeys)
-        .values(input.data || ({} as any))
+        .values({
+          keyHash: hash,
+          keyPrefix: prefix,
+          name: input.name,
+          description: input.description ?? null,
+          userId: ctx.user.id, // server-side identity — never caller-supplied
+          tenantId: ctx.user.tenantId ?? null,
+          status: "active",
+          scopes: input.scopes ?? [],
+          rateLimit: input.rateLimit ?? 1000,
+          expiresAt: input.expiresAt ?? null,
+        })
         .returning();
-      return { success: true, ...row, message: "createKey completed" };
+      return {
+        success: true,
+        id: row.id,
+        keyPrefix: row.keyPrefix,
+        rawKey: raw, // shown once — never stored
+        message: "createKey completed — store the key; it will not be shown again",
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -201,39 +240,46 @@ const createKey = protectedProcedure
       });
     }
   });
+/**
+ * AUTH-8: REAL revocation. Writes status="revoked" + revokedAt to api_keys —
+ * the same columns the auth-time validator (developerPortal.validateKey)
+ * rejects on — so a revoked key stops working immediately.
+ */
 const revokeKey = protectedProcedure
   .input(
     z.object({
-      id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
+      id: z.number(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(apiKeys)
-          .where(eq(apiKeys.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "revokeKey: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "revokeKey completed",
-          timestamp: new Date().toISOString(),
-        };
+      const [existing] = await db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.id, input.id))
+        .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "revokeKey: record not found",
+        });
+      if (ctx.user.role !== "admin" && existing.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "revokeKey: not your key" });
       }
       const [row] = await db
-        .insert(apiKeys)
-        .values(input.data || ({} as any))
+        .update(apiKeys)
+        .set({ status: "revoked", revokedAt: new Date() })
+        .where(eq(apiKeys.id, input.id))
         .returning();
-      return { success: true, ...row, message: "revokeKey completed" };
+      return {
+        success: true,
+        id: row.id,
+        status: row.status,
+        revokedAt: row.revokedAt?.toISOString() ?? null,
+        message: "revokeKey completed",
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

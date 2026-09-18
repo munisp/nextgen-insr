@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auditLog } from "../../drizzle/schema";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { fluvioProduce } from "../fluvio";
@@ -181,7 +182,7 @@ export const crossBorderRemittanceHubRouter = router({
     }
   }),
 
-  initiateTransfer: protectedProcedure
+  initiateTransfer: financialProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
