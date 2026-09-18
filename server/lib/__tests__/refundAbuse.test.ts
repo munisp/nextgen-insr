@@ -2,12 +2,12 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 
-import { deriveRefundTerms } from "../routers/disputeRefund";
+import { deriveRefundTerms } from "../refundTerms";
 import {
   flagRefundLoopIfAbusive,
   REFUND_LOOP_CUSTOMER_THRESHOLD,
   REFUND_LOOP_POLICY_THRESHOLD,
-} from "../lib/refundLoopDetection";
+} from "../refundLoopDetection";
 
 // ── AB-19: server-derived refund terms (pure function) ─────────────────────
 describe("deriveRefundTerms (AB-19)", () => {
@@ -55,8 +55,12 @@ describe("flagRefundLoopIfAbusive (AB-10)", () => {
       CREATE TABLE fraud_alerts (
         id SERIAL PRIMARY KEY, "agentId" INTEGER, "transactionId" INTEGER,
         severity fraud_severity NOT NULL, type VARCHAR(128) NOT NULL,
-        reason TEXT NOT NULL, "fraudScore" NUMERIC(5,2),
-        status fraud_status DEFAULT 'open' NOT NULL, "tenantId" INTEGER,
+        "customerName" VARCHAR(128), amount NUMERIC(15,2),
+        reason TEXT NOT NULL, "aiExplanation" JSON, "fraudScore" NUMERIC(5,2),
+        status fraud_status DEFAULT 'open' NOT NULL,
+        "assignedTo" VARCHAR(64), "resolvedAt" TIMESTAMP,
+        "snoozedUntil" TIMESTAMP, "escalatedAt" TIMESTAMP, "escalatedTo" VARCHAR(64),
+        "deletedAt" TIMESTAMP, "tenantId" INTEGER,
         "createdAt" TIMESTAMP DEFAULT NOW() NOT NULL,
         "updatedAt" TIMESTAMP DEFAULT NOW() NOT NULL
       );

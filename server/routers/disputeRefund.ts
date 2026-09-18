@@ -8,6 +8,7 @@ import { disputes, refunds, transactions, type Refund } from "../../drizzle/sche
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
+import { deriveRefundTerms } from "../lib/refundTerms";
 
 /**
  * Dispute Refund Router
@@ -37,35 +38,6 @@ const REFUND_TIERS = [
 
 const DAILY_AGENT_CAP = 2000000;
 const MAX_REFUNDS_PER_CUSTOMER_30D = 5;
-
-/**
- * AB-19: derive the effective refund terms from the ORIGINAL transaction.
- * The client may request any amount/destination, but when the disputed
- * transaction is on record: the amount may not exceed the original amount
- * (over-refund = fail-closed rejection) and the destination is forced to
- * the transaction's source account when known. Exported for testing.
- */
-export function deriveRefundTerms(
-  origTx: { id: number; amount: string | number; customerAccount: string | null; destinationAccount: string | null } | null,
-  input: { amount: number; accountNumber: string }
-): { effectiveAmount: number; effectiveDestination: string; originalTxId: number | null } {
-  if (!origTx) {
-    return { effectiveAmount: input.amount, effectiveDestination: input.accountNumber, originalTxId: null };
-  }
-  const origAmount = Number(origTx.amount);
-  if (input.amount > origAmount) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Refund amount (₦${input.amount}) exceeds the original transaction amount (₦${origAmount})`,
-    });
-  }
-  const sourceAccount = origTx.customerAccount || origTx.destinationAccount;
-  return {
-    effectiveAmount: input.amount,
-    effectiveDestination: sourceAccount || input.accountNumber,
-    originalTxId: origTx.id,
-  };
-}
 
 function getRefundTier(amount: number) {
   return REFUND_TIERS.find((t) => amount <= t.max)!;
