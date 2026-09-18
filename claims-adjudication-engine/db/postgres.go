@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/claims-adjudication-engine/config"
@@ -823,4 +825,130 @@ func (r *ClaimsRepository) GetMetrics(ctx context.Context) (*models.ClaimMetrics
 // generateReferenceID creates a unique reference ID for a claim
 func generateReferenceID(claimID string) string {
 	return fmt.Sprintf("CLM-%s-%d", claimID[:8], time.Now().Unix())
+}
+
+// ─── Wave F2 audit fixes (INS-6/7) ──────────────────────────────────────────
+
+// ErrInvalidClaimTransition is returned when a status update is attempted from
+// a state that the transition guard does not allow (concurrent adjuster race
+// or an attempt to re-decide a decided claim).
+var ErrInvalidClaimTransition = errors.New("invalid claim state transition")
+
+// PolicySnapshot is the engine's read-only view of the core `policies` table
+// (INS-6): adjudication must see lapse/cancellation, the coverage period, and
+// the product waiting period before any approval.
+type PolicySnapshot struct {
+	Status            string
+	StartDate         sql.NullTime
+	EndDate           sql.NullTime
+	WaitingPeriodDays int
+}
+
+// GetPolicySnapshot loads the policy row by policy number. Returns (nil, nil)
+// when no such policy exists — the caller decides how to fail (fail-closed).
+func (r *ClaimsRepository) GetPolicySnapshot(ctx context.Context, policyNumber string) (*PolicySnapshot, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT p.status::text, p."startDate", p."endDate",
+		       COALESCE(ip."waitingPeriodDays", 0)
+		  FROM policies p
+		  LEFT JOIN insurance_products ip ON ip.id = p."productId"
+		 WHERE p."policyNumber" = $1
+		 LIMIT 1`, policyNumber)
+	var snap PolicySnapshot
+	if err := row.Scan(&snap.Status, &snap.StartDate, &snap.EndDate, &snap.WaitingPeriodDays); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load policy %s: %w", policyNumber, err)
+	}
+	return &snap, nil
+}
+
+// UpdateClaimStatusFrom is UpdateClaimStatus plus an atomic FROM-state guard
+// (INS-7): the UPDATE only applies when the claim's current status is in
+// allowedFrom, so two concurrent adjusters can never both win approve+deny,
+// and a decided claim (approved/denied/paid/rejected) can never regress.
+func (r *ClaimsRepository) UpdateClaimStatusFrom(ctx context.Context, claimID string, newStatus models.ClaimStatus, decision models.ClaimDecision, metadata map[string]interface{}, allowedFrom []string) error {
+	if len(allowedFrom) == 0 {
+		return fmt.Errorf("allowedFrom must be non-empty (fail-closed)")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			r.logger.Error("Failed to rollback transaction", zap.Error(err))
+		}
+	}()
+
+	var currentStatus string
+	err = tx.QueryRowContext(ctx, "SELECT status FROM claims WHERE id = $1 AND deleted_at IS NULL", claimID).Scan(&currentStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("claim not found: %s", claimID)
+		}
+		return fmt.Errorf("failed to get claim: %w", err)
+	}
+
+	now := time.Now()
+	var res sql.Result
+	switch newStatus {
+	case models.ClaimStatusApproved, models.ClaimStatusDenied, models.ClaimStatusRejected:
+		res, err = tx.ExecContext(ctx,
+			`UPDATE claims SET status = $1, decision = $2, reviewed_at = $3, updated_at = $4
+			  WHERE id = $5 AND deleted_at IS NULL AND status = ANY($6)`,
+			string(newStatus), decision, now, now, claimID, pqArray(allowedFrom),
+		)
+	case models.ClaimStatusPaid:
+		res, err = tx.ExecContext(ctx,
+			`UPDATE claims SET status = $1, paid_at = $2, updated_at = $3
+			  WHERE id = $4 AND deleted_at IS NULL AND status = ANY($5)`,
+			string(newStatus), now, now, claimID, pqArray(allowedFrom),
+		)
+	default:
+		res, err = tx.ExecContext(ctx,
+			`UPDATE claims SET status = $1, updated_at = $2
+			  WHERE id = $3 AND deleted_at IS NULL AND status = ANY($4)`,
+			string(newStatus), now, claimID, pqArray(allowedFrom),
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to update claim status: %w", err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return fmt.Errorf("%w: claim %s in status '%s' cannot transition to '%s'", ErrInvalidClaimTransition, claimID, currentStatus, newStatus)
+	}
+
+	metadataJSON, _ := json.Marshal(metadata)
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO adjudication_history (claim_id, action, previous_status, new_status, decision, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		claimID, "status_change", currentStatus, string(newStatus), string(decision), metadataJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to record adjudication history: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// pqArray renders a string slice as a Postgres text[] literal for use with
+// `= ANY($n)` without pulling in another dependency.
+func pqArray(items []string) string {
+	var b strings.Builder
+	b.WriteString("{")
+	for i, s := range items {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString("\"")
+		b.WriteString(strings.ReplaceAll(strings.ReplaceAll(s, "\\", "\\\\"), "\"", "\\\""))
+		b.WriteString("\"")
+	}
+	b.WriteString("}")
+	return b.String()
 }
