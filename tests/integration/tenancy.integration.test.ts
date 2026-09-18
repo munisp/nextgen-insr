@@ -193,6 +193,9 @@ describe("cross-tenant isolation (integration, real DB)", () => {
         email: "agent-a@tenant-a.integration",
         pinHash: "integration-pin-hash-a",
         tenantId: TENANT_A,
+        // 2026-05 (G3): isActive defaults to false (pending) — set explicitly
+        // to preserve the pre-G3 active-agent behavior under test.
+        isActive: true,
       })
       .returning();
     const [aB] = await db
@@ -204,6 +207,7 @@ describe("cross-tenant isolation (integration, real DB)", () => {
         email: "agent-b@tenant-b.integration",
         pinHash: "integration-pin-hash-b",
         tenantId: TENANT_B,
+        isActive: true, // 2026-05 (G3): see agent A note above
       })
       .returning();
     agentAId = aA!.id;

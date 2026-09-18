@@ -56,18 +56,19 @@ export const agentBankAccountsRouter = router({
           ctx.user.role,
           input.agentId ?? null
         );
-        if (!scope.ok && ctx.user.role !== "admin") {
-          throw new TRPCError({ code: scope.code, message: scope.message });
+        if (!scope.ok) {
+          // G3 (audit #17): an admin WITHOUT a resolvable scope must not fall
+          // back to an UNFILTERED dump of every agent's bank details — fail
+          // closed and require an explicit agentId.
+          throw new TRPCError({
+            code: scope.code,
+            message:
+              ctx.user.role === "admin"
+                ? "agentId is required — an unfiltered cross-agent bank-account listing is not permitted"
+                : scope.message,
+          });
         }
-        const conditions =
-          ctx.user.role === "admin" && !scope.ok
-            ? []
-            : [
-                eq(
-                  agentBankAccounts.agentId,
-                  scope.ok ? scope.agentId : (input.agentId ?? -1)
-                ),
-              ];
+        const conditions = [eq(agentBankAccounts.agentId, scope.agentId)];
         const rows = await db
           .select()
           .from(agentBankAccounts)

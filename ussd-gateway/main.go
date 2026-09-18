@@ -45,6 +45,17 @@ type Config struct {
 	// CashOutCoolingHours is the cooling period after a phone rebind before
 	// cash-out (float claim) is allowed.
 	CashOutCoolingHours int
+	// APIKey is the shared MNO/internal credential required on /ussd and
+	// /api/v1/* (G2 audit 2026-02, #14: these endpoints were UNAUTHENTICATED —
+	// anyone could drive sessions for any phone, register agents, or read
+	// agent PII/session state). Fail-closed at boot when unset.
+	APIKey string
+	// EnhancedKYCURL / EnhancedKYCKey: identity-verification service used to
+	// REALLY verify self-declared BVN/NIN at enrollment (#13). Unconfigured →
+	// enrollments that require ID verification fail LOUD, never pass on
+	// self-declared strings.
+	EnhancedKYCURL string
+	EnhancedKYCKey string
 }
 
 func loadConfig() Config {
@@ -89,6 +100,9 @@ func loadConfig() Config {
 	if v, err := strconv.Atoi(os.Getenv("CASHOUT_COOLING_HOURS")); err == nil && v >= 0 {
 		cfg.CashOutCoolingHours = v
 	}
+	cfg.APIKey = os.Getenv("USSD_API_KEY")
+	cfg.EnhancedKYCURL = os.Getenv("ENHANCED_KYC_URL")
+	cfg.EnhancedKYCKey = os.Getenv("ENHANCED_KYC_API_KEY")
 
 	return cfg
 }
@@ -240,7 +254,7 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 		return app.stateProductConfirm(sess, input)
 	case "enroll_complete":
 		return models.USSDResponse{
-			Text:         "Enrollment complete! Reference: " + sess.Data["reference"].(string) + "\nYou will receive a confirmation within 24 hours.",
+			Text:         "Enrollment submitted for processing. Reference: " + sess.Data["reference"].(string) + "\nYou will be notified once your policy is active.",
 			CloseSession: true,
 			Action:       "end",
 		}, nil
@@ -582,13 +596,79 @@ func (app *Application) stateProductConfirm(sess *models.SessionData, input stri
 
 	collected, _ := sess.Data["collected_data"].(map[string]string)
 
-	// Parse coverage amount for premium calculation.
+	// G2 audit 2026-02 (#13): enrollment trust-boundary hardening.
+	fullName := collected["full_name"]
+
+	// (a) Age validation — DOB is collected for life/health; under-18 cannot
+	// enroll (fail-closed honest; no guardian flow exists).
+	if dob := collected["date_of_birth"]; dob != "" {
+		if age, ok := parseAgeYears(dob); !ok || age < 18 {
+			sess.State = "end"
+			return models.USSDResponse{
+				Text:         "Enrollment declined: policyholder must be 18 or older.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
+	}
+
+	// (b) Self-declared BVN/NIN must be REALLY verified — never trusted.
+	idNumber := collected["bvn_or_nin"]
+	if idNumber == "" {
+		if idType := strings.ToLower(collected["id_type"]); idType == "nin" || idType == "bvn" {
+			idNumber = collected["id_number"]
+		}
+	}
+	if idNumber != "" {
+		verified, verr := app.verifyNationalID(idNumber, fullName)
+		if verr != nil {
+			app.log.Error("enrollment ID verification", zap.Error(verr))
+			sess.State = "end"
+			return models.USSDResponse{
+				Text:         "Identity verification is unavailable right now. Please try again later.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
+		if !verified {
+			sess.State = "end"
+			return models.USSDResponse{
+				Text:         "Enrollment declined: the provided BVN/NIN could not be verified against your name.",
+				CloseSession: true,
+				Action:       "end",
+			}, nil
+		}
+	}
+
+	// (c) Coverage amount is server-validated against product bounds — the
+	// client-supplied figure is never trusted as-is.
 	var amount float64
 	if raw, ok := collected["coverage_amount"]; ok {
 		amount, _ = strconv.ParseFloat(strings.ReplaceAll(raw, ",", ""), 64)
 	}
-	if amount == 0 {
+	if amount < product.MinPremium {
 		amount = product.MinPremium
+	}
+	if product.MaxPremium > 0 && amount > product.MaxPremium {
+		amount = product.MaxPremium
+	}
+
+	// (d) Dedup: an existing pending enrollment for this phone+product is
+	// returned, not duplicated.
+	if app.pg != nil {
+		if history, herr := app.pg.GetTransactionHistory(context.Background(), sess.PhoneNumber, 50); herr == nil {
+			for _, prior := range history {
+				if prior.Type == models.TransactionTypeEnrollment && prior.ProductID == productID && prior.Status == "pending" {
+					sess.Data["reference"] = prior.Reference
+					sess.State = "enroll_complete"
+					return models.USSDResponse{
+						Text:         "You already have an enrollment in progress. Reference: " + prior.Reference,
+						CloseSession: true,
+						Action:       "end",
+					}, nil
+				}
+			}
+		}
 	}
 
 	txn := &models.TransactionRecord{
@@ -630,11 +710,74 @@ func (app *Application) stateProductConfirm(sess *models.SessionData, input stri
 		}
 	}
 
+	// G2 #13: honest status — the transaction is PENDING (payment/underwriting
+	// not completed); the old text claimed "Enrollment complete!".
 	return models.USSDResponse{
-		Text:         "Enrollment complete! Reference: " + txn.Reference + "\nYou will receive a confirmation within 24 hours.",
+		Text:         "Enrollment submitted for processing. Reference: " + txn.Reference + "\nYou will be notified once your policy is active.",
 		CloseSession: true,
 		Action:       "end",
 	}, nil
+}
+
+// parseAgeYears parses a DOB in common formats and returns whole years.
+func parseAgeYears(dob string) (int, bool) {
+	var t time.Time
+	var err error
+	for _, layout := range []string{"2006-01-02", "02/01/2006", "02-01-2006"} {
+		if t, err = time.Parse(layout, strings.TrimSpace(dob)); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return 0, false
+	}
+	now := time.Now()
+	age := now.Year() - t.Year()
+	if now.Month() < t.Month() || (now.Month() == t.Month() && now.Day() < t.Day()) {
+		age--
+	}
+	return age, true
+}
+
+// verifyNationalID verifies a self-declared 11-digit BVN/NIN against the
+// enhanced-kyc-kyb service (real NIBSS adjudication). FAIL-CLOSED: an
+// unconfigured or unreachable service returns an error, and only an explicit
+// verified adjudication returns true (G2 audit 2026-02, #13).
+func (app *Application) verifyNationalID(idNumber, fullName string) (bool, error) {
+	if app.cfg.EnhancedKYCURL == "" || app.cfg.EnhancedKYCKey == "" {
+		return false, fmt.Errorf("identity verification service not configured (ENHANCED_KYC_URL / ENHANCED_KYC_API_KEY)")
+	}
+	if len(idNumber) != 11 {
+		return false, nil // invalid format → not verified (honest decline, not an outage)
+	}
+	payload, _ := json.Marshal(map[string]string{"nin": idNumber, "bvn": idNumber, "full_name": fullName})
+	path := app.cfg.EnhancedKYCURL + "/api/v1/kyc/verify-nin"
+	req, err := http.NewRequest(http.MethodPost, path, strings.NewReader(string(payload)))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+app.cfg.EnhancedKYCKey)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("identity verification request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusBadRequest {
+		return false, nil // rejected input → decline honestly
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("identity verification service returned HTTP %d", resp.StatusCode)
+	}
+	var out struct {
+		Verified bool   `json:"verified"`
+		Status   string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, fmt.Errorf("identity verification response decode: %w", err)
+	}
+	return out.Verified && out.Status == "verified", nil
 }
 
 // -- State: agent menu -------------------------------------------------------
@@ -656,6 +799,16 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 				Text:         "You are not registered as an agent. Please register first (option 1).",
 				CloseSession: false,
 				Action:       "continue",
+			}, nil
+		}
+		// G3 (audit #9): only APPROVED (active) agents may reach financial ops.
+		// A pending/suspended agent holding a valid MSISDN (or even a valid
+		// PIN) must not cash out.
+		if agent.Status != models.AgentStatusActive {
+			return models.USSDResponse{
+				Text:         "Your agent account is " + agent.Status + ". Float services are available once your account is approved.",
+				CloseSession: true,
+				Action:       "end",
 			}, nil
 		}
 		sess.Data["agent_id"] = agent.ID
@@ -772,25 +925,37 @@ func (app *Application) stateAgentRegisterLGA(sess *models.SessionData, input st
 
 func (app *Application) stateAgentRegisterBank(sess *models.SessionData, input string) (models.USSDResponse, error) {
 	input = strings.TrimSpace(input)
-	if len(input) < 10 {
+	// G3 (audit #11): strict NUBAN format — exactly 10 digits. Previously ANY
+	// numeric string was accepted ("here we accept any numeric input"), so an
+	// attacker-controlled settlement destination was stored from day one.
+	// Format validation is the only automated check available in-band; the
+	// account stays UNVERIFIED and the agent remains pending until back-office
+	// name-enquiry confirms ownership before activation.
+	if !nubanFormat(input) {
 		return models.USSDResponse{
-			Text:         "Please enter a valid bank account number (min 10 digits):",
+			Text:         "Invalid account number. Enter your 10-digit NUBAN account number:",
 			CloseSession: false,
 			Action:       "continue",
 		}, nil
 	}
-	// Try to look up bank name by account number (in production this would
-	// call a bank verification API; here we accept any numeric input).
 	sess.Data["agent_bank_account"] = input
-	if _, err := strconv.Atoi(input); err == nil {
-		// Best-effort bank name lookup from a small mapping; fallback to generic.
-		bankName := lookupBankByNumber(input)
-		sess.Data["agent_bank_name"] = bankName
-	} else {
-		sess.Data["agent_bank_name"] = "Unknown"
-	}
+	// Best-effort bank name lookup from a small mapping; fallback to generic.
+	sess.Data["agent_bank_name"] = lookupBankByNumber(input)
 	sess.State = "agent_register_confirm"
 	return app.renderAgentRegisterConfirm(sess), nil
+}
+
+// nubanFormat reports whether s is exactly 10 ASCII digits (NUBAN length).
+func nubanFormat(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
@@ -809,6 +974,18 @@ func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, inpu
 			Text:         "Invalid input. Reply 1 to Confirm or 0 to Cancel.",
 			CloseSession: false,
 			Action:       "confirm",
+		}, nil
+	}
+
+	// G3 (audit #9/#12): enrollment requires a PIN (F4 salted+peppered infra),
+	// so fail BEFORE persisting anything when PIN hashing is impossible.
+	if app.cfg.PINPepper == "" {
+		app.log.Error("agent enrollment aborted: PIN_PEPPER not configured")
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Registration is temporarily unavailable. Please try again later.",
+			CloseSession: true,
+			Action:       "end",
 		}, nil
 	}
 
@@ -837,19 +1014,25 @@ func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, inpu
 		}, nil
 	}
 
-	// Activate the agent immediately (in production this would be verified).
-	agent.Status = models.AgentStatusActive
-	_ = app.pg.UpdateAgentStatus(ctx, agent.ID, models.AgentStatusActive)
-
+	// G3 (audit #9) + G2 audit 2026-02 (#12): NO auto-activation over USSD —
+	// the agent stays PENDING until back-office verification of identity and
+	// bank details; a USSD session must never be able to self-activate.
+	// Activation happens only through the gated admin paths on the platform
+	// side.
 	sess.Data["agent_id"] = agent.ID
 	sess.Data["agent_phone"] = agent.PhoneNumber
-	sess.State = "agent_register_complete"
 	sess.Data["reference"] = "AGT-" + agent.ID[:8]
 
+	sess.Data["pin_context"] = "enroll"
+	sess.State = "agent_pin_set"
+	// UNION (G3+G2): enroll ends in a mandatory PIN set (fail-closed without
+	// PIN_PEPPER, checked before persist above); the post-PIN message
+	// (stateAgentPINSetConfirm, pin_context=="enroll") delivers G2's honest
+	// "application PENDING verification" completion text.
 	return models.USSDResponse{
-		Text:         "Welcome, " + agent.Name + "! You are now a registered agent. Reference: " + sess.Data["reference"].(string) + "\nYou can now use Agent Services.",
-		CloseSession: true,
-		Action:       "end",
+		Text:         "Almost done. Set a 4-6 digit PIN to secure your agent account.\nEnter new PIN:",
+		CloseSession: false,
+		Action:       "continue",
 	}, nil
 }
 
@@ -1305,11 +1488,11 @@ func (app *Application) handleAgentRegister(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Auto-activate for API-registered agents.
-	_ = app.pg.UpdateAgentStatus(ctx, agent.ID, models.AgentStatusActive)
-
+	// G2 audit 2026-02 (#12): NO auto-activation. The old code flipped the
+	// agent to Active immediately with zero verification ("in production this
+	// would be verified"). Agents stay Pending until back-office review.
 	jsonOK(w, http.StatusCreated, map[string]interface{}{
-		"message":      "Agent registered successfully",
+		"message":      "Agent registration received — pending verification",
 		"agent_id":     agent.ID,
 		"phone_number": agent.PhoneNumber,
 		"status":       agent.Status,
@@ -1364,14 +1547,31 @@ func (app *Application) router() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// Health check.
+	// Health check (public).
 	r.Get("/health", app.handleHealth)
 
+	// G2 audit 2026-02 (#14): everything below requires the shared gateway
+	// credential (MNO or internal caller). Constant-time comparison.
+	auth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			key := req.Header.Get("X-USSD-Gateway-Key")
+			if key == "" {
+				key = strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+			}
+			if key == "" || subtle.ConstantTimeCompare([]byte(key), []byte(app.cfg.APIKey)) != 1 {
+				jsonError(w, http.StatusUnauthorized, "invalid or missing gateway credentials")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	}
+
 	// USSD endpoint (main integration point for MNOs).
-	r.Post("/ussd", app.handleUSSD)
+	r.With(auth).Post("/ussd", app.handleUSSD)
 
 	// REST API v1.
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(auth)
 		// Agent registration.
 		r.Post("/register", app.handleAgentRegister)
 
@@ -1449,6 +1649,12 @@ func main() {
 	cfg := loadConfig()
 	logger := newLogger(cfg.LogLevel)
 	defer func() { _ = logger.Sync() }()
+
+	// G2 audit 2026-02 (#14): fail-closed at boot — the gateway must never
+	// serve unauthenticated /ussd or /api/v1/* endpoints.
+	if cfg.APIKey == "" {
+		logger.Fatal("USSD_API_KEY is not set; refusing to start (gateway endpoints require authentication)")
+	}
 
 	app := newApp(cfg, logger)
 
@@ -1733,6 +1939,22 @@ func (app *Application) stateAgentPINSetConfirm(sess *models.SessionData, input 
 	}
 	delete(sess.Data, "pin_pending")
 	sess.Data["pin_verified"] = true
+
+	// G3: when the PIN was set as part of ENROLLMENT, the flow ends here —
+	// the account remains pending verification; it does NOT drop into a float
+	// claim for an unapproved agent.
+	if ctx2, _ := sess.Data["pin_context"].(string); ctx2 == "enroll" {
+		delete(sess.Data, "pin_context")
+		sess.State = "end"
+		ref, _ := sess.Data["reference"].(string)
+		name, _ := sess.Data["agent_name"].(string)
+		return models.USSDResponse{
+			Text:         "PIN set successfully.\nThank you, " + name + ". Your agent application (Ref: " + ref + ") is PENDING verification.\nYou will be notified once approved.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+
 	sess.State = "agent_float_input"
 	balance, _ := app.pg.GetAgentBalance(ctx, agentID)
 	return models.USSDResponse{

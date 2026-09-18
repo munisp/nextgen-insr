@@ -20,7 +20,7 @@ import { agents, otpTokens } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { revokeAllUserTokens } from "../lib/redisClient";
+import { getRedisClient, revokeAllUserTokens } from "../lib/redisClient";
 import {
   agentSessionRevocationKey,
   getAgentFromCookie,
@@ -101,6 +101,24 @@ export const pinResetRouter = router({
 
         const agent = agentRows[0];
 
+        // G2 audit 2026-02 (#20): per-PHONE throttle (not only per-IP) —
+        // rotating IPs must not SMS-bomb a victim's phone. Max 5 OTPs/hour.
+        try {
+          const redis = getRedisClient();
+          const rateKey = `pinreset:rate:${agent.phone ?? input.phone}`;
+          const n = await redis.incr(rateKey);
+          if (n === 1) await redis.expire(rateKey, 3600);
+          if (n > 5) {
+            throw new TRPCError({
+              code: "TOO_MANY_REQUESTS",
+              message: "Too many reset codes requested for this phone — try again later",
+            });
+          }
+        } catch (err) {
+          if (err instanceof TRPCError) throw err;
+          // Redis unavailable → the per-IP limiter and OTP attempt lock still bound abuse.
+        }
+
         // Verify phone matches (last 10 digits comparison for flexibility)
         const storedPhone = (agent.phone ?? "").replace(/\D/g, "").slice(-10);
         const inputPhone = input.phone.replace(/\D/g, "").slice(-10);
@@ -133,12 +151,20 @@ export const pinResetRouter = router({
           `Your InsurePortal POS PIN reset code is: ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this code.`
         );
         if (!smsResult.success) {
-          // Redact phone number in logs to avoid PII exposure
+          // G2 audit 2026-02 (#20): FAIL-LOUD, not fail-silent. The old code
+          // logged the failure and returned success, leaving a valid-but-
+          // undeliverable OTP — the user could NEVER complete the flow.
+          // Remove the unusable token and surface an honest error.
+          await db.delete(otpTokens).where(eq(otpTokens.agentId, agent.id));
           const maskedPhone =
             input.phone.slice(0, 4) + "****" + input.phone.slice(-3);
           console.error(
             `[pinReset] SMS delivery failed for ${maskedPhone}: ${smsResult.error}`
           );
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not deliver the reset code by SMS — please try again later",
+          });
         } else {
           const maskedPhone =
             input.phone.slice(0, 4) + "****" + input.phone.slice(-3);

@@ -8,7 +8,7 @@ import { TRPCError } from "@trpc/server";
 import { sql, desc, eq, and } from "drizzle-orm";
 import { z } from "zod";
 
-import { users, kycSessions } from "../../drizzle/schema";
+import { users, kycSessions, customerOnboardingProgress } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 
@@ -42,12 +42,23 @@ export const customerOnboardingPipelineRouter = router({
       try {
         const db = (await getDb())!;
         const userId = input.userId || ctx.user.id;
+        // Ownership (G2 #10): users may only read their OWN progress.
+        if (String(userId) !== String(ctx.user.id) && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot view another user's onboarding progress" });
+        }
         const [user] = await db
           .select()
           .from(users)
           .where(eq(users.id, userId as any))
           .limit(1);
-        const currentStage = user ? "live" : "registration";
+        // G2 #10: stage is READ FROM THE STORE — never fabricated. The old
+        // code returned "live" for every existing user.
+        const [progress] = await db
+          .select()
+          .from(customerOnboardingProgress)
+          .where(eq(customerOnboardingProgress.userId, Number(userId)))
+          .limit(1);
+        const currentStage = (user ? (progress?.currentStage ?? "registration") : "registration") as (typeof STAGES)[number];
         const stageIndex = STAGES.indexOf(currentStage);
         return {
           userId,
@@ -73,17 +84,49 @@ export const customerOnboardingPipelineRouter = router({
     .input(
       z.object({
         userId: z.string(),
-        fromStage: z.string(),
+        /** Optional client hint — VALIDATED against the stored stage, never trusted (G2 #10). */
+        fromStage: z.string().optional(),
         toStage: z.string(),
         notes: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        // @ts-expect-error auto-fix
-        const fromIdx = STAGES.indexOf(input.fromStage);
-        // @ts-expect-error auto-fix
-        const toIdx = STAGES.indexOf(input.toStage);
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        // G2 audit 2026-02 (#10): ownership — a caller may only advance their
+        // OWN pipeline unless admin (userId was previously fully
+        // client-supplied, and parseInt(userId)||0 collapsed bad ids to 0).
+        if (String(input.userId) !== String(ctx.user.id) && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot advance another user's onboarding pipeline" });
+        }
+        const numericUserId = Number(input.userId);
+        if (!Number.isInteger(numericUserId) || numericUserId <= 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid userId" });
+        }
+
+        // SERVER-DERIVED stage (G2 #10): read the durable current stage; the
+        // client may no longer assert fromStage to walk around the KYC gates.
+        const [progress] = await db
+          .select()
+          .from(customerOnboardingProgress)
+          .where(eq(customerOnboardingProgress.userId, numericUserId))
+          .limit(1);
+        const fromStage = progress?.currentStage ?? "registration";
+        if (input.fromStage && input.fromStage !== fromStage) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Stale stage: server stage is "${fromStage}", not "${input.fromStage}" — refresh and retry`,
+          });
+        }
+
+        const fromIdx = STAGES.indexOf(fromStage as (typeof STAGES)[number]);
+        const toIdx = STAGES.indexOf(input.toStage as (typeof STAGES)[number]);
         if (fromIdx < 0 || toIdx < 0) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -103,17 +146,10 @@ export const customerOnboardingPipelineRouter = router({
           });
         }
 
-        const db = (await getDb())!;
-        if (!db)
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "DB unavailable",
-          });
-
         // ── KYC Gate: Block advancement from kyc_submission → kyc_review
         //    unless the customer has a completed KYC session ──────────────
         if (
-          input.fromStage === "kyc_submission" &&
+          fromStage === "kyc_submission" &&
           input.toStage === "kyc_review"
         ) {
           const [kycSession] = await db
@@ -121,7 +157,7 @@ export const customerOnboardingPipelineRouter = router({
             .from(kycSessions)
             .where(
               and(
-                eq(kycSessions.agentId, parseInt(input.userId, 10) || 0),
+                eq(kycSessions.agentId, numericUserId),
                 eq(kycSessions.status, "completed")
               )
             )
@@ -139,7 +175,7 @@ export const customerOnboardingPipelineRouter = router({
         // ── KYC Review Gate: Block advancement from kyc_review → account_setup
         //    unless KYC review is approved (session status is still completed) ──
         if (
-          input.fromStage === "kyc_review" &&
+          fromStage === "kyc_review" &&
           input.toStage === "account_setup"
         ) {
           const [kycSession] = await db
@@ -147,7 +183,7 @@ export const customerOnboardingPipelineRouter = router({
             .from(kycSessions)
             .where(
               and(
-                eq(kycSessions.agentId, parseInt(input.userId, 10) || 0),
+                eq(kycSessions.agentId, numericUserId),
                 eq(kycSessions.status, "completed")
               )
             )
@@ -162,23 +198,45 @@ export const customerOnboardingPipelineRouter = router({
           }
         }
 
+        // Persist the server-derived transition (durable stage).
+        await db
+          .insert(customerOnboardingProgress)
+          .values({
+            userId: numericUserId,
+            currentStage: input.toStage,
+            notes: input.notes ?? null,
+            advancedBy: String(ctx.user.id),
+          })
+          .onConflictDoUpdate({
+            target: customerOnboardingProgress.userId,
+            set: {
+              currentStage: input.toStage,
+              notes: input.notes ?? null,
+              advancedBy: String(ctx.user.id),
+              updatedAt: new Date(),
+            },
+          });
+
         await writeAuditLog({
           agentId: 0,
           action: "customer_onboarding_stage_advanced",
           resource: "customer_onboarding",
           resourceId: input.userId,
           status: "success",
+          // NOTE (2026-02): undefined-valued metadata keys MUST be omitted —
+          // the audit-chain hash serializes undefined as null at write time
+          // while JSONB drops the key on read, which would break the chain.
           metadata: {
             agentCode: "system",
-            fromStage: input.fromStage,
+            fromStage,
             toStage: input.toStage,
-            notes: input.notes,
+            ...(input.notes !== undefined ? { notes: input.notes } : {}),
           },
         });
 
         return {
           userId: input.userId,
-          fromStage: input.fromStage,
+          fromStage,
           toStage: input.toStage,
           advancedBy: ctx.user.id,
           advancedAt: new Date().toISOString(),
@@ -214,12 +272,19 @@ export const customerOnboardingPipelineRouter = router({
           .select({ count: sql<number>`COUNT(*)` })
           .from(users)
           .limit(100);
+        // G2 #10: read the durable stage — never fabricate "live".
+        const progressRows = await db.select().from(customerOnboardingProgress);
+        const stageByUser = new Map(progressRows.map((p: any) => [p.userId, p.currentStage]));
         return {
-          items: items.map((u: any) => ({
-            ...u,
-            stage: "live",
-            completionPercent: 100,
-          })),
+          items: items.map((u: any) => {
+            const stage = stageByUser.get(u.id) ?? "registration";
+            const idx = STAGES.indexOf(stage);
+            return {
+              ...u,
+              stage,
+              completionPercent: Math.round(((idx + 1) / STAGES.length) * 100),
+            };
+          }),
           total: Number(count),
           page: input.page,
         };

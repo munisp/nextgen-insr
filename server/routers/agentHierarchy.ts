@@ -62,7 +62,9 @@ export const agentHierarchyRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
-  list: publicProcedure
+  // G3 (audit #27): was publicProcedure dumping every agent's name/role/
+  // territory/status unauthenticated — agent PII is auth-only now.
+  list: protectedProcedure
     .input(
       z
         .object({

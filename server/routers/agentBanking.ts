@@ -3,6 +3,7 @@
  * Full production implementation with TigerBeetle atomicity, Redis idempotency,
  * and real PostgreSQL queries. No mocks, no stubs.
  */
+import { resolveAgentScope } from "../middleware/agentAuth";
 import { randomUUID } from "crypto";
 
 import { TRPCError } from "@trpc/server";
@@ -102,9 +103,16 @@ export const agentBankingRouter = router({
         phone: z.string(),
         email: z.string(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        // G3 (audit #23): profile rewrites are owner-or-admin only — phone is
+        // the USSD identity, so an arbitrary-agentId overwrite was an
+        // identity hijack.
+        const scope = await resolveAgentScope(ctx.req, ctx.user?.role, input.agentId);
+        if (!scope.ok) {
+          throw new TRPCError({ code: scope.code, message: scope.message });
+        }
         const [updated] = await db
           .update(agents)
           .set({ name: input.name, phone: input.phone, email: input.email || null })

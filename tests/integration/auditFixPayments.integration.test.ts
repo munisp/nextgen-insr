@@ -64,6 +64,10 @@ beforeAll(async () => {
     email: `f1-${BASE}@integration.local`,
     pinHash: "$2b$10$integrationtesthashplaceholder",
     premiumReserve: "100000",
+    // 2026-05 (G3): agents.isActive now defaults to false (pending). The
+    // refund pipeline under test expects an active agent — approve
+    // explicitly, preserving the pre-G3 behavior under test.
+    isActive: true,
   });
 });
 

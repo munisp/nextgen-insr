@@ -77,8 +77,13 @@ pg.types.setTypeParser(pg.types.builtins.INT8, v => (v === null ? null : Number(
 const pool = new pg.Pool({ connectionString: url, max: 1 });
 
 try {
+  // NOTE (2026-02, G2 fix): redactedAt MUST be selected — rows tombstoned by
+  // redactAuditLogPii (GDPR/NDPR erasure) no longer reproduce their entryHash
+  // BY DESIGN; the server lib (server/lib/auditChain.ts) skips the content
+  // recompute for them while still enforcing linkage. The CLI previously
+  // recomputed them and reported a false entry-hash-mismatch.
   const { rows } = await pool.query(
-    'SELECT id, "agentId", action, resource, "resourceId", "ipAddress", "userAgent", status, metadata, "tenantId", "prevHash", "entryHash", "createdAt" FROM audit_log ORDER BY id ASC LIMIT $1',
+    'SELECT id, "agentId", action, resource, "resourceId", "ipAddress", "userAgent", status, metadata, "tenantId", "prevHash", "entryHash", "createdAt", "redactedAt" FROM audit_log ORDER BY id ASC LIMIT $1',
     [maxRows + 1]
   );
   const scan = rows.slice(0, maxRows);
@@ -104,6 +109,9 @@ try {
       continue;
     }
 
+    // OPS-4: PII-redacted rows skip the content recompute (see note above);
+    // prevHash linkage is still verified below.
+    const isRedacted = row.redactedAt != null;
     const recomputed = computeEntryHash(row.prevHash ?? null, {
       agentId: row.agentId ?? null,
       action: row.action,
@@ -116,7 +124,7 @@ try {
       tenantId: row.tenantId ?? null,
       createdAt: row.createdAt,
     });
-    if (recomputed !== row.entryHash) {
+    if (!isRedacted && recomputed !== row.entryHash) {
       failure = { rowId: row.id, reason: "entry-hash-mismatch", expected: recomputed, actual: row.entryHash };
       break;
     }

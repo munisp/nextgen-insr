@@ -52,6 +52,10 @@ import { merchantOnboardingPortalRouter } from "../../../server/routers/merchant
 import { merchantKycOnboardingRouter } from "../../../server/routers/merchantKycOnboarding";
 import { merchantPayoutSettlementRouter } from "../../../server/routers/merchantPayoutSettlement";
 import { merchantPaymentsRouter } from "../../../server/routers/merchantPayments";
+import { agentKycRouter } from "../../../server/routers/agentKyc";
+import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
+import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
+import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -110,6 +114,11 @@ export const integrationRouter = router({
   merchantKycOnboarding: merchantKycOnboardingRouter,
   merchantPayoutSettlement: merchantPayoutSettlementRouter,
   merchantPayments: merchantPaymentsRouter,
+  // G3 (agent-onboarding audit): same mount paths as production.
+  agentKyc: agentKycRouter,
+  agentOnboarding: agentOnboardingRouter,
+  terminalLeasing: terminalLeasingRouter,
+  agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

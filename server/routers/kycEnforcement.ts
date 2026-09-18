@@ -1,7 +1,29 @@
 import { TRPCError } from "@trpc/server";
+import { eq, or } from "drizzle-orm";
 import { z } from "zod";
 
+import { customers } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
+/**
+ * G2 audit 2026-02 (#21): the enforced KYC tier is SERVER-DERIVED from the
+ * customer record — never the tier the client claims. Fail-closed: unknown
+ * customer → honest error, not a client-chosen tier.
+ */
+async function resolveCustomerTier(customerId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  const numeric = Number(customerId);
+  const where = Number.isInteger(numeric) && numeric > 0
+    ? or(eq(customers.id, numeric), eq(customers.externalId, customerId))
+    : eq(customers.externalId, customerId);
+  const [c] = await db.select({ kycLevel: customers.kycLevel }).from(customers).where(where).limit(1);
+  if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found — tier cannot be established" });
+  const level = Number(c.kycLevel ?? 0);
+  // kycLevel 0 (unverified) maps to the most restrictive tier.
+  return Math.min(3, Math.max(1, level));
+}
 
 const KYC_ENFORCEMENT_URL =
   process.env.KYC_ENFORCEMENT_URL || "http://localhost:8211";
@@ -44,7 +66,8 @@ export const kycEnforcementRouter = router({
     .input(
       z.object({
         customerId: z.string(),
-        tier: z.number().min(1).max(3),
+        /** DEPRECATED (G2 #21): ignored — tier is server-derived. */
+        tier: z.number().min(1).max(3).optional(),
         productType: z.string(),
         firstName: z.string(),
         lastName: z.string(),
@@ -54,12 +77,13 @@ export const kycEnforcementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const tier = await resolveCustomerTier(input.customerId);
       return serviceCall(
         `${KYC_ENFORCEMENT_URL}/api/v1/enforce/account-opening`,
         "POST",
         {
           customer_id: input.customerId,
-          tier: input.tier,
+          tier,
           product_type: input.productType,
           first_name: input.firstName,
           last_name: input.lastName,
@@ -282,7 +306,8 @@ export const kycEnforcementRouter = router({
     .input(
       z.object({
         customerId: z.string(),
-        tier: z.enum(["tier1", "tier2", "tier3"]),
+        /** DEPRECATED (G2 #21): ignored — tier is server-derived. */
+        tier: z.enum(["tier1", "tier2", "tier3"]).optional(),
         transactionAmount: z.number(),
         dailyTotalSoFar: z.number(),
         currentBalance: z.number(),
@@ -290,12 +315,13 @@ export const kycEnforcementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const tierNum = await resolveCustomerTier(input.customerId);
       return serviceCall(
         `${CBN_TIER_ENGINE_URL}/api/v1/tier/enforce-limits`,
         "POST",
         {
           customer_id: input.customerId,
-          tier: input.tier,
+          tier: `tier${tierNum}`,
           transaction_amount: input.transactionAmount,
           daily_total_so_far: input.dailyTotalSoFar,
           current_balance: input.currentBalance,
