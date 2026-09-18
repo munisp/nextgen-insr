@@ -4,10 +4,16 @@
  * Business Rules: Min ₦100, Max ₦1M, Daily ₦5M, MDR 1.5%, Settlement T+1
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
+import { eq, desc, count, sql, and, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, agents, auditLog } from "../../drizzle/schema";
+import {
+  transactions,
+  agents,
+  auditLog,
+  merchants,
+  merchantFeeLimits,
+} from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -37,6 +43,40 @@ export const merchantPaymentsRouter = router({
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+      // HIGH-10 (G1 fix-wave, 2026-06): money previously moved to ANY
+      // client-supplied merchant-<id> string without checking the merchant
+      // exists, is active, or did KYB. The merchant must resolve to a LIVE,
+      // ACTIVE merchant row before any funds move.
+      const [merchant] = await db
+        .select()
+        .from(merchants)
+        .where(
+          and(eq(merchants.merchantCode, input.merchantId), isNull(merchants.deletedAt))
+        )
+        .limit(1);
+      if (!merchant)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Merchant not found" });
+      if (merchant.status !== "active")
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Merchant is not active (status: ${merchant.status})`,
+        });
+      // MED-13 (G1 fix-wave): per-merchant commercial terms override the
+      // platform defaults (MDR 1.5%, min ₦100, max ₦1M, daily ₦5M).
+      const [feeLimit] = await db
+        .select()
+        .from(merchantFeeLimits)
+        .where(eq(merchantFeeLimits.merchantId, merchant.id))
+        .limit(1);
+      const mdrRate = (feeLimit?.mdrBps ?? MDR * 10_000) / 10_000;
+      const minAmount = Number(feeLimit?.minAmount ?? MIN_AMOUNT);
+      const maxAmount = Number(feeLimit?.maxAmount ?? MAX_AMOUNT);
+      const dailyLimit = Number(feeLimit?.dailyLimit ?? DAILY_LIMIT);
+      if (input.amountNGN < minAmount || input.amountNGN > maxAmount)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Amount outside this merchant's limits (₦${minAmount.toLocaleString()}–₦${maxAmount.toLocaleString()})`,
+        });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
       // Sprint 44 wiring (F-12): domain-level authz before any funds move.
       // permifyCheck is fail-closed (deny on unavailable) unless the insecure
@@ -52,7 +92,7 @@ export const merchantPaymentsRouter = router({
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const [{ dailyTotal }] = await db.select({ dailyTotal: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
         .from(transactions).where(and(eq(transactions.agentId, input.agentId), sql`${transactions.metadata}->>'category' = 'merchant_payment'`, gte(transactions.createdAt, today), eq(transactions.status, "success")));
-      if (Number(dailyTotal ?? 0) + input.amountNGN > DAILY_LIMIT) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Daily limit ₦${DAILY_LIMIT.toLocaleString()} exceeded` });
+      if (Number(dailyTotal ?? 0) + input.amountNGN > dailyLimit) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Daily limit ₦${dailyLimit.toLocaleString()} exceeded` });
       // Lock per AGENT (not per reference): the balance mutation must be
       // serialized against ALL concurrent payments for this agent, not just
       // same-reference retries.
@@ -65,7 +105,7 @@ export const merchantPaymentsRouter = router({
         const existingLocked = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
         if (existingLocked.length > 0) return { idempotent: true, transaction: existingLocked[0] };
         await tbEnsureAgentAccount(agent.agentId);
-        const mdrFee = Math.round(input.amountNGN * MDR * 100) / 100;
+        const mdrFee = Math.round(input.amountNGN * mdrRate * 100) / 100;
         const merchantAmount = input.amountNGN - mdrFee;
         const tbResult = await tbCreateTransfer({
           debitAccountId: `float-${agent.agentId}`, creditAccountId: `merchant-${input.merchantId}`,

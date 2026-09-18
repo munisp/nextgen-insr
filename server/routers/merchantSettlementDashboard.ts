@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { merchants } from "../../drizzle/schema";
 import { permifyCheck } from "../_core/permify";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { fluvioProduce } from "../fluvio";
@@ -13,7 +13,7 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 
 export const merchantSettlementDashboardRouter = router({
-  list: protectedProcedure
+  list: adminProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
@@ -54,7 +54,7 @@ export const merchantSettlementDashboardRouter = router({
       }
     }),
 
-  getById: protectedProcedure
+  getById: adminProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       try {

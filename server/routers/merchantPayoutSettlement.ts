@@ -3,10 +3,14 @@
  * Batch payouts, settlement cycles, reconciliation, payout tracking
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, gte, count, isNull, ne, or, sum, sql } from "drizzle-orm";
+import { eq, desc, and, gte, count, isNull, isNotNull, ne, or, sum, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { merchantPayouts } from "../../drizzle/schema";
+import {
+  merchantPayouts,
+  merchants,
+  merchantSettlementChangeRequests,
+} from "../../drizzle/schema";
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
@@ -55,14 +59,16 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
+  // CRIT-5 (G1 fix-wave, 2026-06): the payout destination is ALWAYS the
+  // merchant's verified settlement account on file — never client-supplied.
+  // The previous version accepted bankCode/accountNumber/accountName from
+  // the caller (arbitrary cash-out) and never checked merchant status or
+  // balance.
   initiatePayout: financialProcedure
     .input(
       z.object({
         merchantId: z.number(),
         amount: z.number().min(100),
-        bankCode: z.string(),
-        accountNumber: z.string(),
-        accountName: z.string(),
         settlementCycle: z.enum(["T0", "T1", "T2", "weekly"]).default("T1"),
       })
     )
@@ -70,21 +76,80 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
+
+        const [merchant] = await db
+          .select()
+          .from(merchants)
+          .where(
+            and(eq(merchants.id, input.merchantId), isNull(merchants.deletedAt))
+          )
+          .limit(1);
+        if (!merchant)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Merchant not found",
+          });
+        if (merchant.status !== "active")
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Merchant is not active (status: ${merchant.status})`,
+          });
+        if (
+          !merchant.settlementAccountNumber ||
+          !merchant.settlementBankCode ||
+          !merchant.settlementBankName
+        )
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Merchant has no verified settlement account on file",
+          });
+
+        // CRIT-3 hold: payouts are blocked while a freshly-changed
+        // settlement account is inside its cooling-off window.
+        const [recentChange] = await db
+          .select({ holdUntil: merchantSettlementChangeRequests.holdUntil })
+          .from(merchantSettlementChangeRequests)
+          .where(
+            and(
+              eq(merchantSettlementChangeRequests.merchantId, merchant.id),
+              eq(merchantSettlementChangeRequests.status, "applied"),
+              gte(merchantSettlementChangeRequests.holdUntil, new Date())
+            )
+          )
+          .limit(1);
+        if (recentChange)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Settlement account was recently changed; payouts held until ${recentChange.holdUntil?.toISOString()}`,
+          });
+
+        // Balance gate: never pay out more than the merchant's settled
+        // wallet balance.
+        const walletBalance = Number(merchant.walletBalance ?? 0);
+        if (walletBalance < input.amount)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Insufficient merchant balance. Available: ₦${walletBalance.toLocaleString()}`,
+          });
+
         const settlementDate = new Date();
         const cycleMap = { T0: 0, T1: 1, T2: 2, weekly: 7 };
         settlementDate.setDate(
           settlementDate.getDate() + cycleMap[input.settlementCycle]
         );
+        const reference = `PO-${merchant.merchantCode}-${Date.now()}`;
         const [payout] = await db
           .insert(merchantPayouts)
           .values({
             merchantId: input.merchantId,
             amount: String(input.amount),
-            bankCode: input.bankCode,
-            accountNumber: input.accountNumber,
-            accountName: input.accountName,
-            settlementCycle: input.settlementCycle,
-            settlementDate,
+            // Destination from the VERIFIED settlement record only.
+            bankCode: merchant.settlementBankCode,
+            accountNumber: merchant.settlementAccountNumber,
+            accountName: merchant.businessName,
+            reference,
+            periodStart: new Date(),
+            periodEnd: settlementDate,
             status: "pending",
             initiatedBy: ctx.user.id,
           } as any)
@@ -118,10 +183,12 @@ export const merchantPayoutSettlementRouter = router({
             and(
               eq(merchantPayouts.id, input.payoutId),
               eq(merchantPayouts.status, "pending"),
-              or(
-                isNull(merchantPayouts.initiatedBy),
-                ne(merchantPayouts.initiatedBy, ctx.user.id)
-              )
+              // HIGH-6 (G1 fix-wave, 2026-06): the NULL-initiator exemption
+              // is REMOVED. A payout with no recorded initiator can never be
+              // approved/processed (fail-closed for legacy rows) — otherwise
+              // the same user could create AND approve it.
+              isNotNull(merchantPayouts.initiatedBy),
+              ne(merchantPayouts.initiatedBy, ctx.user.id)
             )
           )
           .returning({ id: merchantPayouts.id });
@@ -133,6 +200,12 @@ export const merchantPayoutSettlementRouter = router({
             .limit(1);
           if (!current)
             throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+          if (current.initiatedBy == null)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Payout has no recorded initiator and cannot be approved (maker-checker requires attribution)",
+            });
           if (current.initiatedBy === ctx.user.id)
             throw new TRPCError({
               code: "FORBIDDEN",
@@ -171,10 +244,12 @@ export const merchantPayoutSettlementRouter = router({
             and(
               eq(merchantPayouts.id, input.payoutId),
               eq(merchantPayouts.status, "approved"),
-              or(
-                isNull(merchantPayouts.initiatedBy),
-                ne(merchantPayouts.initiatedBy, ctx.user.id)
-              )
+              // HIGH-6 (G1 fix-wave, 2026-06): the NULL-initiator exemption
+              // is REMOVED. A payout with no recorded initiator can never be
+              // approved/processed (fail-closed for legacy rows) — otherwise
+              // the same user could create AND approve it.
+              isNotNull(merchantPayouts.initiatedBy),
+              ne(merchantPayouts.initiatedBy, ctx.user.id)
             )
           )
           .returning({ id: merchantPayouts.id });
@@ -186,6 +261,12 @@ export const merchantPayoutSettlementRouter = router({
             .limit(1);
           if (!current)
             throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+          if (current.initiatedBy == null)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Payout has no recorded initiator and cannot be processed (maker-checker requires attribution)",
+            });
           if (current.initiatedBy === ctx.user.id)
             throw new TRPCError({
               code: "FORBIDDEN",

@@ -348,9 +348,14 @@ describe("Sprint 46: Data Integrity", () => {
     // and phone_verification_otps (phone-ownership proof for merges). Both
     // pgTable definitions appended to drizzle/schema.ts, so drizzle-kit
     // push materializes them; measured 219 in CI (job 105754628299).
-    // Honest-count drift, not a weakening — the gate still counts
-    // information_schema at runtime.
-    expect(stats.totalTables).toBe(219);
+    // 2026-09-18: count updated 219 → 223 — G1 (merchant onboarding) merge
+    // on top of G2: migrations 0075/0076 added four more REAL platform-
+    // schema tables (merchant_settlement_change_requests,
+    // merchant_registry_verifications, merchant_fee_limits,
+    // merchant_kyc_stages), 219 + 4 = 223. Honest-count drift, not a
+    // weakening — the gate still counts information_schema at runtime; if
+    // CI measures differently, the measured number wins.
+    expect(stats.totalTables).toBe(223);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

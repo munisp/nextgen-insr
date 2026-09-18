@@ -403,9 +403,38 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 		_ = h.store.StoreDocument(&kycDoc)
 	}
 
-	// Auto-mark CAC/TIN as verified if numbers provided
-	kyc.CACVerified = req.RCNumber != ""
-	kyc.TINVerified = req.TIN != ""
+	// G1 fix-wave (2026-06): REAL CAC/TIN verification — presence of a number
+	// string is NOT verification. When an RC number or TIN is supplied, the
+	// matching registry provider MUST be configured and reachable, otherwise
+	// the KYB submission fails LOUD (503) instead of recording a fabricated
+	// "verified" flag. A reachable provider that cannot confirm the number
+	// records an honest verified=false.
+	if req.RCNumber != "" {
+		if h.cfg.CACAPIURL == "" {
+			errorResponse(w, http.StatusServiceUnavailable, "CAC verification provider not configured (CAC_API_URL); KYB with an RC number cannot proceed")
+			return
+		}
+		verified, err := h.verifyRegistryNumber(h.cfg.CACAPIURL, h.cfg.CACAPIKey, "rcNumber", req.RCNumber)
+		if err != nil {
+			h.log.Error("CAC verification failed", zap.String("rcNumber", req.RCNumber), zap.Error(err))
+			errorResponse(w, http.StatusBadGateway, "CAC verification failed; KYB not recorded")
+			return
+		}
+		kyc.CACVerified = verified
+	}
+	if req.TIN != "" {
+		if h.cfg.TINAPIURL == "" {
+			errorResponse(w, http.StatusServiceUnavailable, "TIN verification provider not configured (TIN_API_URL); KYB with a TIN cannot proceed")
+			return
+		}
+		verified, err := h.verifyRegistryNumber(h.cfg.TINAPIURL, h.cfg.TINAPIKey, "tin", req.TIN)
+		if err != nil {
+			h.log.Error("TIN verification failed", zap.Error(err))
+			errorResponse(w, http.StatusBadGateway, "TIN verification failed; KYB not recorded")
+			return
+		}
+		kyc.TINVerified = verified
+	}
 
 	kyc.Status = models.UnderReview
 	h.store.DB().Model(&models.BusinessKYC{}).Where("customer_id = ?", customerID).Updates(map[string]interface{}{
@@ -1620,6 +1649,41 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 		return 0, fmt.Errorf("parameter %s must be an integer", key)
 	}
 	return n, nil
+}
+
+// verifyRegistryNumber performs a REAL CAC/FIRS registry lookup (G1
+// fix-wave). Fail-closed: any transport/provider error is returned; no
+// result is ever fabricated. A 200 response with verified=false is an
+// honest negative, not an error.
+func (h *Handler) verifyRegistryNumber(url, apiKey, field, value string) (bool, error) {
+	if url == "" {
+		return false, fmt.Errorf("registry provider not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{field: value})
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(payload)))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := h.httpCl.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("registry verification request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("registry provider returned status %d", resp.StatusCode)
+	}
+	var out struct {
+		Verified bool   `json:"verified"`
+		Status   string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, fmt.Errorf("registry response decode: %w", err)
+	}
+	return out.Verified || out.Status == "verified", nil
 }
 
 // screenPEP performs a REAL PEP/sanctions screening call against the

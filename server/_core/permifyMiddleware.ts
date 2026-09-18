@@ -120,7 +120,12 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   "commissionEngine.createSplit": "billing_record",
   "commissionEngine.triggerSnapshot": "billing_record",
   // Merchant payout settlement (DD-AUTH: wired onto financialProcedure)
-  "merchantPayoutSettlement.initiatePayout": "transfer",
+  // CRIT-5 (G1 fix-wave, 2026-06): initiatePayout was mapped to "transfer",
+  // which the PLAIN AGENT role holds — any agent-tier user could initiate
+  // merchant payouts. Merchant payouts are staff disbursements and now
+  // require "commission_pay" (admin/supervisor only), matching the rest of
+  // the payout lifecycle below.
+  "merchantPayoutSettlement.initiatePayout": "commission_pay",
   "merchantPayoutSettlement.approvePayout": "commission_pay",
   "merchantPayoutSettlement.processPayout": "commission_pay",
   "merchantPayoutSettlement.completePayout": "commission_pay",
