@@ -28,7 +28,7 @@ import {
 } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { CUSTOMER_PII_FIELDS, decryptPiiFields, encryptPiiFields } from "../lib/piiCrypto";
+import { CUSTOMER_PII_FIELDS, decryptPiiFields, encryptPiiFields, piiDedupeHash } from "../lib/piiCrypto";
 
 // ── Customer-scoped procedure ─────────────────────────────────────────────────
 const customerProcedure = protectedProcedure;
@@ -80,6 +80,20 @@ export const customerRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         try {
+          // G2 audit 2026-02 (#18): fail-closed minor guard — a DOB that makes
+          // the holder under 18 is rejected (no guardian-consent flow yet).
+          if (input.dateOfBirth) {
+            const dob = new Date(input.dateOfBirth);
+            if (Number.isNaN(dob.getTime())) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid dateOfBirth" });
+            }
+            const now = new Date();
+            let age = now.getFullYear() - dob.getFullYear();
+            if (now.getMonth() < dob.getMonth() || (now.getMonth() === dob.getMonth() && now.getDate() < dob.getDate())) age--;
+            if (age < 18) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Customers must be 18 or older — guardian-consent onboarding is not yet supported" });
+            }
+          }
           const { db, customer } = await resolveCustomer(ctx.user.id);
           const [updated] = await db
             .update(customers)
@@ -124,10 +138,24 @@ export const customerRouter = router({
           bvn: z.string().length(11).optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          // G2 audit 2026-02 (#9): registration previously created ORPHAN
+          // customers — no keycloakSub, so the record was unreachable by its
+          // owner. Bind the record to the authenticated session identity, and
+          // refuse when this identity already has a customer profile.
+          const [ownExisting] = await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(eq(customers.keycloakSub, String(ctx.user.id)))
+            .limit(1);
+          if (ownExisting)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "This account already has a customer profile",
+            });
           const [existing] = await db
             .select({ id: customers.id })
             .from(customers)
@@ -138,9 +166,27 @@ export const customerRouter = router({
               code: "CONFLICT",
               message: "Phone number already registered",
             });
+          // G2 #7: duplicate-identity guard on BVN (blind index).
+          const bvnHash = piiDedupeHash(input.bvn);
+          if (bvnHash) {
+            const [dup] = await db
+              .select({ id: customers.id })
+              .from(customers)
+              .where(eq(customers.bvnHash, bvnHash))
+              .limit(1);
+            if (dup)
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: "A customer already exists for this BVN",
+              });
+          }
           const [customer] = await db
             .insert(customers)
-            .values(encryptPiiFields(input as any, CUSTOMER_PII_FIELDS))
+            .values({
+              ...encryptPiiFields(input as any, CUSTOMER_PII_FIELDS),
+              bvnHash,
+              keycloakSub: String(ctx.user.id),
+            } as any)
             .returning();
           const { passwordHash: _, refreshToken: __, ...safe } = decryptPiiFields(customer, CUSTOMER_PII_FIELDS);
           return safe;

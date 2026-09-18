@@ -26,7 +26,8 @@ import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
 import { daprPublish } from "./daprClient";
 import { getDb } from "./db";
-import { encryptPii } from "./lib/piiCrypto";
+import { encryptPii, piiDedupeHash } from "./lib/piiCrypto";
+import { hasPhoneOwnershipProof } from "./lib/phoneOtp";
 import { fluvioProduce } from "./fluvio";
 import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import {
@@ -94,7 +95,33 @@ export async function createOrFetchCustomer(input: {
   const d = await db();
   // Check for existing customer by phone
   const [existing] = await d.select().from(customers).where(eq(customers.phone, input.phone)).limit(1);
-  if (existing) return { customerId: existing.id, isNew: false, customerCode: existing.externalId ?? `CUST-${existing.id}` };
+  if (existing) {
+    // G2 audit 2026-02 (#8): merging into an existing customer by phone match
+    // requires PROOF OF PHONE OWNERSHIP (verified OTP — see
+    // server/lib/phoneOtp.ts). Without it, onboarding with a victim's phone
+    // would silently attach new KYC data (and a new agent) to their record.
+    const proven = await hasPhoneOwnershipProof(input.phone);
+    if (!proven) {
+      throw new Error(
+        "PHONE_OWNERSHIP_PROOF_REQUIRED: this phone number is already registered — verify ownership via the phone OTP flow to resume onboarding"
+      );
+    }
+    return { customerId: existing.id, isNew: false, customerCode: existing.externalId ?? `CUST-${existing.id}` };
+  }
+
+  // G2 audit 2026-02 (#7): duplicate-identity guard — a NIN/BVN may anchor
+  // exactly ONE customer. Blind-index HMACs (deterministic) make this
+  // enforceable despite randomized encryption of the PII columns.
+  const ninHash = piiDedupeHash(input.nin);
+  const bvnHash = piiDedupeHash(input.bvn);
+  if (ninHash) {
+    const [dup] = await d.select({ id: customers.id }).from(customers).where(eq(customers.ninHash, ninHash)).limit(1);
+    if (dup) throw new Error(`DUPLICATE_IDENTITY: a customer already exists for this NIN (customer ${dup.id})`);
+  }
+  if (bvnHash) {
+    const [dup] = await d.select({ id: customers.id }).from(customers).where(eq(customers.bvnHash, bvnHash)).limit(1);
+    if (dup) throw new Error(`DUPLICATE_IDENTITY: a customer already exists for this BVN (customer ${dup.id})`);
+  }
 
   const customerCode = `CUST-${Date.now().toString(36).toUpperCase()}`;
   const firstName = input.fullName.trim().split(/\s+/)[0] ?? input.fullName;
@@ -106,6 +133,8 @@ export async function createOrFetchCustomer(input: {
     email: input.email ?? null,
     nin: encryptPii(input.nin),
     bvn: encryptPii(input.bvn),
+    ninHash,
+    bvnHash,
     preferredAgentId: input.agentId ?? null,
     externalId: customerCode,
     status: "pending_kyc",
@@ -151,11 +180,33 @@ export async function verifyKycWithNibss(input: {
 }): Promise<{ verified: boolean; score: number; message: string; failureReason: string | null }> {
   const d = await db();
 
-  // In production: call NIBSS NIN/BVN verification API via APISIX gateway
-  // For now: validate format and mark as verified if NIN/BVN provided
+  // G2 audit 2026-02 (#1): REAL identity verification via the enhanced-kyc-kyb
+  // service (which performs the actual NIBSS NIN/BVN calls with adjudication
+  // and fails loud). The previous implementation marked ANY 11-digit string
+  // "verified" with score 85 and activated the customer — format-only
+  // verification is gone. Provider outage/unconfiguration THROWS (fail-loud);
+  // nothing is ever marked verified without a positive adjudication.
   const hasValidNin = input.nin && /^\d{11}$/.test(input.nin);
   const hasValidBvn = input.bvn && /^\d{11}$/.test(input.bvn);
-  const verified = !!(hasValidNin || hasValidBvn);
+
+  let verified = false;
+  let failureReason: string | null = null;
+  if (hasValidNin || hasValidBvn) {
+    const [cust] = await d.select({ firstName: customers.firstName, lastName: customers.lastName }).from(customers).where(eq(customers.id, input.customerId)).limit(1);
+    const fullName = [cust?.firstName, cust?.lastName].filter(Boolean).join(" ");
+    if (hasValidNin) {
+      const res = await callEnhancedKycVerify("/api/v1/kyc/verify-nin", { nin: input.nin, full_name: fullName });
+      verified = res.verified === true;
+      if (!verified) failureReason = `NIN verification adjudicated "${res.status ?? "failed"}"`;
+    }
+    if (!verified && hasValidBvn) {
+      const res = await callEnhancedKycVerify("/api/v1/kyc/verify-bvn", { bvn: input.bvn, full_name: fullName });
+      verified = res.verified === true;
+      if (!verified) failureReason = `BVN verification adjudicated "${res.status ?? "failed"}"`;
+    }
+  } else {
+    failureReason = "KYC verification failed — invalid NIN/BVN";
+  }
   const score = verified ? 85 : 0;
 
   if (input.kycId != null) {
@@ -174,9 +225,70 @@ export async function verifyKycWithNibss(input: {
   return {
     verified,
     score,
-    message: verified ? "KYC verified via NIBSS" : "KYC verification failed — invalid NIN/BVN",
-    failureReason: verified ? null : "KYC verification failed — invalid NIN/BVN",
+    message: verified ? "KYC verified via enhanced-kyc-kyb (NIBSS adjudication)" : (failureReason ?? "KYC verification failed"),
+    failureReason: verified ? null : failureReason,
   };
+}
+
+// ─── Helper: call the enhanced-kyc-kyb verification service (fail-closed) ──
+// No fabricated default URL: an unconfigured service is an honest error, and
+// EVERY call carries the service API key (G2 #16/#17 discipline).
+async function callEnhancedKycVerify(
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ verified?: boolean; status?: string }> {
+  const baseUrl = process.env.ENHANCED_KYC_URL ?? "";
+  const apiKey = process.env.ENHANCED_KYC_API_KEY ?? "";
+  if (!baseUrl || !apiKey) {
+    throw new Error(
+      "ENHANCED_KYC_URL / ENHANCED_KYC_API_KEY not configured — identity verification is unavailable (fail-closed)"
+    );
+  }
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    throw new Error(`KYC verification service returned HTTP ${res.status}`);
+  }
+  return (await res.json()) as { verified?: boolean; status?: string };
+}
+
+// G2 audit 2026-02 (#22): J01 saga compensation — remove partial onboarding
+// records when a later step fails. Deletions are deliberately NARROW: a
+// customer row is only removed when THIS journey created it (isNew) and it
+// is still in pending_kyc (never touch an active/verified customer).
+export async function compensateOnboardingStep(input: {
+  step: string;
+  customerId?: number;
+  kycId?: number;
+  isNew?: boolean;
+}): Promise<void> {
+  const d = await db();
+  switch (input.step) {
+    case "initiate_kyc": {
+      if (input.kycId != null) {
+        await d.delete(kycVerifications).where(and(eq(kycVerifications.id, input.kycId), eq(kycVerifications.status, "pending")));
+        await audit("KYC_COMPENSATED", "kyc_verifications", String(input.kycId), { customerId: input.customerId });
+      }
+      break;
+    }
+    case "create_customer": {
+      if (input.isNew && input.customerId != null) {
+        await d.delete(kycVerifications).where(eq(kycVerifications.customerId, input.customerId));
+        await d.delete(customers).where(and(eq(customers.id, input.customerId), eq(customers.status, "pending_kyc")));
+        await audit("CUSTOMER_COMPENSATED", "customers", String(input.customerId), {});
+      }
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -204,8 +316,26 @@ export async function validateInsuranceQuote(input: {
   if (!quote) throw new Error(`Quote ${input.quoteId} not found`);
   if (quote.status !== "pending") throw new Error(`Quote ${input.quoteId} is no longer pending (status: ${quote.status})`);
   if (quote.validUntil && new Date(quote.validUntil) < new Date()) throw new Error(`Quote ${input.quoteId} has expired`);
-  if (Number(quote.premiumAmount) !== input.premiumAmount) throw new Error(`Premium mismatch: expected ${quote.premiumAmount}, got ${input.premiumAmount}`);
+  // Mismatch is only checked when the caller ASSERTED a premium (> 0); the
+  // server-computed purchase path (J02, G2 #6) derives the premium from the
+  // quote itself and passes 0.
+  if (input.premiumAmount > 0 && Number(quote.premiumAmount) !== input.premiumAmount) throw new Error(`Premium mismatch: expected ${quote.premiumAmount}, got ${input.premiumAmount}`);
   return { valid: true, approved: true, quote: quote as Record<string, unknown> };
+}
+
+// G2 audit 2026-02 (#6): KYC/tier gate for policy purchase. Fail-closed: a
+// customer without VERIFIED KYC (status active — only ever set after a real
+// NIN/BVN adjudication, see verifyKycWithNibss) cannot buy a policy.
+export async function assertCustomerKycVerified(input: {
+  customerId: number;
+}): Promise<{ verified: true; kycLevel: number }> {
+  const d = await db();
+  const [c] = await d.select().from(customers).where(eq(customers.id, input.customerId)).limit(1);
+  if (!c) throw new Error("KYC_REQUIRED: customer not found");
+  if (c.status !== "active") {
+    throw new Error(`KYC_REQUIRED: customer KYC status is "${c.status}" — verified KYC is required before policy purchase`);
+  }
+  return { verified: true, kycLevel: c.kycLevel ?? 0 };
 }
 
 export async function runUnderwritingCheck(input: {

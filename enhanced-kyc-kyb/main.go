@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,7 +24,6 @@ import (
 	"github.com/insureportal/enhanced_kyc_kyb/db"
 	"github.com/insureportal/enhanced_kyc_kyb/models"
 	"go.uber.org/zap"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // context keys (SA1029: typed keys to avoid collisions)
@@ -197,6 +197,12 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.store.CreateIndividualKYC(kyc); err != nil {
 		h.log.Error("failed to create individual KYC", zap.String("customerID", customerID), zap.Error(err))
+		// G2 audit 2026-02 (#15): NIN/BVN are unique — a duplicate national ID
+		// is an honest 409 conflict, not an opaque 500.
+		if strings.Contains(err.Error(), "duplicate key") {
+			errorResponse(w, http.StatusConflict, "a KYC record already exists for this NIN/BVN/customer_id")
+			return
+		}
 		errorResponse(w, http.StatusInternalServerError, "failed to create KYC record")
 		return
 	}
@@ -740,70 +746,114 @@ func (h *Handler) refreshKYC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshed := false
-
-	// Refresh individual
+	// G2 audit 2026-02 (#2): refresh is a RE-VERIFICATION, never a blind
+	// status flip. The previous code set status=Verified / risk_level=Low with
+	// a fresh TTL for any customer_id — resurrecting rejected/expired records.
 	if req.EntityType == "" || req.EntityType == "individual" {
 		ind, err := h.store.GetIndividualKYC(req.CustomerID)
-		if err == nil {
-			now := time.Now().UTC()
-			ind.VerificationDate = now
-			ind.ExpiresAt = now.Add(h.cfg.KYCTTL)
-			ind.Status = models.Verified
-			ind.RiskLevel = models.RiskLow
+		if err != nil {
+			errorResponse(w, http.StatusNotFound, fmt.Sprintf("no individual KYC record found for customer: %s", req.CustomerID))
+			return
+		}
+		if ind.NIN == "" && ind.BVN == "" {
+			errorResponse(w, http.StatusConflict, "KYC record has no verified identifier on file; resubmit KYC instead of refreshing")
+			return
+		}
 
+		// Re-run real verification against the stored identity. Provider
+		// outages fail LOUD and leave the record untouched.
+		dobStr := ""
+		if !ind.DOB.IsZero() {
+			dobStr = ind.DOB.Format("2006-01-02")
+		}
+		adjudicated := ""
+		if ind.NIN != "" {
+			res, verr := h.verifyNINWithRetry(ind.NIN, ind.FullName, dobStr)
+			if verr != nil {
+				h.store.WriteAudit("kyc_refresh_failed", "individual", req.CustomerID, "", r.RemoteAddr, fmt.Sprintf("nin re-verification error: %v", verr))
+				errorResponse(w, http.StatusBadGateway, fmt.Sprintf("NIN re-verification failed: %s", verr.Error()))
+				return
+			}
+			adjudicated = adjudicateNIN(res)
+		}
+		if adjudicated != "verified" && ind.BVN != "" {
+			res, verr := h.verifyBVNWithRetry(ind.BVN, ind.FullName)
+			if verr != nil {
+				h.store.WriteAudit("kyc_refresh_failed", "individual", req.CustomerID, "", r.RemoteAddr, fmt.Sprintf("bvn re-verification error: %v", verr))
+				errorResponse(w, http.StatusBadGateway, fmt.Sprintf("BVN re-verification failed: %s", verr.Error()))
+				return
+			}
+			if adj := adjudicateBVN(res); adj == "verified" {
+				adjudicated = "verified"
+			} else if adjudicated == "" {
+				adjudicated = adj
+			}
+		}
+
+		now := time.Now().UTC()
+		switch adjudicated {
+		case "verified":
 			h.store.DB().Model(&models.IndividualKYC{}).Where("customer_id = ?", req.CustomerID).Updates(map[string]interface{}{
 				"status":            models.Verified,
 				"verification_date": now,
 				"expires_at":        now.Add(h.cfg.KYCTTL),
-				"risk_level":        models.RiskLow,
 				"updated_at":        now,
 			})
-
-			if h.cache != nil {
-				h.cache.InvalidateKYCCache(req.CustomerID)
-			}
-
-			h.store.WriteAudit("kyc_refreshed", "individual", req.CustomerID, "", r.RemoteAddr, "KYC refreshed successfully")
-			refreshed = true
-		}
-	}
-
-	// Refresh business
-	if req.EntityType == "" || req.EntityType == "business" {
-		biz, err := h.store.GetBusinessKYC(req.CustomerID)
-		if err == nil {
-			now := time.Now().UTC()
-			biz.VerificationDate = now
-			biz.ExpiresAt = now.Add(h.cfg.KYBTTT)
-			biz.Status = models.Verified
-
-			h.store.DB().Model(&models.BusinessKYC{}).Where("customer_id = ?", req.CustomerID).Updates(map[string]interface{}{
-				"status":            models.Verified,
-				"verification_date": now,
-				"expires_at":        now.Add(h.cfg.KYBTTT),
-				"updated_at":        now,
+			h.store.WriteAudit("kyc_refreshed", "individual", req.CustomerID, "", r.RemoteAddr, "re-verified; TTL extended")
+		case "mismatch":
+			// Identity mismatch → manual review; do NOT extend the TTL.
+			h.store.DB().Model(&models.IndividualKYC{}).Where("customer_id = ?", req.CustomerID).Updates(map[string]interface{}{
+				"status":     models.UnderReview,
+				"updated_at": now,
 			})
-
-			if h.cache != nil {
-				h.cache.InvalidateKYCCache(req.CustomerID)
-			}
-
-			h.store.WriteAudit("kyb_refreshed", "business", req.CustomerID, "", r.RemoteAddr, "KYB refreshed successfully")
-			refreshed = true
+			h.store.WriteAudit("kyc_refresh_mismatch", "individual", req.CustomerID, "", r.RemoteAddr, "re-verification mismatch; routed to manual review, TTL unchanged")
+			errorResponse(w, http.StatusConflict, "re-verification returned an identity mismatch; record routed to manual review")
+			return
+		default:
+			// Failed re-verification → the record must NOT stay verified.
+			h.store.DB().Model(&models.IndividualKYC{}).Where("customer_id = ?", req.CustomerID).Updates(map[string]interface{}{
+				"status":     models.Rejected,
+				"updated_at": now,
+			})
+			h.store.WriteAudit("kyc_refresh_rejected", "individual", req.CustomerID, "", r.RemoteAddr, "re-verification failed; status set to rejected")
+			errorResponse(w, http.StatusConflict, "re-verification failed; KYC record is no longer valid — resubmit KYC")
+			return
 		}
-	}
 
-	if !refreshed {
-		errorResponse(w, http.StatusNotFound, fmt.Sprintf("no KYC record found for customer: %s", req.CustomerID))
+		if h.cache != nil {
+			h.cache.InvalidateKYCCache(req.CustomerID)
+		}
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"customer_id": req.CustomerID,
+			"status":      "refreshed",
+			"verified":    true,
+			"expires_at":  now.Add(h.cfg.KYCTTL).Format(time.RFC3339),
+		})
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, map[string]interface{}{
-		"customer_id": req.CustomerID,
-		"status":      "refreshed",
-		"expires_at":  time.Now().UTC().Add(h.cfg.KYCTTL).Format(time.RFC3339),
-	})
+	// Business KYB refresh: there is no automated re-verification provider for
+	// CAC/TIN on this path, so an automatic "refresh to Verified" would be a
+	// blind trust decision. Fail-closed and honest: route to manual review
+	// instead of extending a verified TTL.
+	if req.EntityType == "business" {
+		if _, err := h.store.GetBusinessKYC(req.CustomerID); err != nil {
+			errorResponse(w, http.StatusNotFound, fmt.Sprintf("no business KYB record found for customer: %s", req.CustomerID))
+			return
+		}
+		h.store.DB().Model(&models.BusinessKYC{}).Where("customer_id = ?", req.CustomerID).Updates(map[string]interface{}{
+			"status":     models.UnderReview,
+			"updated_at": time.Now().UTC(),
+		})
+		if h.cache != nil {
+			h.cache.InvalidateKYCCache(req.CustomerID)
+		}
+		h.store.WriteAudit("kyb_refresh_manual_review", "business", req.CustomerID, "", r.RemoteAddr, "automatic KYB refresh not supported; routed to manual review")
+		errorResponse(w, http.StatusConflict, "business KYB cannot be auto-refreshed; record routed to manual re-review")
+		return
+	}
+
+	errorResponse(w, http.StatusBadRequest, "entity_type must be \"individual\" or \"business\"")
 }
 
 // =====================================================================
@@ -906,8 +956,24 @@ func (h *Handler) verifyNINWithRetry(nin, fullName, dob string) (*models.NINResu
 }
 
 func (h *Handler) callNINAPI(nin, fullName, dob string) (*models.NINResult, error) {
-	payload := fmt.Sprintf(`{"nin":"%s","full_name":"%s","dob":"%s"}`, nin, fullName, dob)
-	resp, err := h.httpCl.Post(h.cfg.NINAPIURL, "application/json", strings.NewReader(payload))
+	// G2 audit 2026-02 (#17): fail LOUD when the provider credential is not
+	// configured — an unsigned call to a national-ID provider is never sent.
+	if h.cfg.NINAPIKey == "" {
+		return nil, fmt.Errorf("NIN_API_KEY not configured; refusing to send unsigned NIN verification request")
+	}
+	// json.Marshal (not fmt.Sprintf) — names containing quotes must not break
+	// out of the JSON payload (injection fix, same finding).
+	payload, err := json.Marshal(map[string]string{"nin": nin, "full_name": fullName, "dob": dob})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, h.cfg.NINAPIURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+h.cfg.NINAPIKey)
+	resp, err := h.httpCl.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -970,8 +1036,22 @@ func (h *Handler) verifyBVNWithRetry(bvn, fullName string) (*models.BVNResult, e
 }
 
 func (h *Handler) callBVNAPI(bvn, fullName string) (*models.BVNResult, error) {
-	payload := fmt.Sprintf(`{"bvn":"%s","full_name":"%s"}`, bvn, fullName)
-	resp, err := h.httpCl.Post(h.cfg.BVNAPIURL, "application/json", strings.NewReader(payload))
+	// G2 audit 2026-02 (#17): fail LOUD when the provider credential is not
+	// configured — an unsigned call to a national-ID provider is never sent.
+	if h.cfg.BVNAPIKey == "" {
+		return nil, fmt.Errorf("BVN_API_KEY not configured; refusing to send unsigned BVN verification request")
+	}
+	payload, err := json.Marshal(map[string]string{"bvn": bvn, "full_name": fullName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, h.cfg.BVNAPIURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+h.cfg.BVNAPIKey)
+	resp, err := h.httpCl.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -1057,7 +1137,9 @@ func (h *Handler) calculateIndividualRiskScore(kyc *models.IndividualKYC) (int, 
 	if kyc.FullName != "" {
 		score += 5
 	}
-	if kyc.DOB.Year() > 1950 && kyc.DOB.Year() < time.Now().Year()-10 {
+	// G2 audit 2026-02 (#18): only adults earn DOB completeness points —
+	// the previous bound (< now-10yr) awarded points to 10-year-olds.
+	if !kyc.DOB.IsZero() && ageYears(kyc.DOB, time.Now().UTC()) >= 18 {
 		score += 5
 	}
 	if kyc.Phone != "" {
@@ -1120,11 +1202,14 @@ func determineStatus(score int) models.KYCStatus {
 	return models.Rejected
 }
 
-func determineTier(hasNIN, hasFullNamel, hasPhone bool) (int, int64) {
+// determineTier derives tier ONLY from a verified identity adjudication
+// (G2 audit 2026-02, #4): presence of an unverified NIN/BVN string grants
+// nothing beyond the base tier.
+func determineTier(identityVerified, hasFullName, hasPhone bool) (int, int64) {
 	switch {
-	case hasNIN && hasFullNamel && hasPhone:
+	case identityVerified && hasFullName && hasPhone:
 		return 3, 999999999
-	case hasNIN && hasFullNamel:
+	case identityVerified && hasFullName:
 		return 2, 5000000
 	default:
 		return 1, 300000
@@ -1151,10 +1236,19 @@ func validateIndividualRequest(req *models.VerificationRequest) error {
 	if len(req.FullName) < 2 || len(req.FullName) > 150 {
 		return fmt.Errorf("full_name must be between 2 and 150 characters")
 	}
-	if req.DOB != "" {
-		if _, err := time.Parse("2006-01-02", req.DOB); err != nil {
-			return fmt.Errorf("invalid DOB format: use YYYY-MM-DD")
-		}
+	// G2 audit 2026-02 (#18): DOB is REQUIRED at KYC — age cannot be
+	// established without it, and minors must not complete individual KYC.
+	if req.DOB == "" {
+		return fmt.Errorf("dob is required (YYYY-MM-DD)")
+	}
+	dob, err := time.Parse("2006-01-02", req.DOB)
+	if err != nil {
+		return fmt.Errorf("invalid DOB format: use YYYY-MM-DD")
+	}
+	if ageYears(dob, time.Now().UTC()) < 18 {
+		// Fail-closed and honest: there is no guardian-consent flow yet, so
+		// under-18 applicants are blocked rather than silently onboarded.
+		return fmt.Errorf("applicant is under 18; individual KYC requires an adult — guardian-consent onboarding is not yet supported")
 	}
 	if req.Gender != "" && req.Gender != "male" && req.Gender != "female" && req.Gender != "other" {
 		return fmt.Errorf("invalid gender: must be male, female, or other")
@@ -1178,7 +1272,7 @@ func validateBusinessRequest(req *models.VerificationRequest) error {
 	if len(req.CompanyName) < 2 || len(req.CompanyName) > 200 {
 		return fmt.Errorf("company_name must be between 2 and 200 characters")
 	}
-	if req.TIN != "" && !isValidID(req.TIN) {
+	if req.TIN != "" && !isValidTIN(req.TIN) {
 		return fmt.Errorf("invalid TIN format: must be 10-15 digits")
 	}
 	if req.RCNumber != "" && len(req.RCNumber) > 50 {
@@ -1229,8 +1323,10 @@ func validateBVN(bvn, fullName string) error {
 }
 
 // Validation helpers
+// isValidID validates NIN/BVN: EXACTLY 11 digits (G2 audit 2026-02, #23 —
+// the previous 11–15 range let malformed "national IDs" pass).
 func isValidID(s string) bool {
-	if len(s) < 11 || len(s) > 15 {
+	if len(s) != 11 {
 		return false
 	}
 	for _, c := range s {
@@ -1239,6 +1335,28 @@ func isValidID(s string) bool {
 		}
 	}
 	return true
+}
+
+// isValidTIN validates tax identification numbers (10–15 digits).
+func isValidTIN(s string) bool {
+	if len(s) < 10 || len(s) > 15 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ageYears computes whole years between dob and now.
+func ageYears(dob, now time.Time) int {
+	age := now.Year() - dob.Year()
+	if now.Month() < dob.Month() || (now.Month() == dob.Month() && now.Day() < dob.Day()) {
+		age--
+	}
+	return age
 }
 
 func isValidPhone(s string) bool {
@@ -1269,8 +1387,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// authMiddleware validates API key for protected endpoints.
-func authMiddleware(secret string, next http.Handler) http.Handler {
+// authMiddleware validates the service API key for protected endpoints.
+func authMiddleware(apiKey string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		// Public endpoints
@@ -1290,19 +1408,16 @@ func authMiddleware(secret string, next http.Handler) http.Handler {
 			token = strings.TrimPrefix(authHeader, "ApiKey ")
 		}
 
-		// Simple token length check; in production use JWT or HMAC validation
 		if len(token) < 16 {
 			errorResponse(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
 
-		// Verify the token against the configured secret hash
-		hashedSecret, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
-		if err != nil {
-			errorResponse(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		if err := bcrypt.CompareHashAndPassword(hashedSecret, []byte(token)); err != nil {
+		// G2 audit 2026-02 (#16): constant-time comparison against the
+		// configured API key. The previous code ran bcrypt.GenerateFromPassword
+		// on EVERY request (~100ms+ CPU each) — an unauthenticated CPU-exhaustion
+		// DoS — and reused the JWT signing secret as the API key.
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 			errorResponse(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
@@ -1338,6 +1453,11 @@ func main() {
 	defer func() { _ = log.Sync() }()
 
 	cfg := config.Load()
+	// G2 audit 2026-02 (#3): fail-closed at boot on missing/default/weak
+	// credentials — an honest fatal error, in every environment.
+	if err := cfg.Validate(); err != nil {
+		log.Fatal("insecure configuration", zap.Error(err))
+	}
 	log.Info("configuration loaded",
 		zap.String("port", cfg.Port),
 		zap.String("db_host", cfg.DBHost),
@@ -1368,7 +1488,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(corsMiddleware)
-	r.Use(func(next http.Handler) http.Handler { return authMiddleware(cfg.JWTSecret, next) })
+	r.Use(func(next http.Handler) http.Handler { return authMiddleware(cfg.APIKey, next) })
 	r.Use(requestIDMiddleware)
 
 	// Register routes
