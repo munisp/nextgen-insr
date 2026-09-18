@@ -15,6 +15,7 @@
 
 import { getConfigNumber } from "./runtimeConfig";
 import logger from "../_core/logger";
+import type * as SocketSingleton from "../socketSingleton";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,7 +256,7 @@ export function createSocketIOProgressHandler(): (
 
     // Emit to Socket.IO /settlement namespace
     try {
-      const { getIO } = require("../socketSingleton") as typeof import("../socketSingleton");
+      const { getIO } = require("../socketSingleton") as typeof SocketSingleton;
       const io = getIO();
       if (io) {
         const settlementNs = io.of("/settlement");
@@ -288,4 +289,5 @@ export function createRedisPubSubHandler(
     );
   };
 }
+
 
