@@ -3,9 +3,15 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { agentSuspensionLog } from "../../drizzle/schema";
-import { protectedProcedure, router } from "../_core/trpc";
+import { agentSuspensionLog, agents } from "../../drizzle/schema";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import {
+  assertAgentActivationEligible,
+  deactivateAgentCascade,
+  reactivateAgent,
+  writeSuspensionLog,
+} from "../lib/agentLifecycle";
 
 const list = protectedProcedure
   .input(
@@ -40,36 +46,114 @@ const list = protectedProcedure
       });
     }
   });
-// F-12 (expanded sweep): echo facade — returned "success ... completed"
-// with no state change. Fail loud.
-const suspend = protectedProcedure
+// G3 (audit #14): implemented for real — admin-only, full deactivation
+// cascade (tokens revoked, sockets dropped, float locked, terminal disabled)
+// plus a durable agent_suspension_log row. Fails closed on any store error.
+const suspend = adminProcedure
   .input(
     z.object({
       id: z.number().optional(),
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(() => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "suspend: no suspension workflow store",
+  .mutation(async ({ input, ctx }) => {
+    const agentPk = input.id ?? Number(input.data?.agentId);
+    const reason =
+      (typeof input.data?.reason === "string" && input.data.reason) ||
+      "Suspended via suspension workflow";
+    if (!Number.isFinite(agentPk) || agentPk <= 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "id (agent PK) is required",
+      });
+    }
+    const db = (await getDb())!;
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const [agent] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, agentPk))
+      .limit(1);
+    if (!agent || agent.deletedAt) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+    }
+    if (agent.id === ctx.user?.id) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Cannot suspend your own account",
+      });
+    }
+    const previousStatus = agent.isActive ? "active" : "suspended";
+    if (agent.isActive) {
+      await deactivateAgentCascade({
+        agentPk: agent.id,
+        agentCode: agent.agentId,
+        reason,
+        actor: { id: ctx.user?.id, label: `user:${ctx.user?.id}` },
+        action: "AGENT_SUSPENDED",
+      });
+    }
+    await writeSuspensionLog({
+      agentPk: agent.id,
+      action: "suspend",
+      reason,
+      performedBy: ctx.user?.id ?? 0,
+      previousStatus,
+      newStatus: "suspended",
     });
+    return { success: true, agentId: agent.id, status: "suspended" };
   });
-// F-12 (wave-4b): lift was a copy-pasted LIST query (page/limit/search
-// returning agent rows) — never a reinstate mutation. No suspension store
-// exists — fail loud.
-const lift = protectedProcedure
+// G3 (audit #14): lift reactivates for real — gated on verification
+// evidence, and deliberately does NOT unlock float/terminal (those need
+// explicit admin unlocks). Durable agent_suspension_log row.
+const lift = adminProcedure
   .input(
     z.object({
       id: z.number().optional(),
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(() => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "lift: no suspension workflow store",
+  .mutation(async ({ input, ctx }) => {
+    const agentPk = input.id ?? Number(input.data?.agentId);
+    const reason =
+      (typeof input.data?.reason === "string" && input.data.reason) ||
+      "Suspension lifted via suspension workflow";
+    if (!Number.isFinite(agentPk) || agentPk <= 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "id (agent PK) is required",
+      });
+    }
+    const db = (await getDb())!;
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const [agent] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, agentPk))
+      .limit(1);
+    if (!agent || agent.deletedAt) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+    }
+    const previousStatus = agent.isActive ? "active" : "suspended";
+    if (!agent.isActive) {
+      // Fail-closed: no verification evidence, no reinstatement.
+      await assertAgentActivationEligible(agent.id);
+      await reactivateAgent({
+        agentPk: agent.id,
+        agentCode: agent.agentId,
+        actor: { id: ctx.user?.id, label: `user:${ctx.user?.id}` },
+        action: "AGENT_ACTIVATED",
+      });
+    }
+    await writeSuspensionLog({
+      agentPk: agent.id,
+      action: "reactivate",
+      reason,
+      performedBy: ctx.user?.id ?? 0,
+      previousStatus,
+      newStatus: "active",
     });
+    return { success: true, agentId: agent.id, status: "active" };
   });
 
 // F-12 (wave-4b): escalate restored (dropped by the round-57 assembly

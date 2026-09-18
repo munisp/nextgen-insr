@@ -3,7 +3,7 @@
  * Requires agent_session cookie with role === "admin".
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { agents, premiumTopUpRequests } from "../../drizzle/schema";
@@ -16,6 +16,11 @@ import { getDb ,
   withTransaction,
 } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import {
+  assertAgentActivationEligible,
+  deactivateAgentCascade,
+  reactivateAgent,
+} from "../lib/agentLifecycle";
 
 async function requireAdmin(req: any) {
   const session = await getAgentFromCookie(req);
@@ -157,13 +162,26 @@ export const agentManagementRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        await db
-          .update(agents)
-          .set({ isActive: input.isActive })
-          .where(eq(agents.id, input.agentId));
+        // G3 (audit #14): deactivation runs the full cascade (tokens
+        // revoked, sockets dropped, float locked, terminal disabled);
+        // activation requires durable verification evidence (audit #1).
+        if (input.isActive) {
+          await assertAgentActivationEligible(input.agentId);
+          await reactivateAgent({
+            agentPk: input.agentId,
+            actor: { id: session.id, label: session.agentId },
+          });
+        } else {
+          await deactivateAgentCascade({
+            agentPk: input.agentId,
+            reason: "Deactivated via agentManagement.setActive",
+            actor: { id: session.id, label: session.agentId },
+            action: "AGENT_SUSPENDED",
+          });
+        }
         await writeAuditLog({
           agentId: session.id,
-          metadata: { agentCode: session.agentId },
+          metadata: { agentCode: session.agentId, targetAgentId: input.agentId },
           action: input.isActive ? "AGENT_ACTIVATED" : "AGENT_SUSPENDED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -264,6 +282,20 @@ export const agentManagementRouter = router({
             code: "BAD_REQUEST",
             message: `Request already ${req.status}`,
           });
+        }
+        // G3 (audit #18): never credit float to a suspended/deleted agent.
+        {
+          const [targetAgent] = await db
+            .select()
+            .from(agents)
+            .where(eq(agents.id, req.agentId))
+            .limit(1);
+          if (!targetAgent || targetAgent.deletedAt || !targetAgent.isActive) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "Cannot credit float to an inactive or deleted agent",
+            });
+          }
         }
         // P0-A: Wrap float credit + status update in an atomic DB transaction
         await withTransaction(async tx => {
@@ -442,26 +474,35 @@ export const agentManagementRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        // Prevent duplicate pending requests
-        const existing = await db
-          .select()
-          .from(premiumTopUpRequests)
-          .where(eq(premiumTopUpRequests.agentId, session.id))
-          .limit(10);
-        const hasPending = existing.some((r: any) => r.status === "pending");
-        if (hasPending) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "You already have a pending top-up request",
+        // G3 (audit #30): the check-then-insert "one pending request" guard
+        // was racy — concurrent submissions both passed. Run check+insert in
+        // one transaction holding a per-agent advisory xact lock, so the
+        // second request blocks until the first commits and then sees its
+        // pending row.
+        await db.transaction(async tx => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(7300, ${session.id})`
+          );
+          const existing = await tx
+            .select()
+            .from(premiumTopUpRequests)
+            .where(eq(premiumTopUpRequests.agentId, session.id))
+            .limit(10);
+          const hasPending = existing.some((r: any) => r.status === "pending");
+          if (hasPending) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "You already have a pending top-up request",
+            });
+          }
+          await tx.insert(premiumTopUpRequests).values({
+            agentId: session.id,
+            requestedAmount: String(input.amount),
+            status: "pending",
+            notes: input.notes ?? null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
           });
-        }
-        await db.insert(premiumTopUpRequests).values({
-          agentId: session.id,
-          requestedAmount: String(input.amount),
-          status: "pending",
-          notes: input.notes ?? null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
         });
         await writeAuditLog({
           agentId: session.id,

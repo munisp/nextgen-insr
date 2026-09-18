@@ -81,6 +81,58 @@ async function createTables() {
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )`);
+  // 2026-09-18 (G3): authenticateAgentSocket now re-checks the agent row
+  // (isActive/deletedAt) from the DB at connection time — a suspended or
+  // nonexistent agent's still-unexpired JWT must be denied. The socket-auth
+  // fixtures below therefore seed REAL agent rows: 42 ACTIVE (what an
+  // approved agent looks like post-G3) and 43 SUSPENDED (denial-path case).
+  // Full column set mirroring drizzle/schema.ts `agents` (getAgentById does
+  // db.select() — an explicit ALL-columns projection — so a partial table
+  // errors and the socket auth would fail closed, denying even valid agents).
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agents (
+      id serial PRIMARY KEY,
+      "agentId" varchar(32) NOT NULL UNIQUE,
+      name varchar(128) NOT NULL,
+      phone varchar(20) NOT NULL DEFAULT '',
+      email varchar(320),
+      location varchar(128),
+      "terminalModel" varchar(64) DEFAULT 'PAX A920 MAX',
+      "terminalSerial" varchar(64),
+      tier varchar(32) NOT NULL DEFAULT 'Bronze',
+      role varchar(32) NOT NULL DEFAULT 'agent',
+      "pinHash" varchar(128) NOT NULL DEFAULT '',
+      "failedPinAttempts" integer NOT NULL DEFAULT 0,
+      "pinLockedUntil" timestamp,
+      "premiumReserve" numeric(15,2) NOT NULL DEFAULT '0.00',
+      "floatLimit" numeric(15,2) NOT NULL DEFAULT '1000000.00',
+      "commissionBalance" numeric(15,2) NOT NULL DEFAULT '0.00',
+      "loyaltyPoints" integer NOT NULL DEFAULT 0,
+      streak integer NOT NULL DEFAULT 0,
+      rank integer DEFAULT 0,
+      "isActive" boolean NOT NULL DEFAULT false,
+      "floatLocked" boolean NOT NULL DEFAULT false,
+      "terminalEnabled" boolean NOT NULL DEFAULT true,
+      "terminalDisabledReason" text,
+      "lastLoginAt" timestamp,
+      "deletedAt" timestamp,
+      "tenantId" integer,
+      "creditScore" integer DEFAULT 0,
+      "creditLimit" numeric(15,2) DEFAULT '0.00',
+      "creditRating" varchar(16) DEFAULT 'N/A',
+      "parentAgentId" integer,
+      "hierarchyRole" varchar(32) DEFAULT 'agent',
+      "hierarchyLevel" integer DEFAULT 3,
+      "commissionSplitOverride" numeric(5,2),
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )`);
+  await db.execute(sql`
+    INSERT INTO agents (id, "agentId", name, phone, "pinHash", "isActive")
+    VALUES
+      (42, 'AGT-42', 'F3 Socket Agent', '08011110001', 'x', true),
+      (43, 'AGT-43', 'F3 Suspended Agent', '08011110002', 'x', false)
+    ON CONFLICT (id) DO NOTHING`);
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS impersonation_events (
       id serial PRIMARY KEY,
@@ -160,6 +212,18 @@ describe("AUTH-1/2/3/4: Socket.IO namespace authz", () => {
     const jwt = await signAgentSession(42);
     const c = await connect("/fraud", `agent_session=${jwt}`);
     expect(c.connected).toBe(true);
+  });
+
+  // 2026-09-18 (G3): a SUSPENDED agent's still-unexpired JWT must be denied
+  // at socket-connection time on every authenticated namespace (the isActive
+  // DB re-check in authenticateAgentSocket).
+  it("G3: rejects a suspended agent's valid JWT on all namespaces", async () => {
+    const jwt = await signAgentSession(43);
+    for (const ns of ["/fraud", "/terminal", "/settlement", "/chat"]) {
+      await expect(
+        connect(ns, `agent_session=${jwt}`)
+      ).rejects.toThrow(/Authentication required/);
+    }
   });
 
   it("AUTH-2: terminal:register binds the room to the TOKEN identity", async () => {

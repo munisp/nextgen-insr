@@ -37,6 +37,7 @@ const AGENT_CODE = "AGT-OTP-0001";
 const ORIGINAL_PIN_HASH = "a".repeat(64);
 
 let agentPk = 0;
+let otherAgentPk = 0;
 
 async function seedOtpToken(
   plaintextOtp: string,
@@ -81,6 +82,21 @@ describe("pinReset OTP attempt limiting (integration, real DB)", () => {
       })
       .returning();
     agentPk = a!.id;
+    // 2026-05 (G3): getAgentFromCookie now re-checks the agent row
+    // (isActive/deletedAt) from the DB, so a cookie for a NON-EXISTENT agent
+    // no longer resolves to a session at all. The "different agent" negative
+    // tests below therefore need a REAL second agent identity.
+    const [other] = await db
+      .insert(agents)
+      .values({
+        agentId: "AGT-OTP-OTHER",
+        name: "OTP Other Agent",
+        phone: "08099990002",
+        pinHash: ORIGINAL_PIN_HASH,
+        isActive: true,
+      })
+      .returning();
+    otherAgentPk = other!.id;
   });
 
   afterAll(async () => {
@@ -236,7 +252,7 @@ describe("pinReset OTP attempt limiting (integration, real DB)", () => {
   }
 
   it("an agent session for a DIFFERENT agent cannot request an OTP (FORBIDDEN)", async () => {
-    const cookie = await agentSessionCookie(999999, "AGT-OTP-OTHER");
+    const cookie = await agentSessionCookie(otherAgentPk, "AGT-OTP-OTHER");
     const caller = callerWithCookie(cookie);
     await expectTrpcError(
       caller.pinReset.requestOtp({ agentCode: AGENT_CODE, phone: "08099990001" }),
@@ -250,7 +266,7 @@ describe("pinReset OTP attempt limiting (integration, real DB)", () => {
     await seedOtpToken("121212");
     const baselineHash = await agentPinHash();
 
-    const cookie = await agentSessionCookie(999999, "AGT-OTP-OTHER");
+    const cookie = await agentSessionCookie(otherAgentPk, "AGT-OTP-OTHER");
     const caller = callerWithCookie(cookie);
     await expectTrpcError(
       caller.pinReset.resetPin({ agentCode: AGENT_CODE, otp: "121212", newPin: "1111" }),

@@ -47,6 +47,10 @@ import { systemHealthMonitorRouter } from "../../../server/routers/systemHealthM
 import { networkStatusDashboardRouter } from "../../../server/routers/networkStatusDashboard";
 import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
 import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
+import { agentKycRouter } from "../../../server/routers/agentKyc";
+import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
+import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
+import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -98,6 +102,11 @@ export const integrationRouter = router({
   // B12 + B13 (wave-2c): same mount paths as production.
   ussdAnalytics: ussdAnalyticsRouter,
   complianceChatbot: complianceChatbotRouter,
+  // G3 (agent-onboarding audit): same mount paths as production.
+  agentKyc: agentKycRouter,
+  agentOnboarding: agentOnboardingRouter,
+  terminalLeasing: terminalLeasingRouter,
+  agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

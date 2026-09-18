@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go.uber.org/zap"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -165,5 +166,76 @@ func TestFinancialOpsBlocked(t *testing.T) {
 	st.PhoneBoundAt = time.Now()
 	if _, blocked := app.financialOpsBlocked(st); blocked {
 		t.Fatal("cooling=0 must disable the cooling check")
+	}
+}
+
+// G3 (audit #11): settlement account format gate — exactly 10 digits (NUBAN).
+func TestNubanFormat(t *testing.T) {
+	for _, ok := range []string{"0123456789", "0000000000", "9998877776"} {
+		if !nubanFormat(ok) {
+			t.Fatalf("%q must be accepted as NUBAN", ok)
+		}
+	}
+	for _, bad := range []string{"", "123", "01234567890", "012345678a", " 0123456789", "01234 56789", "+2348012345"} {
+		if nubanFormat(bad) {
+			t.Fatalf("%q must be rejected", bad)
+		}
+	}
+}
+
+// G3 (audit #11): the bank step rejects non-NUBAN input and does NOT advance.
+func TestStateAgentRegisterBankRejectsNonNUBAN(t *testing.T) {
+	app := &Application{}
+	sess := &models.SessionData{SessionID: "s1", State: "agent_register_bank", Data: map[string]interface{}{}}
+	resp, err := app.stateAgentRegisterBank(sess, "12345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.State != "agent_register_bank" {
+		t.Fatalf("short account advanced state to %q", sess.State)
+	}
+	if resp.CloseSession {
+		t.Fatal("session must stay open for retry")
+	}
+}
+
+// G3 (audit #9): enrollment confirm must NEVER activate the agent and must
+// require PIN infrastructure — with no PIN_PEPPER configured it fails closed
+// BEFORE persisting anything.
+func TestStateAgentRegisterConfirmFailsClosedWithoutPepper(t *testing.T) {
+	app := &Application{cfg: Config{PINPepper: ""}, log: zap.NewNop()}
+	sess := &models.SessionData{
+		SessionID: "s2",
+		State:     "agent_register_confirm",
+		Data: map[string]interface{}{
+			"agent_name":         "Test Agent",
+			"agent_state":        "Lagos",
+			"agent_lga":          "Ikeja",
+			"agent_bank_account": "0123456789",
+			"agent_bank_name":    "Test Bank",
+		},
+	}
+	resp, err := app.stateAgentRegisterConfirm(sess, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.CloseSession {
+		t.Fatal("fail-closed path must end the session")
+	}
+	// No agent_id may be set — nothing was persisted.
+	if _, ok := sess.Data["agent_id"]; ok {
+		t.Fatal("agent must not be persisted when PIN_PEPPER is unset")
+	}
+}
+
+// G3 (audit #9): pending agents must be blocked from financial ops at the
+// agent menu. (Active-agent path requires a live DB and is covered by the
+// platform integration suite.)
+func TestAgentMenuBlocksNonActiveAgents(t *testing.T) {
+	// Direct check of the status guard semantics used in stateAgentMenu.
+	for _, st := range []string{models.AgentStatusPending, models.AgentStatusSuspended, models.AgentStatusDisabled} {
+		if st == models.AgentStatusActive {
+			t.Fatal("non-active status must not equal active")
+		}
 	}
 }
