@@ -100,12 +100,12 @@ export function decryptPii(value: string | null | undefined): string | null {
  */
 export function encryptPiiFields<T extends Record<string, unknown>>(
   payload: T,
-  fields: readonly (keyof T)[]
+  fields: readonly string[]
 ): T {
   const out: Record<string, unknown> = { ...payload };
   for (const f of fields) {
     if (f in out) {
-      out[f as string] = encryptPii(out[f as string] as string | null | undefined);
+      out[f] = encryptPii(out[f] as string | null | undefined);
     }
   }
   return out as T;
@@ -116,12 +116,12 @@ export function encryptPiiFields<T extends Record<string, unknown>>(
  */
 export function decryptPiiFields<T extends Record<string, unknown>>(
   row: T,
-  fields: readonly (keyof T)[]
+  fields: readonly string[]
 ): T {
   const out: Record<string, unknown> = { ...row };
   for (const f of fields) {
     if (f in out) {
-      out[f as string] = decryptPii(out[f as string] as string | null | undefined);
+      out[f] = decryptPii(out[f] as string | null | undefined);
     }
   }
   return out as T;

@@ -414,7 +414,7 @@ export function generateComplianceReport(scanResults: PIIScanResult[]): {
   const recommendations: string[] = [];
 
   if (scanResults.some(r => r.complianceStatus.ndpr === "violation")) {
-    recommendations.push("NDPR: Implement field-level encryption for PII in transit");
+    recommendations.push("NDPR: field-level encryption for PII is IMPLEMENTED at rest via server/lib/piiCrypto.ts (AES-256-GCM, FIELD_ENCRYPTION_KEY) for customers/kyc_sessions BVN/NIN/DOB — extend encryptPiiFields coverage to any remaining plaintext PII columns flagged above");
   }
   if (scanResults.some(r => r.complianceStatus.gdpr === "violation")) {
     recommendations.push("GDPR: Add data minimization - only return fields explicitly requested");

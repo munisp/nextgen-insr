@@ -254,16 +254,29 @@ func (b *FluvioKafkaBridge) pumpKafkaToFluvio(kafkaTopic, fluvioTopic string, re
 				return err // supervisor restarts with backoff
 			}
 
-			if err := b.fluvioClient.Produce(b.ctx, fluvioTopic, msg.Value); err != nil {
-				log.Printf("Failed to publish to Fluvio topic %s: %v — offset NOT committed, will retry", fluvioTopic, err)
-				// Back off in-place; the message is re-fetched after the
-				// failure because we never commit its offset.
-				select {
-				case <-b.ctx.Done():
-					return nil
-				case <-time.After(2 * time.Second):
+			// OPS-6: retry the SAME message until the produce succeeds — the
+			// fetch offset has already advanced past it, so a bare `continue`
+			// would skip it in-session. The offset is committed only after a
+			// successful produce, so a crash still redelivers it.
+			produceBackoff := 500 * time.Millisecond
+			for {
+				if err := b.fluvioClient.Produce(b.ctx, fluvioTopic, msg.Value); err != nil {
+					if b.ctx.Err() != nil {
+						return nil
+					}
+					log.Printf("Failed to publish to Fluvio topic %s: %v — offset NOT committed, retrying in %s", fluvioTopic, err, produceBackoff)
+					select {
+					case <-b.ctx.Done():
+						return nil
+					case <-time.After(produceBackoff):
+					}
+					produceBackoff *= 2
+					if produceBackoff > 10*time.Second {
+						produceBackoff = 10 * time.Second
+					}
+					continue
 				}
-				continue
+				break
 			}
 
 			// Produce succeeded — now it is safe to commit the offset.

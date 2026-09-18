@@ -37,6 +37,48 @@ const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
 const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "insureportal";
 const TASK_QUEUE = process.env.TEMPORAL_TASK_QUEUE ?? "insureportal-journeys";
 
+// OPS-11: worker build ID for Temporal worker versioning. Every deploy that
+// changes workflow code MUST bump TEMPORAL_WORKER_BUILD_ID (default: package
+// version + git SHA when available). See docs/TEMPORAL_VERSIONING.md.
+const WORKER_BUILD_ID =
+  process.env.TEMPORAL_WORKER_BUILD_ID ??
+  `${process.env.npm_package_version ?? "0.0.0"}-${process.env.GIT_SHA ?? "dev"}`;
+const USE_WORKER_VERSIONING = process.env.TEMPORAL_WORKER_VERSIONING === "true";
+const VERSION_GUARD_STRICT = process.env.TEMPORAL_VERSION_GUARD === "strict";
+
+/**
+ * OPS-11 version guard: refuse (strict) or warn loudly when workflow code is
+ * about to start serving a task queue that already has IN-FLIGHT workflows
+ * and the operator has not pinned an explicit build ID. Without a build ID
+ * there is no replay-safety story for those executions.
+ */
+async function assertVersionGuard(): Promise<void> {
+  try {
+    const { getTemporalClient } = await import("./temporal");
+    const client = await getTemporalClient();
+    if (!client) return; // Temporal unavailable — nothing in flight reachable
+    const running: string[] = [];
+    for await (const wf of client.workflow.list({
+      query: 'ExecutionStatus = "Running"',
+    })) {
+      running.push(wf.workflowId);
+      if (running.length >= 5) break;
+    }
+    if (running.length > 0 && !process.env.TEMPORAL_WORKER_BUILD_ID) {
+      const msg =
+        `[Temporal] OPS-11 VERSION GUARD: ${running.length}+ in-flight workflows ` +
+        `(e.g. ${running[0]}) but TEMPORAL_WORKER_BUILD_ID is not pinned — ` +
+        `a workflow-code change can break replay of these executions. ` +
+        `Pin a build ID and follow docs/TEMPORAL_VERSIONING.md (patch/deprecatePatch).`;
+      if (VERSION_GUARD_STRICT) throw new Error(msg);
+      logger.error(msg);
+    }
+  } catch (e) {
+    if (VERSION_GUARD_STRICT) throw e;
+    logger.warn("[Temporal] Version guard check skipped:: " + (e as Error).message);
+  }
+}
+
 /**
  * Start the Temporal worker in-process.
  * Called from server/_core/index.ts after server starts listening.
@@ -84,10 +126,16 @@ async function run() {
     J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
   };
 
+  await assertVersionGuard();
+
   const worker = await Worker.create({
     connection,
     namespace: TEMPORAL_NAMESPACE,
     taskQueue: TASK_QUEUE,
+    // OPS-11: buildId enables Temporal worker versioning when the server has
+    // it enabled (TEMPORAL_WORKER_VERSIONING=true); harmless otherwise.
+    buildId: WORKER_BUILD_ID,
+    ...(USE_WORKER_VERSIONING ? { useVersioning: true } : {}),
     workflowsPath,
     activities: { ...activities, ...journeyActivities, ...extendedActivities },
     maxConcurrentActivityTaskExecutions: 50,
@@ -103,6 +151,8 @@ async function run() {
       address: TEMPORAL_ADDRESS,
       namespace: TEMPORAL_NAMESPACE,
       taskQueue: TASK_QUEUE,
+      buildId: WORKER_BUILD_ID,
+      workerVersioning: USE_WORKER_VERSIONING,
     })
   );
 

@@ -58,6 +58,50 @@ export function verifyWebhookHmac(
       return;
     }
 
+    // OPS-8: timestamp + replay window. A valid signature on an old body is
+    // a replay attack — the previous implementation verified HMAC with NO
+    // freshness check, giving an unlimited replay window. Providers send
+    // `x-webhook-timestamp` (unix seconds or ms). In production the header
+    // is REQUIRED; outside production a missing header is warned, not
+    // rejected, so unsigned dev fixtures keep working.
+    const REPLAY_WINDOW_MS = Number(
+      process.env.WEBHOOK_REPLAY_WINDOW_MS ?? 300_000
+    );
+    const tsHeader =
+      (req.headers["x-webhook-timestamp"] as string | undefined) ??
+      (req.headers[`${headerName.replace("signature", "timestamp")}`] as
+        | string
+        | undefined);
+    if (!tsHeader) {
+      if (process.env.NODE_ENV === "production" || options.failClosed) {
+        logger.warn(
+          `[WebhookHmac] Missing timestamp header on ${req.path} — rejecting (replay window enforcement, production)`
+        );
+        res.status(401).json({ error: "Missing webhook timestamp header" });
+        return;
+      }
+      logger.warn(
+        `[WebhookHmac] DEV: no timestamp header on ${req.path} — replay window not enforced (never allowed in production)`
+      );
+    } else {
+      let ts = Number(tsHeader);
+      if (ts < 1e12) ts *= 1000; // unix seconds → ms
+      if (!Number.isFinite(ts)) {
+        res.status(401).json({ error: "Malformed webhook timestamp header" });
+        return;
+      }
+      const skew = Math.abs(Date.now() - ts);
+      if (skew > REPLAY_WINDOW_MS) {
+        logger.warn(
+          `[WebhookHmac] Stale/future webhook on ${req.path}: skew=${skew}ms > window=${REPLAY_WINDOW_MS}ms — rejected (replay protection)`
+        );
+        res
+          .status(401)
+          .json({ error: "Webhook timestamp outside replay window" });
+        return;
+      }
+    }
+
     // Raw body must be captured before JSON parsing — use express.raw() upstream
     const rawBody: Buffer | undefined = (req as any).rawBody;
     if (!rawBody) {

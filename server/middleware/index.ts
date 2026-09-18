@@ -269,8 +269,11 @@ export function registerGracefulShutdown(server: any) {
     process.exit(0);
   };
 
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  // OPS-10: skip if the unified shutdown path (lib/gracefulShutdown.ts) is active
+  if (!(globalThis as any).__insureportalUnifiedShutdownActive) {
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
+  }
 }
 
 // ─── Audit Trail Logging (F11) ─────────────────────────────────
