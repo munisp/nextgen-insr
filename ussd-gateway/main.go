@@ -1111,10 +1111,21 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 	agentID := sess.Data["agent_id"].(string)
 	ctx := context.Background()
 
-	// NG-4: atomic conditional deduction — the balance check and the debit
-	// happen in ONE SQL statement, so concurrent/duplicate confirms cannot
-	// both pass the balance check. Fail-closed on any error.
-	newBalance, err := app.pg.DeductAgentBalance(ctx, agentID, amount)
+	// H-wave 2026-02 (F4 residual, double-float race): the idempotency claim
+	// and the balance deduction happen in ONE database transaction — only the
+	// winner of the ON CONFLICT claim deducts. The old order (deduct first,
+	// idempotent insert second) let duplicate confirms in the race window
+	// double-deduct.
+	txn := &models.TransactionRecord{
+		SessionID:   sess.SessionID,
+		PhoneNumber: sess.PhoneNumber,
+		Type:        models.TransactionTypeFloatClaim,
+		ProductID:   "float_claim",
+		Amount:      amount,
+		Status:      "completed",
+	}
+	idemKey := fmt.Sprintf("float:%s:%s:%s", idempotencyBase(sess), agentID, strconv.FormatFloat(amount, 'f', 2, 64))
+	txn, duplicate, newBalance, err := app.pg.ClaimFloatWithTransaction(ctx, txn, idemKey, agentID, amount)
 	if err != nil {
 		if err == db.ErrInsufficientFloat {
 			balance, _ := app.pg.GetAgentBalance(ctx, agentID)
@@ -1125,7 +1136,7 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 				Action:       "continue",
 			}, nil
 		}
-		app.log.Error("float deduction failed", zap.Error(err))
+		app.log.Error("float claim failed", zap.Error(err))
 		sess.State = "end"
 		return models.USSDResponse{
 			Text:         "Processing failed. No funds were deducted. Please try again later.",
@@ -1134,31 +1145,25 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 		}, nil
 	}
 
-	// Record the transaction (idempotent on session+amount).
-	txn := &models.TransactionRecord{
-		SessionID:   sess.SessionID,
-		PhoneNumber: sess.PhoneNumber,
-		Type:        models.TransactionTypeFloatClaim,
-		ProductID:   "float_claim",
-		Amount:      amount,
-		Status:      "completed",
-	}
-	idemKey := fmt.Sprintf("float:%s:%s:%s", idempotencyBase(sess), agentID, strconv.FormatFloat(amount, 'f', 2, 64))
-	txn, _, err = app.pg.CreateTransactionIdempotent(ctx, txn, idemKey)
-	if err != nil {
-		app.log.Error("float claim txn", zap.Error(err))
-	}
-	reference := "PENDING"
-	if txn != nil {
-		reference = txn.Reference
+	if duplicate {
+		// Honest duplicate handling: this confirm was already processed — NO
+		// second deduction happened.
+		sess.Data["reference"] = txn.Reference
+		sess.Data["new_balance"] = newBalance
+		sess.State = "agent_float_complete"
+		return models.USSDResponse{
+			Text:         fmt.Sprintf("This float claim was already processed.\nBalance: ₦%s\nReference: %s", formatCurrency(newBalance), txn.Reference),
+			CloseSession: true,
+			Action:       "end",
+		}, nil
 	}
 
-	sess.Data["reference"] = reference
+	sess.Data["reference"] = txn.Reference
 	sess.Data["new_balance"] = newBalance
 	sess.State = "agent_float_complete"
 
 	return models.USSDResponse{
-		Text:         fmt.Sprintf("Float claim of ₦%s processed successfully!\nNew balance: ₦%s\nReference: %s", formatCurrency(amount), formatCurrency(newBalance), reference),
+		Text:         fmt.Sprintf("Float claim of ₦%s processed successfully!\nNew balance: ₦%s\nReference: %s", formatCurrency(amount), formatCurrency(newBalance), txn.Reference),
 		CloseSession: true,
 		Action:       "end",
 	}, nil

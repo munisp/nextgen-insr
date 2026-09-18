@@ -179,15 +179,16 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
         (socket as any).userName = payload.name ?? "Unknown";
         (socket as any).userRole = payload.role ?? "user";
       } catch {
-        // Allow connection but mark as unauthenticated for demo
-        (socket as any).userId = `anon_${socket.id.slice(0, 8)}`;
-        (socket as any).userName = "Anonymous";
-        (socket as any).userRole = "guest";
+        // H-wave 2026-02: FAIL-CLOSED — invalid tokens no longer get an
+        // anonymous "guest" connection that could subscribe to broadcast
+        // channels (fraud/settlement feeds leaked to any visitor).
+        next(new Error("authentication required"));
+        return;
       }
     } else {
-      (socket as any).userId = `anon_${socket.id.slice(0, 8)}`;
-      (socket as any).userName = "Anonymous";
-      (socket as any).userRole = "guest";
+      // H-wave 2026-02: unauthenticated connections are REJECTED.
+      next(new Error("authentication required"));
+      return;
     }
     next();
   });
@@ -216,11 +217,25 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
     });
 
     // ── Channel Subscriptions ──────────────────────────────────────────────
+    // H-wave 2026-02: subscription SCOPING. Global operational feeds
+    // (fraud / settlement / compliance) carry cross-customer money-movement
+    // and risk data — staff roles only. Personal channels (transaction,
+    // kyc, commission, ...) remain available to every authenticated user.
+    const STAFF_ONLY_CHANNELS: NotificationChannel[] = ["fraud", "settlement", "compliance"];
+    const STAFF_ROLES = new Set(["admin", "ops", "compliance"]);
     socket.on("notification:subscribe", (channels: NotificationChannel[]) => {
-      for (const channel of channels) {
+      const role = String((socket as any).userRole ?? "user");
+      const isStaff = STAFF_ROLES.has(role);
+      const allowed = (Array.isArray(channels) ? channels : []).filter(
+        (c) => !STAFF_ONLY_CHANNELS.includes(c) || isStaff
+      );
+      const denied = (Array.isArray(channels) ? channels : []).filter(
+        (c) => STAFF_ONLY_CHANNELS.includes(c) && !isStaff
+      );
+      for (const channel of allowed) {
         socket.join(`channel:${channel}`);
       }
-      socket.emit("notification:subscribed", { channels });
+      socket.emit("notification:subscribed", { channels: allowed, denied });
     });
 
     socket.on("notification:unsubscribe", (channels: NotificationChannel[]) => {

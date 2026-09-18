@@ -17,6 +17,8 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { customers } from "../../drizzle/schema";
+import { policyQuotes } from "../../drizzle/schema.additions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertClaimIncidentValid } from "../lib/policyLifecycle";
@@ -41,13 +43,17 @@ const J01Schema = z.object({
 });
 
 const J02Schema = z.object({
-  customerId: z.number().positive(),
-  policyType: z.string(),
-  sumInsured: z.number().positive(),
-  premiumAmount: z.number().positive(),
-  startDate: z.string(),
-  endDate: z.string(),
+  /** REQUIRED (H-wave 2026-02): the purchase binds to a real pending quote owned by the caller. */
+  quoteId: z.number().positive(),
+  /** DEPRECATED as trust inputs: customer/pricing are server-derived from the quote + session. */
+  customerId: z.number().positive().optional(),
+  policyType: z.string().optional(),
+  sumInsured: z.number().positive().optional(),
+  premiumAmount: z.number().positive().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
   paymentMethod: z.enum(["card", "bank_transfer", "ussd", "mobile_money"]).default("bank_transfer"),
+  paymentRef: z.string().max(128).optional(),
 });
 
 const J03Schema = z.object({
@@ -320,7 +326,41 @@ export const insuranceJourneyOrchestratorRouter = router({
   }),
 
   triggerJ02: protectedProcedure.input(J02Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", input, ctx.user.id);
+    const db = (await getDb())!;
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+    // H-wave 2026-02 (G2 residual): OWNERSHIP binding. The caller's customer
+    // is resolved from the authenticated session (keycloakSub) — never from
+    // client input — and the quote must belong to THAT customer.
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.keycloakSub, String(ctx.user.id)))
+      .limit(1);
+    if (!customer) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+    }
+    if (input.customerId != null && input.customerId !== customer.id) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "customerId does not match the authenticated account" });
+    }
+    const [quote] = await db
+      .select({ id: policyQuotes.id, customerId: policyQuotes.customerId, productId: policyQuotes.productId, durationMonths: policyQuotes.durationMonths })
+      .from(policyQuotes)
+      .where(eq(policyQuotes.id, input.quoteId))
+      .limit(1);
+    if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: `Quote ${input.quoteId} not found` });
+    if (quote.customerId !== customer.id) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Quote does not belong to the authenticated customer" });
+    }
+
+    const journeyInput = {
+      customerId: customer.id,
+      quoteId: quote.id,
+      productId: quote.productId ?? 0,
+      durationMonths: quote.durationMonths ?? 12,
+      paymentRef: input.paymentRef ?? `PAY-J02-${quote.id}-${Date.now().toString(36).toUpperCase()}`,
+    };
+    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", journeyInput, ctx.user.id);
     return { success: true, workflowId, runId, journeyId: "J02", message: "Policy purchase journey started" };
   }),
 

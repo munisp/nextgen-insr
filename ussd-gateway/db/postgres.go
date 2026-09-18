@@ -20,6 +20,12 @@ type PostgresStore struct {
 	db *sql.DB
 }
 
+// NewPostgresStoreFromDB wraps an EXISTING *sql.DB (used by the real-database
+// race tests — no mocking of the store itself).
+func NewPostgresStoreFromDB(db *sql.DB) *PostgresStore {
+	return &PostgresStore{db: db}
+}
+
 // NewPostgresStore opens a connection to PostgreSQL, configures the connection
 // pool, creates the required tables, and returns a ready-to-use PostgresStore.
 func NewPostgresStore(dsn string) (*PostgresStore, error) {
@@ -486,6 +492,87 @@ func (ps *PostgresStore) DeductAgentBalance(ctx context.Context, id string, amou
 		return 0, fmt.Errorf("postgres: deduct agent balance: %w", err)
 	}
 	return newBalance, nil
+}
+
+// ClaimFloatWithTransaction atomically (ONE sql transaction):
+//  1. claims the idempotency key (INSERT ... ON CONFLICT DO NOTHING), and
+//  2. only for the WINNER of that claim, deducts the agent's float balance.
+//
+// H-wave 2026-02 (F4 residual, double-float race): the previous flow deducted
+// FIRST and inserted the idempotent transaction SECOND, so duplicate confirms
+// inside the race window each deducted. Here a duplicate claim NEVER deducts.
+// On ErrInsufficientFloat the whole transaction rolls back — including the
+// idempotency claim — so a later retry with sufficient funds can succeed.
+// Returns (txn, duplicate, newBalance, error).
+func (ps *PostgresStore) ClaimFloatWithTransaction(ctx context.Context, txn *models.TransactionRecord, idempotencyKey string, agentID string, amount float64) (*models.TransactionRecord, bool, float64, error) {
+	if amount <= 0 {
+		return nil, false, 0, fmt.Errorf("deduction amount must be positive")
+	}
+	if txn.ID == "" {
+		txn.ID = generateID()
+	}
+	if txn.Reference == "" {
+		txn.Reference = "TXN-" + generateID()[:12]
+	}
+	if txn.Status == "" {
+		txn.Status = "pending"
+	}
+	txn.CreatedAt = time.Now().UTC()
+
+	tx, err := ps.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("postgres: begin float claim tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var id string
+	err = tx.QueryRowContext(ctx, `INSERT INTO transactions
+		(id, session_id, phone_number, type, product_id, amount, status, reference, created_at, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (idempotency_key) DO NOTHING
+		RETURNING id`,
+		txn.ID, txn.SessionID, txn.PhoneNumber, txn.Type,
+		txn.ProductID, txn.Amount, txn.Status, txn.Reference, txn.CreatedAt, idempotencyKey,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		// Duplicate claim — someone else (or an earlier confirm) owns this
+		// idempotency key. NO deduction. Return the existing transaction.
+		var existing models.TransactionRecord
+		row := tx.QueryRowContext(ctx,
+			`SELECT id, session_id, phone_number, type, product_id, amount, status, reference, created_at
+			 FROM transactions WHERE idempotency_key = $1`, idempotencyKey)
+		if serr := row.Scan(&existing.ID, &existing.SessionID, &existing.PhoneNumber, &existing.Type,
+			&existing.ProductID, &existing.Amount, &existing.Status, &existing.Reference, &existing.CreatedAt); serr != nil {
+			return nil, false, 0, fmt.Errorf("postgres: fetch idempotent float claim: %w", serr)
+		}
+		var balance float64
+		_ = tx.QueryRowContext(ctx, `SELECT float_balance FROM agent_accounts WHERE id = $1`, agentID).Scan(&balance)
+		if err := tx.Commit(); err != nil {
+			return nil, false, 0, fmt.Errorf("postgres: commit duplicate float claim: %w", err)
+		}
+		return &existing, true, balance, nil
+	}
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("postgres: claim float idempotency key: %w", err)
+	}
+
+	// Winner of the claim — deduct in the SAME transaction.
+	var newBalance float64
+	err = tx.QueryRowContext(ctx,
+		`UPDATE agent_accounts SET float_balance = float_balance - $1, updated_at = NOW()
+		 WHERE id = $2 AND float_balance >= $1
+		 RETURNING float_balance`, amount, agentID).Scan(&newBalance)
+	if err == sql.ErrNoRows {
+		return nil, false, 0, ErrInsufficientFloat // rolls back the claim too
+	}
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("postgres: deduct agent balance: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, 0, fmt.Errorf("postgres: commit float claim: %w", err)
+	}
+	return txn, false, newBalance, nil
 }
 
 // GetLatestPendingTransactionByPhone returns the most recent pending

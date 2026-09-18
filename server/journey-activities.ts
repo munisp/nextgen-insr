@@ -314,6 +314,12 @@ export async function validateInsuranceQuote(input: {
   const d = await db();
   const [quote] = await d.select().from(policyQuotes).where(eq(policyQuotes.id, input.quoteId)).limit(1);
   if (!quote) throw new Error(`Quote ${input.quoteId} not found`);
+  // H-wave 2026-02 (G2 residual): OWNERSHIP binding — a quote may only be
+  // validated/consumed by the customer it was issued to. Cross-customer
+  // quote use is refused.
+  if (quote.customerId !== input.customerId) {
+    throw new Error(`QUOTE_OWNERSHIP: quote ${input.quoteId} does not belong to customer ${input.customerId}`);
+  }
   if (quote.status !== "pending") throw new Error(`Quote ${input.quoteId} is no longer pending (status: ${quote.status})`);
   if (quote.validUntil && new Date(quote.validUntil) < new Date()) throw new Error(`Quote ${input.quoteId} has expired`);
   // Mismatch is only checked when the caller ASSERTED a premium (> 0); the
@@ -486,7 +492,14 @@ export async function createInsurancePolicy(input: {
     const [existingPolicy] = await d.select().from(policies)
       .where(sql`${policies.metadata}::jsonb ->> 'quoteId' = ${String(input.quoteId)}`)
       .limit(1).catch(() => [null]);
-    if (existingPolicy) return { policyId: existingPolicy.id, policyNumber: existingPolicy.policyNumber ?? `POL-${existingPolicy.id}` };
+    // H-wave 2026-02: the replay path must not leak another customer's
+    // policy — replay only for the SAME customer.
+    if (existingPolicy) {
+      if (existingPolicy.customerId !== input.customerId) {
+        throw new Error(`QUOTE_OWNERSHIP: quote ${input.quoteId} was already consumed by a different customer`);
+      }
+      return { policyId: existingPolicy.id, policyNumber: existingPolicy.policyNumber ?? `POL-${existingPolicy.id}` };
+    }
   }
 
   const [quote] = input.quoteId != null
@@ -506,29 +519,45 @@ export async function createInsurancePolicy(input: {
   if (!input.endDate) endDate.setMonth(endDate.getMonth() + (input.durationMonths ?? 12));
   const paymentRef = input.paymentRef ?? `PAY-${policyNumber}`;
 
-  const [policy] = await d.insert(policies).values({
-    policyNumber,
-    customerId: input.customerId,
-    agentId: input.agentId ?? null,
-    brokerId: input.brokerId ?? null,
-    productId,
-    coverageType,
-    sumInsured: String(input.sumInsured),
-    annualPremium: String(input.premiumAmount),
-    startDate,
-    endDate,
-    status: "active",
-    metadata: { quoteId: input.quoteId ?? null, beneficiaryName: input.beneficiaryName ?? null, paymentRef },
-  }).returning();
-
-  // Mark quote as converted
-  if (input.quoteId != null) {
-    await d.update(policyQuotes).set({
-      status: "converted",
-      metadata: sql`jsonb_set(COALESCE(${policyQuotes.metadata}::jsonb, '{}'::jsonb), '{convertedPolicyId}', to_jsonb(${policy.id}::int))`,
-      updatedAt: new Date(),
-    }).where(eq(policyQuotes.id, input.quoteId)).catch(() => {});
-  }
+  // H-wave 2026-02 (G2 residual): validate→consume is ATOMIC. The quote is
+  // claimed with a guarded UPDATE (pending → converted) in the SAME
+  // transaction as the policy insert — a concurrent or duplicate use gets
+  // zero rows and the whole purchase fails with QUOTE_CONSUMED (the J02 saga
+  // then refunds any collected premium). The old code read-checked in
+  // validateInsuranceQuote and flipped status afterwards with .catch(() => {})
+  // — a classic TOCTOU double-spend of one quote.
+  const policy = await d.transaction(async (tx) => {
+    if (input.quoteId != null) {
+      const claimed = await tx
+        .update(policyQuotes)
+        .set({ status: "converted", updatedAt: new Date() })
+        .where(and(eq(policyQuotes.id, input.quoteId), eq(policyQuotes.status, "pending")))
+        .returning({ id: policyQuotes.id });
+      if (!claimed[0]) {
+        throw new Error(`QUOTE_CONSUMED: quote ${input.quoteId} is no longer pending — concurrent or duplicate use rejected`);
+      }
+    }
+    const [p] = await tx.insert(policies).values({
+      policyNumber,
+      customerId: input.customerId,
+      agentId: input.agentId ?? null,
+      brokerId: input.brokerId ?? null,
+      productId,
+      coverageType,
+      sumInsured: String(input.sumInsured),
+      annualPremium: String(input.premiumAmount),
+      startDate,
+      endDate,
+      status: "active",
+      metadata: { quoteId: input.quoteId ?? null, beneficiaryName: input.beneficiaryName ?? null, paymentRef },
+    }).returning();
+    if (input.quoteId != null) {
+      await tx.update(policyQuotes).set({
+        metadata: sql`jsonb_set(COALESCE(${policyQuotes.metadata}::jsonb, '{}'::jsonb), '{convertedPolicyId}', to_jsonb(${p.id}::int))`,
+      }).where(eq(policyQuotes.id, input.quoteId));
+    }
+    return p;
+  });
 
   await emit("policy-events", { eventType: "policy.created", policyId: policy.id, policyNumber, customerId: input.customerId });
   await audit("POLICY_CREATED", "policies", String(policy.id), { policyNumber, customerId: input.customerId, premiumAmount: input.premiumAmount });

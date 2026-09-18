@@ -5,7 +5,7 @@
 import crypto from "crypto";
 
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, sql } from "drizzle-orm";
+import { eq, desc, and, count, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { referrals, agents, loyaltyHistory, transactions } from "../../drizzle/schema";
@@ -159,6 +159,53 @@ export const referralsRouter = router({
             code: "NOT_FOUND",
             message: "Referee agent not found",
           });
+
+        // H-wave 2026-02 (F5 residual, ports insureportal AB-9 semantics):
+        // SELF-REFERRAL guard — the referee must not be the referrer; an
+        // agent applying their own code would pay the bonus to themselves.
+        if (referee.id === referral.referrerAgentId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Self-referral is not allowed" });
+        }
+
+        // Identity dedup — same phone / email / device terminal as the
+        // referrer is a self-signup farm attempt, not a real referral.
+        const [referrerAgent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.id, referral.referrerAgentId))
+          .limit(1);
+        if (referrerAgent) {
+          const samePhone = referee.phone && referee.phone === referrerAgent.phone;
+          const sameEmail = referee.email && referrerAgent.email && referee.email === referrerAgent.email;
+          const sameDevice = referee.terminalSerial && referrerAgent.terminalSerial && referee.terminalSerial === referrerAgent.terminalSerial;
+          if (samePhone || sameEmail || sameDevice) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Referee shares identity with referrer" });
+          }
+        }
+
+        // One-referral-per-identity — this referee's phone must not already
+        // be tied to another activated/rewarded referral under a different
+        // agent account.
+        const samePhoneAgents = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.phone, referee.phone));
+        const identityIds = samePhoneAgents.map(a => a.id).filter(id => id !== referee.id);
+        if (identityIds.length > 0) {
+          const prior = await db
+            .select({ id: referrals.id })
+            .from(referrals)
+            .where(
+              and(
+                inArray(referrals.refereeAgentId, identityIds),
+                inArray(referrals.status, ["activated", "rewarded"])
+              )
+            )
+            .limit(1);
+          if (prior.length > 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Referee identity already referred" });
+          }
+        }
 
         // Link the referee to the referral
         await db
