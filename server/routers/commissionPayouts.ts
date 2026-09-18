@@ -381,7 +381,7 @@ export const commissionPayoutsRouter = router({
         // the DB transaction below enforces single-effect even when Redis is
         // down and this lock fails open).
         const { acquireLock, releaseLock } = await import("../lib/redisClient");
-        const { tbCreateTransfer } = await import("../tbClient");
+        const { tbCreateTransfer, withTbCompensation } = await import("../tbClient");
         const lockKey = `commission-payout:${input.id}`;
         const locked = await acquireLock(lockKey, 30_000);
         if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payout already being processed" });
@@ -389,11 +389,13 @@ export const commissionPayoutsRouter = router({
         let updated: typeof payout;
         try {
           // F-02: deterministic ledger reference (no Date.now()) so a worker
-          // retry after a timeout re-submits the SAME ref and the sidecar can
-          // deduplicate it instead of double-posting.
+          // retry after a timeout re-submits the SAME ref. NOTE: the tb-sidecar
+          // is a TRANSPARENT proxy and does NOT deduplicate — retry safety is
+          // established by tbClient's deterministic transfer id + durable
+          // ref registry (see server/tbClient.ts), not by the sidecar.
           const payRef = input.nubanRef ?? `COMM-PAYOUT-${input.id}`;
           // TigerBeetle: commissions-pool → agent-commission (COMMISSIONS ledger)
-          const tbResult = await tbCreateTransfer({
+          const tbReq = {
             debitAccountId: "commissions-pool",
             creditAccountId: `agent-commission-${payout.agentId}`,
             amount: Math.round(Number(payout.amount) * 100),
@@ -402,7 +404,8 @@ export const commissionPayoutsRouter = router({
             ref: payRef,
             txType: "commission_payout",
             agentId: String(payout.agentId),
-          });
+          };
+          const tbResult = await tbCreateTransfer(tbReq);
 
           // F-02: status transition + balance deduction commit or roll back as
           // ONE unit. Previously these were two independent writes: a crash
@@ -410,7 +413,11 @@ export const commissionPayoutsRouter = router({
           // payout stayed "approved", and the status-based idempotency check
           // then allowed a retry to deduct AGAIN (double payout).
           type ProcessOutcome = { replay: true } | { replay: false; row: typeof payout };
-          const outcome = await db.transaction(async (tx): Promise<ProcessOutcome> => {
+          // PAY-1 (orphan transfer): the TB leg above is committed. If the PG
+          // transaction fails (e.g. insufficient commission balance at
+          // processing time), post a compensating reversal — previously the TB
+          // double-entry was left posted with no PG record and no reversal.
+          const outcome = await withTbCompensation("commissionPayouts.processPayout", tbReq, () => db.transaction(async (tx): Promise<ProcessOutcome> => {
             // Atomic claim: exactly one concurrent processor transitions
             // approved → completed. Everyone else gets zero rows and replays.
             const claimed = await tx
@@ -450,7 +457,7 @@ export const commissionPayoutsRouter = router({
               });
             }
             return { replay: false, row: claimed[0] };
-          });
+          }));
 
           if (outcome.replay) {
             const [winner] = await db

@@ -10,6 +10,8 @@
  * TigerBeetle account IDs use opaque UUIDs, never card numbers.
  */
 // TypeScript enabled — Sprint 96 security audit
+import crypto from "crypto";
+
 import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 /**
@@ -85,6 +87,116 @@ export class TBLedgerUnavailableError extends Error {
 }
 
 /**
+ * Thrown when a transfer `ref` was already committed/indeterminate with a
+ * DIFFERENT payload (accounts/amount/ledger/code). This is a client bug or a
+ * replay attack — it must surface loudly, never silently re-execute.
+ */
+export class TBIdempotencyConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TBIdempotencyConflictError";
+  }
+}
+
+// ─── Ref-dedup registry (F-04 / PAY-3) ───────────────────────────────────────
+// The tb-sidecar is a TRANSPARENT proxy to the upstream TigerBeetle gateway
+// (tb-sidecar/main.go: "Everything else is a transparent proxy to the
+// upstream") — it performs NO ref/id deduplication itself. Retry safety after
+// the 2s timeout is therefore established HERE, in the client:
+//
+//   1. Every transfer with a `ref` gets a DETERMINISTIC transfer id derived
+//      from the ref + full payload. TigerBeetle deduplicates re-created
+//      transfers by id (exists semantics), so a retry-after-timeout reposts
+//      the SAME id and cannot double-post at the upstream.
+//   2. A durable PostgreSQL registry (tb_transfer_registry) records
+//      ref → (payloadHash, transferId, status, response) so a retry with the
+//      same ref + payload replays the recorded outcome, and the same ref with
+//      a different payload is rejected with TBIdempotencyConflictError.
+//
+// The registry is best-effort when the DB handle is unavailable (unit paths):
+// the deterministic id still provides upstream-level dedup.
+
+/** Canonical payload fingerprint bound to a transfer ref. */
+export function tbPayloadHash(req: TBTransferRequest): string {
+  return crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        debitAccountId: req.debitAccountId,
+        creditAccountId: req.creditAccountId,
+        amount: req.amount,
+        ledger: req.ledger ?? null,
+        code: req.code ?? null,
+        ref: req.ref ?? null,
+      })
+    )
+    .digest("hex");
+}
+
+/** Deterministic transfer id for a ref-bound request (upstream dedup key). */
+export function tbDeterministicTransferId(req: TBTransferRequest): string {
+  return `tb-${tbPayloadHash(req).slice(0, 48)}`;
+}
+
+interface RegistryRow {
+  ref: string;
+  payloadHash: string;
+  transferId: string | null;
+  status: string;
+  response: string | null;
+}
+
+async function registryGet(ref: string): Promise<RegistryRow | null> {
+  try {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) return null;
+    const { tbTransferRegistry } = await import("../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db
+      .select()
+      .from(tbTransferRegistry)
+      .where(eq(tbTransferRegistry.ref, ref))
+      .limit(1);
+    return (row as RegistryRow | undefined) ?? null;
+  } catch (err) {
+    logger.warn(`[tbClient] registry lookup failed (ref=${ref}): ${String(err)}`);
+    return null;
+  }
+}
+
+async function registryReserve(ref: string, payloadHash: string, transferId: string): Promise<void> {
+  try {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) return;
+    const { tbTransferRegistry } = await import("../drizzle/schema");
+    await db
+      .insert(tbTransferRegistry)
+      .values({ ref, payloadHash, transferId, status: "indeterminate" })
+      .onConflictDoNothing({ target: tbTransferRegistry.ref });
+  } catch (err) {
+    logger.warn(`[tbClient] registry reserve failed (ref=${ref}): ${String(err)}`);
+  }
+}
+
+async function registryMarkCommitted(ref: string, response: TBTransferResponse): Promise<void> {
+  try {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (!db) return;
+    const { tbTransferRegistry } = await import("../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+    await db
+      .update(tbTransferRegistry)
+      .set({ status: "committed", response: JSON.stringify(response), updatedAt: new Date() })
+      .where(eq(tbTransferRegistry.ref, ref));
+  } catch (err) {
+    logger.warn(`[tbClient] registry commit-mark failed (ref=${ref}): ${String(err)}`);
+  }
+}
+
+/**
  * Submit a double-entry transfer to the local TB sidecar.
  *
  * FAIL-CLOSED: throws TBLedgerUnavailableError if the sidecar is
@@ -95,6 +207,35 @@ export class TBLedgerUnavailableError extends Error {
 export async function tbCreateTransfer(
   req: TBTransferRequest
 ): Promise<TBTransferResponse> {
+  // ── Retry-safety (F-04): deterministic id + durable ref registry ────────
+  // The sidecar does NOT dedup (transparent proxy). A retry after a timeout
+  // would double-post without these guards.
+  if (req.ref) {
+    const payloadHash = tbPayloadHash(req);
+    if (!req.id) req.id = tbDeterministicTransferId(req);
+
+    const prior = await registryGet(req.ref);
+    if (prior) {
+      if (prior.payloadHash !== payloadHash) {
+        logger.error(`[tbClient] IDEMPOTENCY CONFLICT: ref=${req.ref} reused with a different payload`);
+        throw new TBIdempotencyConflictError(
+          `Transfer ref '${req.ref}' was already used with a different payload (accounts/amount). Refusing to re-execute.`
+        );
+      }
+      if (prior.status === "committed" && prior.response) {
+        // Idempotent replay — the original outcome, no second posting.
+        return JSON.parse(prior.response) as TBTransferResponse;
+      }
+      // status 'indeterminate': a previous attempt timed out. Repost with the
+      // SAME deterministic id — the upstream ledger deduplicates by id, so
+      // this converges instead of double-posting.
+      req.id = prior.transferId ?? req.id;
+      logger.warn(`[tbClient] retrying indeterminate transfer ref=${req.ref} with same deterministic id=${req.id}`);
+    } else {
+      await registryReserve(req.ref, payloadHash, req.id);
+    }
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
 
@@ -111,9 +252,14 @@ export async function tbCreateTransfer(
     const reason = err instanceof Error && err.name === "AbortError"
       ? `timed out after ${TB_TIMEOUT_MS}ms`
       : `unreachable (${String(err)})`;
-    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer aborted — sidecar ${reason}; ref=${req.ref ?? "n/a"}`);
+    // HONEST semantics (F-04): on timeout/unreachable the upstream MAY have
+    // committed — we cannot know. The registry row stays 'indeterminate' so a
+    // retry with the same ref+payload reposts the same deterministic id
+    // (upstream id-dedup makes that safe); a different payload is rejected.
+    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer aborted — sidecar ${reason}; ref=${req.ref ?? "n/a"}; commit state UNKNOWN`);
     throw new TBLedgerUnavailableError(
-      `TigerBeetle ledger unavailable: sidecar ${reason}. Transfer NOT committed (ref=${req.ref ?? "n/a"}).`,
+      `TigerBeetle ledger unavailable: sidecar ${reason}. Commit state UNKNOWN (ref=${req.ref ?? "n/a"}) — ` +
+      `retry with the SAME ref and payload is safe (deterministic-id dedup); never retry with a different payload.`,
       err
     );
   }
@@ -127,7 +273,81 @@ export async function tbCreateTransfer(
     );
   }
 
-  return (await res.json()) as TBTransferResponse;
+  const out = (await res.json()) as TBTransferResponse;
+  if (req.ref) await registryMarkCommitted(req.ref, out);
+  return out;
+}
+
+/**
+ * Post a COMPENSATING REVERSAL for a previously committed transfer (saga
+ * compensation, PAY-1): swaps debit/credit with ref `${original.ref}-REV`.
+ *
+ * Loud by contract: on success logs an ERROR (a compensation is always an
+ * incident); on failure throws TBLedgerUnavailableError after logging a
+ * CRITICAL unreconciled-orphan alert so operators/page-duty must intervene.
+ * The reversal itself is ref-deduped, so retrying the compensation is safe.
+ */
+export async function tbReverseTransfer(
+  original: TBTransferRequest,
+  context: string
+): Promise<TBTransferResponse> {
+  if (!original.ref) {
+    throw new TBLedgerUnavailableError(
+      `Cannot compensate ${context}: original transfer has no ref — manual reconciliation required.`
+    );
+  }
+  const reversal: TBTransferRequest = {
+    debitAccountId: original.creditAccountId,
+    creditAccountId: original.debitAccountId,
+    amount: original.amount,
+    ledger: original.ledger,
+    code: original.code,
+    ref: `${original.ref}-REV`,
+    txType: `${original.txType ?? "transfer"}_reversal`,
+    agentId: original.agentId,
+  };
+  try {
+    const out = await tbCreateTransfer(reversal);
+    logger.error(
+      `[tbClient] COMPENSATION posted for ${context}: reversal ref=${reversal.ref} amount=${original.amount} ` +
+      `(original ref=${original.ref}). Root cause must be investigated.`
+    );
+    return out;
+  } catch (err) {
+    logger.error(
+      `[tbClient] CRITICAL: UNRECONCILED ORPHAN TRANSFER — compensation FAILED for ${context}; ` +
+      `original ref=${original.ref} amount=${original.amount} debit=${original.debitAccountId} credit=${original.creditAccountId}. ` +
+      `Manual reconciliation required. Cause: ${err instanceof Error ? err.message : String(err)}`
+    );
+    throw err instanceof Error ? err : new TBLedgerUnavailableError(String(err));
+  }
+}
+
+/**
+ * Saga helper (PAY-1): run `pgEffect` after a TB transfer has committed; if
+ * the PG effect throws, post the compensating reversal and rethrow the
+ * original error annotated with the compensation outcome. Never swallow.
+ */
+export async function withTbCompensation<T>(
+  context: string,
+  original: TBTransferRequest,
+  pgEffect: () => Promise<T>
+): Promise<T> {
+  try {
+    return await pgEffect();
+  } catch (err) {
+    let compensated: boolean;
+    try {
+      await tbReverseTransfer(original, context);
+      compensated = true;
+    } catch {
+      compensated = false;
+    }
+    if (err instanceof Error) {
+      err.message = `${err.message} [TB compensation ${compensated ? "posted" : "FAILED — unreconciled orphan"}: ${original.ref}]`;
+    }
+    throw err;
+  }
 }
 
 /**

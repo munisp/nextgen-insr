@@ -2,7 +2,24 @@
  * Mojaloop client with KYC-gated transfers, idempotency, and mobile money.
  */
 
+import { createHash } from 'crypto';
+
 const KYC_TRANSFER_LIMITS: Record<number, number> = { 0: 5000, 1: 50000, 2: 500000, 3: 10000000 };
+
+const MOJALOOP_TIMEOUT_MS = 15_000;
+
+/**
+ * PAY-9: an idempotency key must bind the FULL payment intent, not just the
+ * policy/claim id — `prem-${policyId}` reused across a different amount was
+ * either rejected by the switch (lost legitimate payment) or gave no replay
+ * protection. The amount+currency hash makes key reuse across amounts
+ * impossible; an optional explicit attempt nonce allows a deliberate retry
+ * of a legitimately new payment for the same policy+amount.
+ */
+export function paymentScopedKey(prefix: string, entityId: string, amount: string, currency: string, attemptNonce?: string): string {
+  const h = createHash('sha256').update(`${entityId}|${amount}|${currency}|${attemptNonce ?? ''}`).digest('hex').slice(0, 16);
+  return `${prefix}-${entityId}-${h}`;
+}
 
 export class MojaloopClient {
   private baseUrl: string;
@@ -43,16 +60,25 @@ export class MojaloopClient {
     const resp = await fetch(`${this.baseUrl}/transfers`, {
       method: 'POST', headers,
       body: JSON.stringify({ transferId, payerFsp, payeeFsp, amount: { amount, currency }, ilpPacket: '', condition: '', expiration: '' }),
+      // PAY-9/finding-21: bounded wait — a hung switch connection no longer
+      // hangs the caller forever; the timeout throws and the caller retries
+      // with the SAME idempotency key (safe: the key binds amount+currency).
+      signal: AbortSignal.timeout(MOJALOOP_TIMEOUT_MS),
     });
     if (!resp.ok) throw new Error(`Transfer failed (${resp.status}): ${await resp.text()}`);
     return resp.json() as Promise<Record<string, unknown>>;
   }
 
-  async collectPremiumViaMobileMoney(customerPhone: string, amount: string, currency: string, kycLevel: number, policyId: string): Promise<Record<string, unknown>> {
-    return this.executeTransfer(`prem-${policyId}-${Date.now()}`, 'mobile-money-provider', this.fspId, amount, currency, kycLevel, `prem-${policyId}`);
+  async collectPremiumViaMobileMoney(customerPhone: string, amount: string, currency: string, kycLevel: number, policyId: string, attemptNonce?: string): Promise<Record<string, unknown>> {
+    const key = paymentScopedKey('prem', policyId, amount, currency, attemptNonce);
+    return this.executeTransfer(`${key}-${Date.now()}`, 'mobile-money-provider', this.fspId, amount, currency, kycLevel, key);
   }
 
-  async payoutClaim(customerPhone: string, amount: string, currency: string, claimId: string): Promise<Record<string, unknown>> {
-    return this.executeTransfer(`payout-${claimId}-${Date.now()}`, this.fspId, 'mobile-money-provider', amount, currency, 3, `payout-${claimId}`);
+  async payoutClaim(customerPhone: string, amount: string, currency: string, claimId: string, attemptNonce?: string): Promise<Record<string, unknown>> {
+    // Amount-bound key: a legitimate partial/second payout for the same
+    // claim with a different amount gets a DIFFERENT key and is no longer
+    // blocked; an exact retry of the same payout replays safely.
+    const key = paymentScopedKey('payout', claimId, amount, currency, attemptNonce);
+    return this.executeTransfer(`${key}-${Date.now()}`, this.fspId, 'mobile-money-provider', amount, currency, 3, key);
   }
 }

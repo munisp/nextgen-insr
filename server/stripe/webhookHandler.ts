@@ -476,6 +476,97 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         break;
       }
 
+      // ─── PAY-5: Charge refunded — REAL ledger reversal ────────────────
+      // Previously unhandled: a Stripe refund never reversed the platform
+      // ledger, so books stayed credited for money that left. Now posts a
+      // compensating transfer (platform pool → stripe-refunds suspense) keyed
+      // by a deterministic ref; the webhook_events dedupe + tbClient ref
+      // registry make redelivery safe. Throws on failure so Stripe retries.
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const refundedKobo = charge.amount_refunded ?? 0;
+        if (refundedKobo <= 0) break;
+        const { tbCreateTransfer } = await import("../tbClient");
+        const reversalRef = `stripe-refund-${charge.id}`;
+        const tbResult = await tbCreateTransfer({
+          debitAccountId: "stripe-settlement-pool",
+          creditAccountId: "stripe-refunds-suspense",
+          amount: refundedKobo,
+          ledger: 1,
+          code: 910,
+          ref: reversalRef,
+          txType: "stripe_refund_reversal",
+        });
+        await db.insert(billingAuditLog).values({
+          tenantId: parseInt((charge.metadata as any)?.tenant_id || "0"),
+          userId: 0,
+          userName: "stripe_webhook",
+          action: "charge_refunded",
+          resourceType: "charge",
+          resourceId: charge.id,
+          afterState: {
+            amountRefunded: refundedKobo,
+            currency: charge.currency,
+            tbTransferId: tbResult?.id ?? null,
+          },
+          metadata: { eventId: event.id, source: "stripe_webhook" },
+        });
+        logger.warn({ chargeId: charge.id, refundedKobo, tbTransferId: tbResult?.id }, "[Stripe Webhook] Charge refunded — ledger reversal posted");
+        await publishBillingEvent("billing.charge.refunded", {
+          chargeId: charge.id,
+          amount: refundedKobo,
+          tbTransferId: tbResult?.id ?? null,
+        });
+        break;
+      }
+
+      // ─── PAY-5: Dispute closed — a LOST dispute debits the platform ────
+      // Previously only dispute.created was logged; a lost chargeback never
+      // moved money in the ledger. charge.dispute.closed with status 'lost'
+      // now posts the chargeback reversal; 'won' only records the outcome.
+      case "charge.dispute.closed": {
+        const dispute = event.data.object as any;
+        const lost = dispute.status === "lost";
+        logger.warn({ disputeId: dispute.id, status: dispute.status }, "[Stripe Webhook] Dispute closed");
+        let tbTransferId: string | null = null;
+        if (lost) {
+          const amountKobo = Number(dispute.amount ?? 0);
+          if (amountKobo > 0) {
+            const { tbCreateTransfer } = await import("../tbClient");
+            const tbResult = await tbCreateTransfer({
+              debitAccountId: "stripe-settlement-pool",
+              creditAccountId: "stripe-chargebacks-suspense",
+              amount: amountKobo,
+              ledger: 1,
+              code: 920,
+              ref: `stripe-dispute-lost-${dispute.id}`,
+              txType: "stripe_chargeback_reversal",
+            });
+            tbTransferId = tbResult?.id ?? null;
+          }
+        }
+        await db.insert(billingAuditLog).values({
+          tenantId: parseInt(dispute.metadata?.tenant_id || "0"),
+          userId: 0,
+          userName: "stripe_webhook",
+          action: lost ? "dispute_lost" : "dispute_closed",
+          resourceType: "dispute",
+          resourceId: dispute.id,
+          afterState: {
+            status: dispute.status,
+            amount: dispute.amount,
+            tbTransferId,
+          },
+          metadata: { eventId: event.id, source: "stripe_webhook" },
+        });
+        await publishBillingEvent(lost ? "billing.dispute.lost" : "billing.dispute.closed", {
+          disputeId: dispute.id,
+          amount: dispute.amount,
+          tbTransferId,
+        });
+        break;
+      }
+
       default:
         logger.info({ eventType: event.type }, "[Stripe Webhook] Unhandled event type");
     }

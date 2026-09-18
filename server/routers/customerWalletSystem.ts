@@ -109,26 +109,83 @@ export const customerWalletSystemRouter = router({
         });
       }
     }),
+  /**
+   * PAY-4: wallet top-up MUST NOT mint credit without a verified rail leg.
+   * Previously every call inserted a random-ref "Cash In"/success row — every
+   * retry or double-click double-credited the wallet with no payment behind
+   * it. Now:
+   *   - `idempotencyKey` binds one durable credit to one logical request
+   *     (transactions.idempotencyKey is UNIQUE; replay returns the winner,
+   *     key reuse with a different payload is a CONFLICT).
+   *   - `railReference` must point at an ALREADY-SETTLED inbound rail record
+   *     in `transactions` (status 'success', matching amount) written by the
+   *     payment-rail webhook/reconciliation path. No verified rail leg →
+   *     PRECONDITION_FAILED (fail-closed). A rail reference can be consumed
+   *     exactly once (DB unique index wallet_rail_reference_unique, 0061).
+   */
   topUp: protectedProcedure
     .input(
       z.object({
         amount: z.number().positive(),
         source: z.string().min(1),
+        railReference: z.string().min(8).max(64),
+        idempotencyKey: z.string().min(8).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
         const { db, customer } = await resolveSessionCustomer(ctx.user.id);
+
+        // Idempotent replay / conflict on the client key.
+        const [prior] = await db
+          .select()
+          .from(transactions)
+          .where(eq(transactions.idempotencyKey, input.idempotencyKey))
+          .limit(1);
+        if (prior) {
+          const prevMeta = (prior.metadata ?? {}) as { railReference?: string };
+          if (Number(prior.amount) !== input.amount || prevMeta.railReference !== input.railReference) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Idempotency key was already used with a different amount or rail reference. Refusing to re-execute.",
+            });
+          }
+          return { success: true, idempotent: true, transactionId: prior.id, amount: input.amount };
+        }
+
+        // Verify the rail leg: a settled inbound record with this reference
+        // and the SAME amount must already exist (written by the rail's own
+        // webhook/settlement path — never by this wallet router).
+        const [rail] = await db
+          .select()
+          .from(transactions)
+          .where(eq(transactions.ref, input.railReference))
+          .limit(1);
+        if (!rail || rail.status !== "success") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Rail reference '${input.railReference}' is not a verified settled payment. Wallet credit refused (fail-closed).`,
+          });
+        }
+        if (Number(rail.amount) !== input.amount) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Rail reference amount (₦${rail.amount}) does not match requested top-up (₦${input.amount}). Refused.`,
+          });
+        }
+
         const [tx] = await db
           .insert(transactions)
           .values({
-            ref: `TOP-${crypto.randomUUID().replace(/-/g, "").slice(0, 28)}`,
+            ref: `WTOP-${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`,
+            idempotencyKey: input.idempotencyKey,
             agentId: customer.id,
             customerName: `${customer.firstName} ${customer.lastName}`.trim() || null,
             amount: String(input.amount),
             type: "Cash In",
             status: "success",
             channel: "App",
+            metadata: { railReference: input.railReference, source: input.source },
           })
           .returning();
         await db.insert(auditLog).values({
@@ -142,9 +199,22 @@ export const customerWalletSystemRouter = router({
             source: input.source,
           },
         });
-        return { success: true, transactionId: tx.id, amount: input.amount };
+        return { success: true, idempotent: false, transactionId: tx.id, amount: input.amount };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        // DB-enforced single-consumption of a rail reference / idempotency
+        // key (unique indexes) — a 23505 here means a concurrent or repeated
+        // attempt to credit from the same rail leg.
+        let e: unknown = error;
+        while (typeof e === "object" && e !== null) {
+          if ((e as { code?: string }).code === "23505") {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Rail reference or idempotency key already consumed by a prior wallet top-up. Refusing duplicate credit.",
+            });
+          }
+          e = (e as { cause?: unknown }).cause;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message:

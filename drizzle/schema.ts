@@ -5500,3 +5500,56 @@ export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSel
 // (insurance_categories, premiums, claims_payments, ...) which broke seeding
 // against real Postgres. No name collisions with this file (verified).
 export * from "./schema.additions";
+
+
+// ─── Audit wave F1 (payments) — append-only additions ────────────────────────
+
+// PAY-3: durable idempotency registry for TigerBeetle transfers. The
+// tb-sidecar is a transparent proxy (no dedup), so retry-after-timeout safety
+// is established client-side: ref → payloadHash + deterministic transferId +
+// outcome. See server/tbClient.ts.
+export const tbTransferRegistry = pgTable(
+  "tb_transfer_registry",
+  {
+    ref: varchar("ref", { length: 128 }).primaryKey(),
+    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+    transferId: varchar("transferId", { length: 128 }),
+    // indeterminate = attempt timed out (commit state unknown);
+    // committed = upstream confirmed.
+    status: varchar("status", { length: 16 }).default("indeterminate").notNull(),
+    response: text("response"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    statusIdx: index("tbreg_status_idx").on(t.status),
+  })
+);
+export type TbTransferRegistryRow = typeof tbTransferRegistry.$inferSelect;
+
+// PAY-6: real reconciliation findings. runReconciliation writes one row per
+// detected divergence; resolveDiscrepancy performs a real status transition.
+export const paymentDiscrepancies = pgTable(
+  "payment_discrepancies",
+  {
+    id: serial("id").primaryKey(),
+    runId: varchar("runId", { length: 64 }).notNull(),
+    kind: varchar("kind", { length: 64 }).notNull(),
+    ref: varchar("ref", { length: 128 }),
+    agentId: integer("agentId"),
+    expectedAmount: numeric("expectedAmount", { precision: 18, scale: 2 }),
+    actualAmount: numeric("actualAmount", { precision: 18, scale: 2 }),
+    detail: text("detail"),
+    status: varchar("status", { length: 16 }).default("open").notNull(),
+    resolvedBy: varchar("resolvedBy", { length: 128 }),
+    resolvedAt: timestamp("resolvedAt"),
+    resolutionNote: text("resolutionNote"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    runIdx: index("pdisc_run_idx").on(t.runId),
+    statusIdx: index("pdisc_status_idx").on(t.status),
+    refIdx: index("pdisc_ref_idx").on(t.ref),
+  })
+);
+export type PaymentDiscrepancy = typeof paymentDiscrepancies.$inferSelect;
