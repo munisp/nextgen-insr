@@ -24,7 +24,7 @@ import { eq, sql } from "drizzle-orm";
 import { readFileSync } from "fs";
 import path from "path";
 import { getDb } from "../../server/db";
-import { policies, policyLifecycleStates } from "../../drizzle/schema";
+import { customers, policies, policyLifecycleStates } from "../../drizzle/schema";
 import { promotions, couponRedemptions } from "../../drizzle/insurance-extended-schema";
 import { runPolicyLifecycleSweep } from "../../server/cron/policyLifecycleSweep";
 import {
@@ -126,11 +126,34 @@ describe("H-wave fixes (integration, real DB)", () => {
       usageLimit: null,
       perCustomerLimit: 1,
     });
+    // 2026-02 (H2 honest-contract update): redeemCoupon now derives the
+    // customer from the AUTHENTICATED SESSION (identity-spoofing fix) — the
+    // client-supplied customerId fixture (777001) would be FORBIDDEN. Seed a
+    // real customer bound to regularUser's keycloakSub and omit customerId;
+    // the race invariant (exactly perCustomerLimit succeeds) is unchanged.
+    const db0 = (await getDb())!;
+    let [sessionCustomer] = await db0
+      .select()
+      .from(customers)
+      .where(eq(customers.keycloakSub, String(regularUser.id)))
+      .limit(1);
+    if (!sessionCustomer) {
+      [sessionCustomer] = await db0
+        .insert(customers)
+        .values({
+          firstName: "HW", lastName: "Race",
+          phone: `+234890${Date.now().toString(36).slice(-6)}`.slice(0, 15),
+          status: "active",
+          keycloakSub: String(regularUser.id),
+        } as typeof customers.$inferInsert)
+        .returning();
+    }
+    expect(sessionCustomer).toBeTruthy();
     const caller = callerFor(regularUser);
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
         caller.promotions
-          .redeemCoupon({ code: promo.code, customerId: 777001 })
+          .redeemCoupon({ code: promo.code })
           .then(r => ({ ok: true as const, r }))
           .catch(e => ({ ok: false as const, e }))
       )
@@ -191,8 +214,12 @@ describe("H-wave fixes (integration, real DB)", () => {
 
   // ── F5: unknown / inactive codes fail honestly ────────────────────────────
   it("unknown coupon code → NOT_FOUND (no silent increment)", async () => {
+    // 2026-02 (H2 honest-contract update): a regular user passing an
+    // arbitrary customerId is now FORBIDDEN before the code lookup (session-
+    // derived identity). Admin on-behalf redemption reaches the code lookup,
+    // so the NOT_FOUND contract is exercised through the admin path.
     await expectTrpcError(
-      callerFor(regularUser).promotions.redeemCoupon({
+      callerFor(adminUser).promotions.redeemCoupon({
         code: "HWAVE-NOPE",
         customerId: 1,
       }),
