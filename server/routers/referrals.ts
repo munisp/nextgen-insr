@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { referrals, agents, loyaltyHistory, transactions } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 
@@ -496,18 +496,72 @@ export const referralsRouter = router({
   }),
 
   // ── markRewarded ──────────────────────────────────────────────────────────────
+  // I-wave 2026-02 (AB-11): STAFF/ADMIN ONLY, and the status flip is COUPLED
+  // to the actual bonus award in one transaction — the old procedure let any
+  // authenticated user flip ANY referral to "rewarded" with no payment and
+  // no authz (both a fraud enabler and an accounting lie).
   markRewarded: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        if (ctx.user?.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only staff can mark a referral rewarded" });
+        }
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const [updated] = await db
-          .update(referrals)
-          .set({ status: "rewarded", rewardedAt: new Date() })
-          .where(eq(referrals.id, input.id))
-          .returning();
-        return updated;
+
+        return await db.transaction(async (tx) => {
+          // Atomic guarded flip: only an ACTIVATED referral can be rewarded.
+          const [referral] = await tx
+            .update(referrals)
+            // NOTE (2026-02): the referrals table has no updated_at column —
+            // rewardedAt is the event timestamp. (TS2353 fix, PR #211 CI.)
+            .set({ status: "rewarded", rewardedAt: new Date() })
+            .where(and(eq(referrals.id, input.id), eq(referrals.status, "activated")))
+            .returning();
+          if (!referral) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Referral is not in a rewardable (activated) state — already rewarded, pending, or unknown",
+            });
+          }
+
+          // Couple the flip to the REAL bonus award, atomically.
+          const [referrer] = await tx
+            .select()
+            .from(agents)
+            .where(eq(agents.id, referral.referrerAgentId))
+            .limit(1);
+          if (!referrer) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Referrer agent not found" });
+          }
+          const newPoints = referrer.loyaltyPoints + referral.bonusPoints;
+          await tx
+            .update(agents)
+            .set({
+              loyaltyPoints: newPoints,
+              commissionBalance: sql`${agents.commissionBalance} + ${referral.bonusCash}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, referral.referrerAgentId));
+          await tx.insert(loyaltyHistory).values({
+            agentId: referral.referrerAgentId,
+            type: "bonus",
+            points: referral.bonusPoints,
+            description: `Referral bonus (staff-approved reward #${referral.id})`,
+            balanceAfter: newPoints,
+          });
+
+          await writeAuditLog({
+            agentId: 0,
+            action: "REFERRAL_MANUAL_REWARD",
+            resource: "referrals",
+            resourceId: String(referral.id),
+            status: "success",
+            metadata: { staffUser: String(ctx.user.id), bonusPoints: referral.bonusPoints, bonusCash: String(referral.bonusCash) },
+          });
+          return referral;
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 import { TRPCError } from "@trpc/server";
-import { eq, and, sql, lte, gte, count } from "drizzle-orm";
+import { eq, and, isNull, sql, lte, gte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -92,12 +92,32 @@ export const promotionsRouter = router({
       z.object({
         code: z.string(),
         orderTotal: z.number(),
-        customerId: z.number(),
+        /** DEPRECATED as a trust input (I-wave AB-14): session-derived. */
+        customerId: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { valid: false, reason: "Database unavailable" };
+
+      // I-wave AB-14: identity is session-derived, consistent with
+      // redeemCoupon — per-customer limits are meaningless against a
+      // client-chosen customerId.
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number | null;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        if (!isStaff) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot validate a coupon for a different customer" });
+        }
+        customerId = input.customerId;
+      } else {
+        customerId = callerCustomer?.id ?? null;
+      }
 
       const now = new Date();
       const [promo] = await database
@@ -115,6 +135,22 @@ export const promotionsRouter = router({
         return { valid: false, reason: "Coupon has expired" };
       if (promo.usageLimit && promo.usedCount >= promo.usageLimit)
         return { valid: false, reason: "Usage limit reached" };
+
+      // I-wave AB-14: enforce perCustomerLimit against the SAME redemption
+      // ledger redeemCoupon locks on. Two-layer closure: this validation-time
+      // count stops the obvious replay path, and redeemCoupon's
+      // pg_advisory_xact_lock(promo, customer) + ledger count closes the
+      // concurrent-redeem race — together the limit is enforced at both
+      // validation and redemption.
+      if (customerId != null) {
+        const [usage] = await database
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(couponRedemptions)
+          .where(and(eq(couponRedemptions.promoId, promo.id), eq(couponRedemptions.customerId, customerId)));
+        if (Number(usage?.count ?? 0) >= (promo.perCustomerLimit ?? 1)) {
+          return { valid: false, reason: "Per-customer coupon limit reached" };
+        }
+      }
       if (
         promo.minOrderAmount &&
         input.orderTotal < parseFloat(promo.minOrderAmount)
@@ -308,22 +344,58 @@ export const promotionsRouter = router({
   earnPoints: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
-        points: z.number(),
+        /**
+         * DEPRECATED as a trust input (I-wave AB-12, 2026-02): the earning
+         * customer is derived from the authenticated session. A customerId
+         * that differs from the caller's own profile is a STAFF-ONLY grant
+         * (audited). Points redeemable at 1pt = ₦1 — this input is funds.
+         */
+        customerId: z.number().optional(),
+        points: z.number().int().positive().max(10_000),
         type: z.enum(["purchase", "referral", "review", "bonus"]),
         orderId: z.number().optional(),
         description: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // I-wave AB-12: identity + staff gating. Arbitrary grants to ANY
+      // customerId (previously possible for any authed user) are closed.
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        if (!isStaff) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot grant loyalty points to a different customer" });
+        }
+        customerId = input.customerId;
+      } else {
+        if (!callerCustomer) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+        }
+        customerId = callerCustomer.id;
+      }
+
+      // Every grant is audited (funds-grade trail).
+      await writeAuditLog({
+        action: isStaff && customerId !== callerCustomer?.id ? "LOYALTY_POINTS_STAFF_GRANT" : "LOYALTY_POINTS_EARNED",
+        resource: "loyalty_accounts",
+        resourceId: String(customerId),
+        status: "success",
+        metadata: { points: input.points, type: input.type, actor: String(ctx.user.id), orderId: input.orderId },
+      });
 
       // Get or create account
       let [account] = await database
         .select()
         .from(loyaltyAccounts)
-        .where(eq(loyaltyAccounts.customerId, input.customerId))
+        .where(eq(loyaltyAccounts.customerId, customerId))
         .limit(1);
 
       if (!account) {
@@ -333,7 +405,7 @@ export const promotionsRouter = router({
           .toUpperCase();
         [account] = await database
           .insert(loyaltyAccounts)
-          .values({ customerId: input.customerId, referralCode })
+          .values({ customerId, referralCode })
           .returning();
       }
 
@@ -344,7 +416,7 @@ export const promotionsRouter = router({
           points: sql`${loyaltyAccounts.points} + ${input.points}`,
           lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${input.points}`,
         })
-        .where(eq(loyaltyAccounts.customerId, input.customerId));
+        .where(eq(loyaltyAccounts.customerId, customerId));
 
       // Record transaction
       await database.insert(loyaltyTransactions).values({
@@ -367,7 +439,7 @@ export const promotionsRouter = router({
         await database
           .update(loyaltyAccounts)
           .set({ tier })
-          .where(eq(loyaltyAccounts.customerId, input.customerId));
+          .where(eq(loyaltyAccounts.customerId, customerId));
       }
 
       return {
@@ -423,13 +495,35 @@ export const promotionsRouter = router({
   applyReferral: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
+        /** DEPRECATED as a trust input (I-wave AB-13): session-derived. */
+        customerId: z.number().optional(),
         referralCode: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // I-wave AB-13: the referee identity is session-derived (same
+      // discipline as H2/AB-12) — never a client-supplied customerId.
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        if (!isStaff) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot apply a referral for a different customer" });
+        }
+        customerId = input.customerId;
+      } else {
+        if (!callerCustomer) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+        }
+        customerId = callerCustomer.id;
+      }
 
       const [referrer] = await database
         .select()
@@ -437,13 +531,33 @@ export const promotionsRouter = router({
         .where(eq(loyaltyAccounts.referralCode, input.referralCode))
         .limit(1);
 
-      if (!referrer) throw new Error("Invalid referral code");
-      if (referrer.customerId === input.customerId)
-        throw new Error("Cannot refer yourself");
+      if (!referrer) throw new TRPCError({ code: "NOT_FOUND", message: "Invalid referral code" });
+      if (referrer.customerId === customerId)
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot refer yourself" });
 
-      // Grant referral bonus to both parties
+      // I-wave AB-13: ONE-TIME per referee identity. The old code granted
+      // +500 pts to the referrer on EVERY call (unbounded farming). The
+      // guarded UPDATE (referredBy IS NULL) is the atomic claim: only the
+      // first application wins; every re-call fails CLOSED.
+      const claimed = await database
+        .update(loyaltyAccounts)
+        .set({ referredBy: referrer.customerId })
+        .where(
+          and(
+            eq(loyaltyAccounts.customerId, customerId),
+            isNull(loyaltyAccounts.referredBy)
+          )
+        )
+        .returning({ id: loyaltyAccounts.id });
+      if (!claimed[0]) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "A referral has already been applied to this customer",
+        });
+      }
+
+      // Grant referral bonus to the referrer (once, after a successful claim).
       const referralBonus = 500; // 500 points each
-
       await database
         .update(loyaltyAccounts)
         .set({
@@ -452,11 +566,13 @@ export const promotionsRouter = router({
         })
         .where(eq(loyaltyAccounts.id, referrer.id));
 
-      // Set referredBy on new customer
-      await database
-        .update(loyaltyAccounts)
-        .set({ referredBy: referrer.customerId })
-        .where(eq(loyaltyAccounts.customerId, input.customerId));
+      await writeAuditLog({
+        action: "LOYALTY_REFERRAL_APPLIED",
+        resource: "loyalty_accounts",
+        resourceId: String(customerId),
+        status: "success",
+        metadata: { referrerCustomerId: referrer.customerId, bonus: referralBonus, actor: String(ctx.user.id) },
+      });
 
       return {
         success: true,
