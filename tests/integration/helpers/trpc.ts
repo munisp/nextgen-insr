@@ -48,7 +48,6 @@ import { networkStatusDashboardRouter } from "../../../server/routers/networkSta
 import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
 import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
 import { promotionsRouter } from "../../../server/routers/promotions";
-import { insuranceWorkflowsRouter } from "../../../server/routers/insuranceWorkflows";
 import { merchantRouter } from "../../../server/routers/merchant";
 import { merchantOnboardingPortalRouter } from "../../../server/routers/merchantOnboardingPortal";
 import { merchantKycOnboardingRouter } from "../../../server/routers/merchantKycOnboarding";
@@ -112,8 +111,6 @@ export const integrationRouter = router({
   complianceChatbot: complianceChatbotRouter,
   // H-wave (2026-09): promotions redeem path under the real middleware chain.
   promotions: promotionsRouter,
-  // I-wave (AB-22a): bindPolicy path under the real middleware chain.
-  insuranceWorkflows: insuranceWorkflowsRouter,
   // G1 fix-wave (2026-06): merchant-onboarding routers under the REAL
   // middleware chain, same mount paths as production (server/routers.ts).
   merchant: merchantRouter,

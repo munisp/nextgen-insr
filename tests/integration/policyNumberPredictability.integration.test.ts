@@ -67,11 +67,12 @@ describe("AB-22a: policy numbers are non-predictable (integration, real DB)", ()
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
         caller.insuranceWorkflows.bindPolicy({
+          quoteRef: `IWAVE-Q-${i}`,
           productId: prod.id,
           customerId: CUSTOMER,
           sumInsured: 1_000_000,
           annualPremium: 50_000,
-          startDate: new Date(`2026-0${(i % 9) + 1}-15`),
+          startDate: `2026-0${(i % 9) + 1}-15`,
         } as never)
       )
     );
