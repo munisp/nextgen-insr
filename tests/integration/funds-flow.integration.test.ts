@@ -269,7 +269,13 @@ describe("funds-flow integrity (integration, real DB)", () => {
 
   // ── 3. Concurrency: N parallel identical refunds → exactly one row ─────────
   it("refund race: 8 parallel identical requests produce exactly one durable refund", async () => {
-    const caller = callerFor(adminUser);
+    // 2026-09-19 (L-wave validation): velocity is keyed on the AUTHENTICATED
+    // USER (AB-19) and the suite shares one DB, so the default admin fixture
+    // can arrive here with its 5-per-30d budget already spent by other files,
+    // turning the 8 parallel calls into velocity_exceeded responses. A
+    // dedicated user namespace isolates the race under test; the single-winner
+    // idempotency invariant asserted below is unchanged.
+    const caller = callerFor({ ...adminUser, id: adminUser.id + 700 });
     const results = await Promise.all(
       Array.from({ length: 8 }, () =>
         caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: refundDisputeParallel, customerId: REFUND_CUSTOMER + 100, accountNumber: "0123456791", idempotencyKey: REFUND_KEY_PARALLEL })

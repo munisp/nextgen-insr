@@ -713,14 +713,21 @@ export const p2pPoolsRouter = router({
         threshold = input.reinsuranceThreshold;
       }
 
-      // Never spread the caller's reinsuranceThreshold into the insert.
-      const poolInput = { ...input } as Partial<typeof input>;
-      delete poolInput.reinsuranceThreshold;
+      // 2026-09-19 (L-wave validation): explicit allowlist insert — replaces
+      // the Partial-spread + delete hack above. The spread both defeated the
+      // allowlist intent (any future caller-controlled key would ride along)
+      // and failed tsc (optional input strings vs NOT NULL date columns).
       const [pool] = await db.insert(p2pPools).values({
-        ...poolInput,
+        poolName: input.poolName,
+        poolType: input.poolType,
+        productType: input.productType,
         organiserId: ctx.user.id,
+        maxMembers: input.maxMembers,
         contributionAmount: input.contributionAmount.toString(),
+        contributionFrequency: input.contributionFrequency,
         reinsuranceThreshold: threshold.toString(),
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd,
       }).returning();
 
       await writeAuditLog({

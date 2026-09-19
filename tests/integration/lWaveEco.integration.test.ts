@@ -124,6 +124,22 @@ describe("L-wave ecosystem/tenancy fixes (integration, real DB)", () => {
         })
         .onConflictDoNothing();
     }
+    // 2026-09-19 (L-wave validation): api_keys.userId is a NOT NULL FK to
+    // users.id — the L-P-9 createKey calls need real users rows for the
+    // shared fixture identities (the fixtures are ctx-only, no DB rows).
+    // Idempotent so re-runs and other files' rows are untouched.
+    for (const u of [adminUser, regularUser, approverUser]) {
+      await db
+        .insert(users)
+        .values({
+          id: u.id,
+          keycloakSub: `lw-fixture-${u.id}`,
+          email: u.email,
+          name: u.name,
+          role: u.role === "supervisor" ? "supervisor" : u.role === "admin" ? "admin" : "user",
+        })
+        .onConflictDoNothing();
+    }
   });
 
   afterAll(() =>

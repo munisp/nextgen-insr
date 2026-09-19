@@ -185,8 +185,17 @@ describe("PAY-2 refund pipeline (real processing)", () => {
   });
 
   it("enforces the documented ±₦100/24h duplicate detection", async () => {
-    const c = caller();
-    await c.disputeRefund.initiateRefund({
+    // 2026-09-19 (L-wave validation): velocity is keyed on the AUTHENTICATED
+    // USER (AB-19) and the suite shares one DB, so refunds initiated by the
+    // default admin fixture in other files (disputeRefund, funds-flow,
+    // lWaveEco seeds) consume this test's 5-per-30d budget and the first
+    // refund below was silently velocity-blocked (success:false), making the
+    // duplicate call find no prior row. Same documented fix as the daily-cap
+    // test below: dedicated USER namespace. Duplicate-detection semantics
+    // under test (±₦100/24h per destination) are unchanged — the first
+    // refund is now asserted so a setup failure fails loudly.
+    const c = caller(adminUser.id + 600);
+    const first = await c.disputeRefund.initiateRefund({
       disputeId: BASE + 103,
       amount: 8000,
       reason: "original refund under 10k",
@@ -194,6 +203,7 @@ describe("PAY-2 refund pipeline (real processing)", () => {
       accountNumber: "0999999999",
       agentId: AGENT_ID,
     });
+    expect(first.success).toBe(true);
     // Different dispute, same customer, amount within ±₦100 → duplicate.
     await expectTrpcError(
       c.disputeRefund.initiateRefund({

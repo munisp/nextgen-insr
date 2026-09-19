@@ -362,6 +362,19 @@ export const tenantAdminRouter = router({
       const db = await getDb();
       if (!db)
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      // 2026-09-19 (L-wave, L-S-9): an admin may never change their OWN
+      // role through this surface (no self-elevation, no self-demotion) —
+      // role changes on self must go through Keycloak (single source of
+      // truth) so a compromised session cannot entrench itself.
+      // 2026-09-19 (L-wave validation): checked BEFORE the target lookup —
+      // the self-role rule is identity-based and needs no DB row; checking
+      // first also avoids leaking user-existence via the error code.
+      if (input.role && userPk === ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admins cannot change their own role",
+        });
+      }
       const [target] = await db
         .select({ id: users.id, tenantId: users.tenantId })
         .from(users)
@@ -369,16 +382,6 @@ export const tenantAdminRouter = router({
         .limit(1);
       if (!target) {
         throw new TRPCError({ code: "NOT_FOUND", message: `User ${input.userId} not found` });
-      }
-      // 2026-09-19 (L-wave, L-S-9): an admin may never change their OWN
-      // role through this surface (no self-elevation, no self-demotion) —
-      // role changes on self must go through Keycloak (single source of
-      // truth) so a compromised session cannot entrench itself.
-      if (input.role && userPk === ctx.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Admins cannot change their own role",
-        });
       }
       const callerTenantId = (ctx.user as { tenantId?: number | null }).tenantId ?? null;
       if (callerTenantId !== null && target.tenantId !== callerTenantId) {

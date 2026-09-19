@@ -5557,6 +5557,17 @@ export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSel
 // against real Postgres. No name collisions with this file (verified).
 export * from "./schema.additions";
 
+// ─── Innovation product tables (definitions in schema.innovations.ts) ────────
+// 2026-09-19 (L-wave validation): server routers (innovationRouters.ts —
+// p2pPools, groupInsurance, bancassurance, openInsurance, NHIA, etc.) read
+// and write these tables in production, but the push schema never exported
+// them, so drizzle-kit push targets (integration PGlite, rehearsal, preview)
+// silently lacked 27 tables and every query failed with 42P01. The tables
+// already exist in production via migration 0046_innovations_schema.sql;
+// exporting them makes push environments match. No name collisions with this
+// file or schema.additions.ts (verified 2026-09-19).
+export * from "./schema.innovations";
+
 // ─── Wave F2 insurance audit fixes (append-only) ────────────────────────────
 // 1:1 lifecycle extension for `policies` (INS-1/8/9): lapse/expiry sweep state,
 // grace-period configuration, arrears ledger, and waiting-period reset on
