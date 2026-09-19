@@ -452,29 +452,61 @@ export const promotionsRouter = router({
   redeemPoints: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
-        points: z.number(),
+        /** DEPRECATED as a trust input (I2-wave, 2026-02): session-derived. */
+        customerId: z.number().optional(),
+        points: z.number().int().positive().max(10_000),
         description: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // I2-wave: points redeem at 1pt = ₦1 — the debit identity is derived
+      // from the authenticated session (same discipline as earnPoints/AB-12).
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        if (!isStaff) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot redeem loyalty points for a different customer" });
+        }
+        customerId = input.customerId;
+      } else {
+        if (!callerCustomer) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+        }
+        customerId = callerCustomer.id;
+      }
 
       const [account] = await database
         .select()
         .from(loyaltyAccounts)
-        .where(eq(loyaltyAccounts.customerId, input.customerId))
+        .where(eq(loyaltyAccounts.customerId, customerId))
         .limit(1);
-
-      if (!account || account.points < input.points) {
-        throw new Error("Insufficient loyalty points");
+      if (!account) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No loyalty account" });
       }
 
-      await database
+      // I2-wave: ATOMIC balance-guarded debit — the read-check-update window
+      // in the old code allowed negative balances under concurrent redeems.
+      const debited = await database
         .update(loyaltyAccounts)
         .set({ points: sql`${loyaltyAccounts.points} - ${input.points}` })
-        .where(eq(loyaltyAccounts.customerId, input.customerId));
+        .where(
+          and(
+            eq(loyaltyAccounts.id, account.id),
+            gte(loyaltyAccounts.points, input.points)
+          )
+        )
+        .returning({ points: loyaltyAccounts.points });
+      if (!debited[0]) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient loyalty points" });
+      }
 
       await database.insert(loyaltyTransactions).values({
         accountId: account.id,
@@ -483,12 +515,20 @@ export const promotionsRouter = router({
         description: input.description || `Redeemed ${input.points} points`,
       });
 
+      await writeAuditLog({
+        action: isStaff && customerId !== callerCustomer?.id ? "LOYALTY_POINTS_STAFF_REDEEM" : "LOYALTY_POINTS_REDEEMED",
+        resource: "loyalty_accounts",
+        resourceId: String(customerId),
+        status: "success",
+        metadata: { points: input.points, actor: String(ctx.user.id) },
+      });
+
       // Convert points to value: 100 points = ₦100
       const value = input.points;
       return {
         redeemed: input.points,
         value,
-        remainingPoints: account.points - input.points,
+        remainingPoints: debited[0].points,
       };
     }),
 
@@ -539,39 +579,53 @@ export const promotionsRouter = router({
       // +500 pts to the referrer on EVERY call (unbounded farming). The
       // guarded UPDATE (referredBy IS NULL) is the atomic claim: only the
       // first application wins; every re-call fails CLOSED.
-      const claimed = await database
-        .update(loyaltyAccounts)
-        .set({ referredBy: referrer.customerId })
-        .where(
-          and(
-            eq(loyaltyAccounts.customerId, customerId),
-            isNull(loyaltyAccounts.referredBy)
-          )
-        )
-        .returning({ id: loyaltyAccounts.id });
-      if (!claimed[0]) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "A referral has already been applied to this customer",
-        });
-      }
-
-      // Grant referral bonus to the referrer (once, after a successful claim).
+      // I2-wave 2026-02: the response advertises a REFEREE bonus — credit it
+      // for real. Claim + both credits happen in ONE transaction so a partial
+      // grant can never persist; the one-time guarded claim still gates it.
       const referralBonus = 500; // 500 points each
-      await database
-        .update(loyaltyAccounts)
-        .set({
-          points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
-          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
-        })
-        .where(eq(loyaltyAccounts.id, referrer.id));
+      await database.transaction(async (tx) => {
+        const claimed = await tx
+          .update(loyaltyAccounts)
+          .set({ referredBy: referrer.customerId })
+          .where(
+            and(
+              eq(loyaltyAccounts.customerId, customerId),
+              isNull(loyaltyAccounts.referredBy)
+            )
+          )
+          .returning({ id: loyaltyAccounts.id });
+        if (!claimed[0]) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A referral has already been applied to this customer",
+          });
+        }
+
+        // Referrer bonus (once, after a successful claim)…
+        await tx
+          .update(loyaltyAccounts)
+          .set({
+            points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
+            lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
+          })
+          .where(eq(loyaltyAccounts.id, referrer.id));
+
+        // …and the referee bonus the API contract advertises.
+        await tx
+          .update(loyaltyAccounts)
+          .set({
+            points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
+            lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
+          })
+          .where(eq(loyaltyAccounts.id, claimed[0].id));
+      });
 
       await writeAuditLog({
         action: "LOYALTY_REFERRAL_APPLIED",
         resource: "loyalty_accounts",
         resourceId: String(customerId),
         status: "success",
-        metadata: { referrerCustomerId: referrer.customerId, bonus: referralBonus, actor: String(ctx.user.id) },
+        metadata: { referrerCustomerId: referrer.customerId, bonus: referralBonus, refereeCredited: true, actor: String(ctx.user.id) },
       });
 
       return {
