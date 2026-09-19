@@ -59,7 +59,12 @@ const ROLE_PERMISSIONS: Record<string, Set<FinancialOperation>> = {
     "float_topup", "float_debit", "billing_record", "billing_reconcile",
     "reversal", "refund", "read",
   ]),
-  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal"]),
+  // L-wave (L-S-5, 2026-09-19): the documented matrix (header comment, lines
+  // above) states supervisors approve claims, but claim_settle was missing —
+  // supervisors can now approve/settle claims as documented. Professional
+  // roles beyond admin/supervisor still require the Keycloak role-mapping
+  // work (users.role cannot carry them) — disclosed, not faked.
+  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal", "claim_settle"]),
   agent: new Set(["transfer", "premium_collect", "float_debit", "read"]),
   underwriter: new Set(["read"]),
   compliance_officer: new Set(["read"]),

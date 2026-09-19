@@ -139,11 +139,15 @@ export type TestUser = Pick<User, "id" | "email" | "name" | "role"> & {
   keycloakSub?: string;
 };
 
+// 2026-09-19 (L-wave, L-S-3): shared staff fixtures now carry a keycloakSub —
+// claims adjudication/settlement SoD compares Keycloak identities and fails
+// closed when the caller's identity is unverifiable.
 export const adminUser: TestUser = {
   id: 91001,
   email: "admin@integration.local",
   name: "Integration Admin",
   role: "admin",
+  keycloakSub: "kc-integration-admin-91001",
 };
 
 export const regularUser: TestUser = {
@@ -151,6 +155,7 @@ export const regularUser: TestUser = {
   email: "agent@integration.local",
   name: "Integration Agent",
   role: "user",
+  keycloakSub: "kc-integration-agent-91002",
 };
 
 /**
@@ -162,6 +167,7 @@ export const approverUser: TestUser = {
   email: "approver@integration.local",
   name: "Integration Approver",
   role: "admin",
+  keycloakSub: "kc-integration-approver-91003",
 };
 
 /**

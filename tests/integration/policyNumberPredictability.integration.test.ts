@@ -12,6 +12,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../server/db";
 import { policies, insuranceProducts } from "../../drizzle/schema";
+import { policyQuotes } from "../../drizzle/schema.additions";
 import {
   callerFor,
   adminUser,
@@ -63,6 +64,22 @@ describe("AB-22a: policy numbers are non-predictable (integration, real DB)", ()
     const caller = callerFor(adminUser);
     const CUSTOMER = 881100;
     const created: string[] = [];
+    // 2026-09-19 (L-wave, L-P-4): bindPolicy now consumes a REAL pending
+    // policy_quotes row (quoteRef resolved server-side; premium/sumInsured
+    // derived from the quote), so each iteration seeds an honest quote
+    // fixture instead of passing caller-invented terms.
+    await db.insert(policyQuotes).values(
+      Array.from({ length: 6 }, (_, i) => ({
+        customerId: CUSTOMER,
+        productId: prod.id,
+        sumInsured: "1000000.00",
+        premiumAmount: "50000.00",
+        totalPayable: "50000.00",
+        status: "pending" as const,
+        validUntil: new Date(Date.now() + 7 * 86_400_000),
+        metadata: { quoteRef: `IWAVE-Q-${i}` },
+      }))
+    );
     // Back-to-back (same-millisecond) creation is the enumeration case.
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
@@ -70,8 +87,6 @@ describe("AB-22a: policy numbers are non-predictable (integration, real DB)", ()
           quoteRef: `IWAVE-Q-${i}`,
           productId: prod.id,
           customerId: CUSTOMER,
-          sumInsured: 1_000_000,
-          annualPremium: 50_000,
           startDate: `2026-0${(i % 9) + 1}-15`,
         } as never)
       )
