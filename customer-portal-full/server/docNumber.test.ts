@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { docNumber } from "./db";
+import { docNumber, brokerApiKey, submitNAICOMFiling } from "./db";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TREE = path.resolve(__dirname, "..");
@@ -68,6 +68,49 @@ describe("J-wave: docNumber CSPRNG document numbers", () => {
         ""
       );
       if (pat.test(stripped) || bareMs.test(stripped)) offenders.push(path.relative(TREE, f));
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("K-wave: broker API keys are 192-bit CSPRNG secrets with bk_ prefix", () => {
+    const keys = new Set<string>();
+    for (let i = 0; i < 500; i++) {
+      const k = brokerApiKey();
+      expect(/^bk_[0-9a-f]{48}$/.test(k)).toBe(true); // 24 bytes = 48 hex
+      keys.add(k);
+    }
+    expect(keys.size).toBe(500); // unique across rapid generation
+  });
+
+  it("K-wave: NAICOM filing referenceNumber keeps NAICOM/YYYY/ format with CSPRNG body", async () => {
+    const r = await submitNAICOMFiling(1, {
+      filingType: "returns",
+      period: "2026-Q3",
+      data: {},
+    });
+    expect(r.referenceNumber).toMatch(/^NAICOM\/\d{4}\/[0-9A-F]{8}$/);
+    const r2 = await submitNAICOMFiling(1, {
+      filingType: "returns",
+      period: "2026-Q3",
+      data: {},
+    });
+    expect(r2.referenceNumber).not.toBe(r.referenceNumber);
+  });
+
+  it("K-wave ALL-sites guard: no Math.random().toString(36) prefixed identifier/secret survives", () => {
+    const offenders: string[] = [];
+    // Prefixed identifiers or API-key secrets whose entropy is Math.random()
+    // (~31-bit, non-CSPRNG): `PREFIX-${Math.random()...}` or `bk_/brk_
+    // ${Math.random()...}` shapes, and slash-format refs with Math.random
+    // bodies (NAICOM/YYYY/<rand>).
+    const pats = [
+      /`[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-[^`]*\$\{Math\.random\(\)/,
+      /`[a-z]{2,4}_\$\{Math\.random\(\)/,
+      /`[A-Z]{2,10}\/\$\{[^}]*\}\/\$\{Math\.random\(\)/,
+    ];
+    for (const f of sourceFiles(TREE)) {
+      const src = readFileSync(f, "utf8");
+      if (pats.some(p => p.test(src))) offenders.push(path.relative(TREE, f));
     }
     expect(offenders).toEqual([]);
   });

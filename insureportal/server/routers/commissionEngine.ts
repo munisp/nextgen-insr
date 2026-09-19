@@ -21,7 +21,7 @@
  * 13. Open Source — Drizzle ORM, tRPC, Zod
  */
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   commissionTiers,
@@ -966,7 +966,9 @@ export const commissionEngineRouter = router({
     }),
 
   // ── Approve a payout (DB-backed with TigerBeetle) ──────────────────────
-  approvePayout: protectedProcedure
+  // K-wave (2026-09): admin-only (a plain authenticated user must not
+  // approve payouts).
+  approvePayout: adminProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -986,15 +988,49 @@ export const commissionEngineRouter = router({
           .limit(1);
         if (!payout) return { success: false, error: "Payout not found" };
 
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({
-            status: "approved",
-            approvedBy: ctx.user?.id ?? 0,
-            updatedAt: new Date(),
-          })
-          .where(eq(commissionPayouts.id, numericId))
-          .returning();
+        // K-wave (2026-09): guarded pending-only claim + actor-attributed
+        // audit row in ONE transaction (merchantPayoutSettlement standard).
+        // Maker-checker: a recorded requester can never approve their own
+        // batch (NULL requestedBy = system-computed, admin-approvable).
+        const updated = await db.transaction(async tx => {
+          const [row] = await tx
+            .update(commissionPayouts)
+            .set({
+              status: "approved",
+              approvedBy: ctx.user!.id,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(commissionPayouts.id, numericId),
+                eq(commissionPayouts.status, "pending"),
+                sql`(${commissionPayouts.requestedBy} IS NULL OR ${commissionPayouts.requestedBy} <> ${ctx.user!.id})`
+              )
+            )
+            .returning();
+          if (!row) return null;
+          await tx.insert(commissionAuditTrail).values({
+            entityType: "payout",
+            entityId: input.id,
+            action: "approved",
+            previousValue: payout as any,
+            newValue: row as any,
+            performedBy: String(ctx.user!.id),
+          });
+          return row;
+        });
+        if (!updated) {
+          if (payout.status !== "pending")
+            return {
+              success: false,
+              error: `Payout is not pending approval (current: ${payout.status})`,
+            };
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Maker-checker violation: the payout requester cannot approve their own payout",
+          });
+        }
 
         // [TigerBeetle] Record double-entry credit via Go sidecar
         const tbResult = await tbRecordCommissionCredit({
@@ -1007,15 +1043,6 @@ export const commissionEngineRouter = router({
         });
         logger.info(
           `[Commission] Payout ${input.id} approved, TB: ${tbResult?.transferId ?? "offline"}`
-        );
-
-        await logAudit(
-          "payout",
-          input.id,
-          "approved",
-          ctx.user?.name ?? "admin",
-          payout,
-          updated
         );
 
         // [Kafka] Publish payout approved event

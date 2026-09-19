@@ -579,7 +579,10 @@ export const appRouter = router({
         rateLimit: z.number().default(1000),
       }))
       .mutation(async ({ ctx, input }) => {
-        const apiKey = `bk_${Math.random().toString(36).substr(2, 32)}`;
+        // K-wave (2026-09): broker API keys are SECRETS — 192-bit CSPRNG
+        // (was ~31-bit Math.random base36). Generation-only change:
+        // existing keys keep working (lookup by stored value), no migration.
+        const apiKey = db.brokerApiKey();
         return await db.createBrokerAPIKey({
           userId: ctx.user.id,
           name: input.name,

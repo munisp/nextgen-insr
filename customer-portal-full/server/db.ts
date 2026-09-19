@@ -21,6 +21,13 @@ export function docNumber(prefix: string): string {
     .toUpperCase()}`;
 }
 
+// K-wave (2026-09): broker API keys are SECRETS, not document numbers —
+// 192-bit CSPRNG hex with the bk_ prefix (was ~31-bit Math.random base36).
+// Generation-only change: existing stored keys keep working.
+export function brokerApiKey(): string {
+  return `bk_${randomBytes(24).toString("hex")}`;
+}
+
 import {
   InsertUser, users, policies, claims, payments, InsertPolicy, InsertClaim, InsertPayment,
   referrals, InsertReferral, reviews, InsertReview,
@@ -1972,7 +1979,7 @@ export async function getModelSecurityStatus() {
 
 // ── NAICOM Submit ───────────────────────────────────────────────────────────
 export async function submitNAICOMFiling(userId: number, data: { filingType: string; period: string; data: Record<string, unknown> }) {
-  return { filingId: docNumber("NAI"), userId, filingType: data.filingType, period: data.period, status: 'submitted', submittedAt: new Date(), referenceNumber: `NAICOM/${new Date().getFullYear()}/${Math.random().toString(36).slice(2, 8).toUpperCase()}`, expectedResponse: new Date(Date.now() + 1209600000) };
+  return { filingId: docNumber("NAI"), userId, filingType: data.filingType, period: data.period, status: 'submitted', submittedAt: new Date(), referenceNumber: `NAICOM/${new Date().getFullYear()}/${randomBytes(4).toString("hex").toUpperCase()}` /* K-wave (2026-09): Math.random body -> CSPRNG; NAICOM/YYYY/XXXX format contract kept */, expectedResponse: new Date(Date.now() + 1209600000) };
 }
 
 // ── P2P Contribute ──────────────────────────────────────────────────────────
