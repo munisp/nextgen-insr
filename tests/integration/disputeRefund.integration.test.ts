@@ -14,7 +14,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and, count } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { agents, disputes, refunds, transactions } from "../../drizzle/schema";
+import { agents, customers, disputes, refunds, transactions } from "../../drizzle/schema";
 import {
   callerFor,
   adminUser,
@@ -25,10 +25,13 @@ import {
 } from "./helpers/trpc";
 
 const FILE = "disputeRefund";
-const AUTO_CUSTOMER = 910101;
-const SUPERVISOR_CUSTOMER = 910102;
-const VELOCITY_CUSTOMER = 910103;
-const ANON_CUSTOMER = 910104;
+// 2026-09-18 (J-wave): refunds.customerId is now DERIVED from the original
+// transaction's customer (customers registry, unique phone) — the client
+// value is ignored. Fixture constants are the seeded customers' REAL ids.
+let AUTO_CUSTOMER = 0;
+let SUPERVISOR_CUSTOMER = 0;
+let VELOCITY_CUSTOMER = 0;
+let ANON_CUSTOMER = 0;
 
 // 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund terms
 // server-side from the original transaction linked through the dispute —
@@ -72,11 +75,21 @@ describe("disputeRefund router (integration, real DB)", () => {
         email: "i-refund-seed@integration.local",
       })
       .returning();
+    // Seed a customer + original transaction (with that customer's phone) +
+    // linked dispute; returns [disputeId, customerId].
     async function seedDispute(
       n: number,
       amount: string,
       sourceAccount: string
-    ): Promise<number> {
+    ): Promise<[number, number]> {
+      const [cust] = await db
+        .insert(customers)
+        .values({
+          firstName: "IT",
+          lastName: `RefundCust${n}`,
+          phone: `09170000${String(n).padStart(4, "0")}`,
+        })
+        .returning();
       const [tx] = await db
         .insert(transactions)
         .values({
@@ -85,6 +98,7 @@ describe("disputeRefund router (integration, real DB)", () => {
           type: "Cash In",
           amount,
           customerAccount: sourceAccount,
+          customerPhone: cust!.phone,
           status: "success",
         })
         .returning();
@@ -97,11 +111,12 @@ describe("disputeRefund router (integration, real DB)", () => {
           status: "open",
         })
         .returning();
-      return d!.id;
+      return [d!.id, cust!.id];
     }
-    disputeAutoId = await seedDispute(1, "5000.00", "0123456789");
-    disputeSupervisorId = await seedDispute(2, "100000.00", "9876543210");
-    disputeVelocityId = await seedDispute(200, "10000.00", "0123456789");
+    [disputeAutoId, AUTO_CUSTOMER] = await seedDispute(1, "5000.00", "0123456789");
+    [disputeSupervisorId, SUPERVISOR_CUSTOMER] = await seedDispute(2, "100000.00", "9876543210");
+    [disputeVelocityId, VELOCITY_CUSTOMER] = await seedDispute(200, "10000.00", "0123456789");
+    ANON_CUSTOMER = AUTO_CUSTOMER; // anonymous test never reaches a write
     const s0 = await callerFor(adminUser).disputeRefund.getSummary();
     baselinePendingRefunds = s0.pendingRefunds;
     baselineProcessedToday = s0.processedToday;

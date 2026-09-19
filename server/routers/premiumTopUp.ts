@@ -77,7 +77,19 @@ export const premiumTopUpRouter = router({
       // note. Lapsed policies validate against arrears below.
       if (policy.status === "active" || policy.status === "bound") {
         const expectedPremium = Number(policy.annualPremium);
-        if (expectedPremium > 0 && input.amountNGN < expectedPremium) {
+        // 2026-09-18 (J-wave, PR #210 verifier): underpayment was silently
+        // SKIPPED when annualPremium was NULL/0 — an unpriceable policy
+        // could book coverage for any amount. Fail CLOSED: if the expected
+        // premium cannot be determined, no top-up is accepted for an
+        // active/bound policy (lapsed policies validate against recorded
+        // arrears below instead).
+        if (!(expectedPremium > 0)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Cannot determine expected premium for policy ${policy.policyNumber ?? input.policyId} (annualPremium missing/zero) — top-up refused; fix the policy premium schedule first`,
+          });
+        }
+        if (input.amountNGN < expectedPremium) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: `Underpayment: ₦${input.amountNGN} is below the expected premium of ₦${expectedPremium} for policy ${policy.policyNumber ?? input.policyId}`,
@@ -114,7 +126,9 @@ export const premiumTopUpRouter = router({
           code: 700,
           ref: input.reference,
           txType: "premium_payment",
-          agentId: input.agentId ? String(input.agentId) : undefined,
+          // J-wave: policy-derived identity at the LEDGER leg too — a
+          // spoofed client agentId must not reach the TB transfer.
+          agentId: String(txAgentId),
         };
         const tbResult = await tbCreateTransfer(tbReq);
 
@@ -152,7 +166,9 @@ export const premiumTopUpRouter = router({
           const [premiumRecord] = await tx.insert(premiums).values({
             policyId: input.policyId,
             customerId: policy.customerId ?? undefined,
-            agentId: input.agentId ?? undefined,
+            // J-wave: commission attribution row uses the SAME policy-derived
+            // agent identity as the transactions row — never the client.
+            agentId: txAgentId,
             premiumRef: input.reference,
             amount: String(input.amountNGN),
             currency: "NGN",

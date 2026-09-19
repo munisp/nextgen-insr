@@ -29,7 +29,7 @@ import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../../server/db";
-import { refunds, transactions, agents, disputes } from "../../drizzle/schema";
+import { refunds, transactions, agents, disputes, customers } from "../../drizzle/schema";
 import {
   callerFor,
   adminUser,
@@ -74,6 +74,17 @@ async function seedRefundDispute(
       isActive: true,
     })
     .returning();
+  // 2026-09-18 (J-wave): refunds.customerId is DERIVED from the original
+  // transaction's customer (customers registry, unique phone) — seed the
+  // customer and put their phone on the transaction.
+  const [cust] = await db
+    .insert(customers)
+    .values({
+      firstName: "FF",
+      lastName: `RefundCust${n}`,
+      phone: `08066${String(n).padStart(6, "0")}`,
+    })
+    .returning();
   const [tx] = await db
     .insert(transactions)
     .values({
@@ -82,6 +93,7 @@ async function seedRefundDispute(
       type: "Cash In",
       amount,
       customerAccount: sourceAccount,
+      customerPhone: cust!.phone,
       status: "success",
     })
     .returning();

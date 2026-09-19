@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { desc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { disputes, refunds, transactions, type Refund } from "../../drizzle/schema";
+import { customers, disputes, refunds, transactions, type Refund } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
@@ -228,6 +228,29 @@ export const disputeRefundRouter = router({
       const originalTxId = terms.originalTxId;
       const tier = getRefundTier(effectiveAmount);
 
+      // ── J-wave: customerId is attribution — never client-derived ────────
+      // The refund belongs to the ORIGINAL transaction's customer, resolved
+      // through the customer registry (customers.phone is UNIQUE). When the
+      // original transaction has no phone on record, or the phone matches no
+      // customer, the customer cannot be derived server-side: fail CLOSED
+      // rather than persisting a client-fabricated attribution.
+      let derivedCustomerId: number | null = null;
+      if (origTx.customerPhone) {
+        const [cust] = await database
+          .select({ id: customers.id })
+          .from(customers)
+          .where(eq(customers.phone, origTx.customerPhone))
+          .limit(1);
+        derivedCustomerId = cust?.id ?? null;
+      }
+      if (derivedCustomerId == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Original transaction's customer cannot be resolved in the customer registry — refusing client-supplied customerId",
+        });
+      }
+
       // ── Idempotency: replay or reject before doing any work ─────────────
       const payloadHash = input.idempotencyKey
         ? refundPayloadHash({ ...input, amount: effectiveAmount, accountNumber: effectiveDestination })
@@ -349,7 +372,8 @@ export const disputeRefundRouter = router({
             disputeId: input.disputeId,
             transactionId: originalTxId,
             agentId: input.agentId ?? 0,
-            customerId: input.customerId,
+            // J-wave: derived from the original transaction, never the client.
+            customerId: derivedCustomerId,
             originalAmount: Math.round(effectiveAmount),
             refundAmount: Math.round(effectiveAmount),
             currency: "NGN",

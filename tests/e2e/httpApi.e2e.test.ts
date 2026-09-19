@@ -25,7 +25,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, count } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { disputes, refunds, transactions } from "../../drizzle/schema";
+import { customers, disputes, refunds, transactions } from "../../drizzle/schema";
 import {
   bootServer,
   shutdownServer,
@@ -39,6 +39,7 @@ import {
 
 const E2E_CUSTOMER_AUTO = 920101;
 const E2E_CUSTOMER_SUPERVISOR = 920102;
+let e2eCustomerAutoId = 0; // 2026-09-18 (J-wave): seeded customer id
 const E2E_DISPUTE_REF_AUTO = "E2EDSP-AUTO-0001";
 const E2E_DISPUTE_REF_SUP = "E2EDSP-SUP-0002";
 // 2026-09-18 (audit wave F1, PAY-2): one ACTIVE refund per dispute is now
@@ -81,11 +82,23 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
     // derivation contract itself stays under test). Tier/idempotency/409
     // semantics are unchanged.
     const db = (await getDb())!;
+    // 2026-09-18 (J-wave): refunds.customerId is DERIVED from the original
+    // transaction's customer (customers registry, unique phone) — seed one
+    // customer per scenario and put their phone on the transaction.
     async function seedOriginalTx(
       n: string,
       amount: string,
       sourceAccount: string
     ): Promise<number> {
+      const [cust] = await db
+        .insert(customers)
+        .values({
+          firstName: "E2E",
+          lastName: `RefundCust${n}`,
+          phone: `08033${n === "AUTO" ? "000001" : n === "IDEM" ? "000002" : "000003"}`,
+        })
+        .returning();
+      if (n === "AUTO") e2eCustomerAutoId = cust!.id;
       const [tx] = await db
         .insert(transactions)
         .values({
@@ -94,6 +107,7 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
           type: "Cash In",
           amount,
           customerAccount: sourceAccount,
+          customerPhone: cust!.phone,
           status: "success",
         })
         .returning();
@@ -259,7 +273,9 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
     expect(rows[0]!.processedAt).toBeNull();
     expect(rows[0]!.refundAmount).toBe(2500);
     expect(rows[0]!.originalAmount).toBe(2500);
-    expect(rows[0]!.customerId).toBe(E2E_CUSTOMER_AUTO);
+    // J-wave: attribution is derived from the original transaction's
+    // customer — the client-sent E2E_CUSTOMER_AUTO is ignored.
+    expect(rows[0]!.customerId).toBe(e2eCustomerAutoId);
     expect(rows[0]!.disputeId).toBe(dispute!.id);
     expect(rows[0]!.category).toBe("dispute_refund");
     expect(rows[0]!.notes).toContain("destination_account:0123456789");
