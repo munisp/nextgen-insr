@@ -227,19 +227,32 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const policyNumber = `POL-${Date.now()}-${input.customerId}`;
+      // I-wave (AB-22a, 2026-09): policy numbers were
+      // `POL-${Date.now()}-${customerId}` — fully predictable (enumerable
+      // policy IDs, customer linkage leaked). The "POL-" prefix is the only
+      // format contract downstream code/tests rely on; the body is now
+      // CSPRNG-random (8 bytes → 16 hex chars, 64 bits of entropy) with a
+      // millisecond component retained ONLY for human sortability, never as
+      // the uniqueness/entropy source. Uniqueness stays DB-enforced
+      // (policy_number_key); a collision retries once with fresh entropy.
+      const genPolicyNumber = () =>
+        `POL-${Date.now().toString(36).toUpperCase()}-${crypto
+          .randomBytes(8)
+          .toString("hex")
+          .toUpperCase()}`;
+
       const startDate = new Date(input.startDate);
       const endDate = new Date(startDate);
       endDate.setFullYear(endDate.getFullYear() + 1);
 
-      const [policy] = await db.insert(policies).values({
+      const policyValues = (policyNumber: string) => ({
         policyNumber,
         productId: input.productId,
         customerId: input.customerId,
         agentId: input.agentId ?? null,
         brokerId: input.brokerId ?? null,
-        status: "bound",
-        coverageType: "life",
+        status: "bound" as const,
+        coverageType: "life" as const,
         sumInsured: String(input.sumInsured),
         annualPremium: String(input.annualPremium),
         startDate,
@@ -247,7 +260,20 @@ export const insuranceWorkflowsRouter = router({
         renewalDate: endDate,
         createdAt: new Date(),
         updatedAt: new Date(),
-      }).returning();
+      });
+
+      let policyNumber = genPolicyNumber();
+      let policy: typeof policies.$inferSelect | undefined;
+      try {
+        [policy] = await db.insert(policies).values(policyValues(policyNumber)).returning();
+      } catch (err) {
+        const pgCode =
+          (err as { code?: string; cause?: { code?: string } })?.code ??
+          (err as { cause?: { code?: string } })?.cause?.code;
+        if (pgCode !== "23505") throw err;
+        policyNumber = genPolicyNumber();
+        [policy] = await db.insert(policies).values(policyValues(policyNumber)).returning();
+      }
 
       // Insert beneficiaries
       if (input.beneficiaries?.length) {

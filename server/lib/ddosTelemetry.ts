@@ -54,6 +54,43 @@ export function clientKeyFor(ip: string): string {
   return createHash("sha256").update(ip).digest("hex").slice(0, 32);
 }
 
+/**
+ * I-wave (AB-22b, 2026-09): SECOND rate-window dimension. The middleware is
+ * deliberately FIRST in the chain (pre-auth, so 429s are counted), which
+ * means the authenticated PRINCIPAL is honestly NOT available in that
+ * context — what is available is the route. An attacker spreading requests
+ * across routes behind one IP still trips the per-IP dimension, while a
+ * single-route burst (the common credential-stuffing/scanning shape) trips
+ * this per-(IP, route) dimension. Principal-keyed windows would require
+ * moving capture post-auth and are documented here as NOT enforceable in
+ * this middleware.
+ *
+ * The route is normalized (numeric / UUID / long-hex path segments collapse
+ * to ":id") so per-entity URLs do not explode the key cardinality.
+ */
+export function normalizeRoute(pathname: string): string {
+  return pathname
+    .split("/")
+    .map(seg =>
+      /^(\d+|[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}|[0-9a-fA-F]{16,})$/.test(seg)
+        ? ":id"
+        : seg
+    )
+    .join("/");
+}
+
+/** Key for the per-(IP, route) dimension, namespaced "ipr:" so persisted
+ *  rows are distinguishable from bare per-IP keys. */
+export function routeClientKeyFor(ip: string, pathname: string): string {
+  return (
+    "ipr:" +
+    createHash("sha256")
+      .update(ip + "|" + normalizeRoute(pathname))
+      .digest("hex")
+      .slice(0, 32)
+  );
+}
+
 interface Bucket {
   windowStart: Date;
   count: number;
@@ -170,11 +207,18 @@ export function flushDdosTelemetry(): void {
 export function ddosTelemetryMiddleware(
   req: Request,
   _res: Response,
-  next: NextFunction
+  next: NextFunction,
+  // I-wave: injectable counter (defaults to the production singleton) so
+  // tests can observe the recorded dimensions against a real counter —
+  // Express always invokes with three arguments.
+  counter: RateWindowCounter = globalCounter
 ): void {
   try {
     const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
-    globalCounter.record(clientKeyFor(ip));
+    // Dimension 1 (unchanged key format): per-client-IP window.
+    counter.record(clientKeyFor(ip));
+    // Dimension 2 (I-wave AB-22b): per-(IP, normalized-route) window.
+    counter.record(routeClientKeyFor(ip, req.path ?? "/"));
   } catch {
     // capture must never fail a request
   }
