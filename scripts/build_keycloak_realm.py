@@ -452,7 +452,14 @@ def build_realm() -> dict:
                 "emailVerified": True,
                 "firstName": "Platform",
                 "lastName": "Admin",
-                "credentials": [{"type": "password", "value": "Admin@1234!", "temporary": True}],
+                # 2026-09-19 (L-wave, L-S-8): NO bootstrap password in the
+                # realm export. The hardcoded credential "Admin@1234!" gave
+                # anyone with repo read access the platform super-admin's
+                # first-login password. The admin user is imported with NO
+                # credentials; the password is set at boot by
+                # infra/keycloak/bootstrap-admin.sh from the
+                # KEYCLOAK_REALM_ADMIN_PASSWORD environment secret
+                # (fail-closed in the production profile when unset).
                 "realmRoles": ["insureportal-super-admin", "insureportal-admin", "insureportal-user"],
                 "attributes": {"platform_role": ["super_admin"], "tenant_id": ["system"]},
             },

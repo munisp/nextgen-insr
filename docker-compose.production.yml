@@ -275,6 +275,31 @@ services:
       retries: 10
       start_period: 120s
 
+  # 2026-09-19 (L-wave, L-S-8): one-shot realm-admin bootstrap. The imported
+  # realm carries NO credential for the super-admin (the hardcoded
+  # "Admin@1234!" was removed from realm-insureportal.json); this job sets
+  # the password from KEYCLOAK_REALM_ADMIN_PASSWORD and FAILS CLOSED in the
+  # production profile when the secret is unset.
+  keycloak-bootstrap-admin:
+    image: quay.io/keycloak/keycloak:24.0.4
+    container_name: insureportal-keycloak-bootstrap-admin
+    profiles: [infra, all]
+    networks: [insureportal-infra]
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD required}
+      KEYCLOAK_REALM_ADMIN_PASSWORD: ${KEYCLOAK_REALM_ADMIN_PASSWORD:-}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      NODE_ENV: ${NODE_ENV:-production}
+    entrypoint: ["/bin/bash", "/bootstrap-admin.sh"]
+    volumes:
+      - ./infra/keycloak/bootstrap-admin.sh:/bootstrap-admin.sh:ro
+    restart: "no"
+
   # ── Permify (fine-grained authorization) ─────────────────────────────────
   permify:
     image: ghcr.io/permify/permify:v0.10.1

@@ -138,12 +138,20 @@ describe("PAY-2 refund pipeline (real processing)", () => {
     expect(init.success).toBe(true);
     expect(init.status).toBe("pending");
 
-    const processed = await c.disputeRefund.processRefund({ refundRef: init.refundId! });
+    // 2026-09-19 (L-wave, L-S-4): processRefund now enforces segregation of
+    // duties — the initiating user can NEVER process their own refund — and
+    // requires the staff "refund" financial op. Processing is therefore done
+    // by a DIFFERENT admin identity (approverUser.id), matching the new
+    // maker-checker contract; the auto-tier amount (≤ ₦5,000) needs no
+    // separate approval step. Pipeline semantics under test (real TB leg,
+    // replay safety, durable row) are unchanged.
+    const processor = caller(91003);
+    const processed = await processor.disputeRefund.processRefund({ refundRef: init.refundId! });
     expect(processed.success).toBe(true);
     expect(processed.status).toBe("processed");
 
     // Replay: already processed → idempotent, no second funds movement.
-    const replay = await c.disputeRefund.processRefund({ refundRef: init.refundId! });
+    const replay = await processor.disputeRefund.processRefund({ refundRef: init.refundId! });
     expect(replay.idempotent).toBe(true);
 
     const db = (await getDb())!;
@@ -177,8 +185,17 @@ describe("PAY-2 refund pipeline (real processing)", () => {
   });
 
   it("enforces the documented ±₦100/24h duplicate detection", async () => {
-    const c = caller();
-    await c.disputeRefund.initiateRefund({
+    // 2026-09-19 (L-wave validation): velocity is keyed on the AUTHENTICATED
+    // USER (AB-19) and the suite shares one DB, so refunds initiated by the
+    // default admin fixture in other files (disputeRefund, funds-flow,
+    // lWaveEco seeds) consume this test's 5-per-30d budget and the first
+    // refund below was silently velocity-blocked (success:false), making the
+    // duplicate call find no prior row. Same documented fix as the daily-cap
+    // test below: dedicated USER namespace. Duplicate-detection semantics
+    // under test (±₦100/24h per destination) are unchanged — the first
+    // refund is now asserted so a setup failure fails loudly.
+    const c = caller(adminUser.id + 600);
+    const first = await c.disputeRefund.initiateRefund({
       disputeId: BASE + 103,
       amount: 8000,
       reason: "original refund under 10k",
@@ -186,6 +203,7 @@ describe("PAY-2 refund pipeline (real processing)", () => {
       accountNumber: "0999999999",
       agentId: AGENT_ID,
     });
+    expect(first.success).toBe(true);
     // Different dispute, same customer, amount within ±₦100 → duplicate.
     await expectTrpcError(
       c.disputeRefund.initiateRefund({

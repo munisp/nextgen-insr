@@ -10,6 +10,16 @@
  * with the given user (or null for anonymous), matching the shape produced by
  * server/_core/context.ts.
  */
+// L-wave (2026-09-19): ecosystem/tenancy routers under test — same mount
+// paths as production (server/routers.ts).
+import { apiKeyManagementRouter } from "../../../server/routers/apiKeyManagement";
+import { adminDashboardRouter } from "../../../server/routers/adminDashboard";
+import { pbacManagementRouter } from "../../../server/routers/pbacManagement";
+import {
+  p2pPoolsRouter,
+  groupInsuranceRouter,
+  bancassuranceRouter,
+} from "../../../server/routers/innovationRouters";
 import { expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { router } from "../../../server/_core/trpc";
@@ -62,6 +72,13 @@ import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboar
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
+  // L-wave (2026-09-19, L-S/L-P fixes): production mount paths.
+  apiKeyManagement: apiKeyManagementRouter,
+  adminDashboard: adminDashboardRouter,
+  pbacManagement: pbacManagementRouter,
+  p2pPools: p2pPoolsRouter,
+  groupInsurance: groupInsuranceRouter,
+  bancassurance: bancassuranceRouter,
   disputeRefund: disputeRefundRouter,
   agentFloatTransfer: agentFloatTransferRouter,
   // Imported and mounted (same path as production) so the suite can never

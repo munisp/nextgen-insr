@@ -355,7 +355,13 @@ describe("Sprint 46: Data Integrity", () => {
     // merchant_kyc_stages), 219 + 4 = 223. Honest-count drift, not a
     // weakening — the gate still counts information_schema at runtime; if
     // CI measures differently, the measured number wins.
-    expect(stats.totalTables).toBe(223);
+    
+    // L-wave eco (2026-09-19): drizzle/schema.ts now also exports
+    // schema.innovations (previously never materialized by drizzle-kit
+    // push, causing 42P01 in routers that write innovation tables), so
+    // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
+    // a weakening — measured number wins.
+    expect(stats.totalTables).toBe(250);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

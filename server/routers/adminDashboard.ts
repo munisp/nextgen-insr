@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import {
   users,
+  auditLog,
   billingAuditLog,
   platformBillingLedger,
 } from "../../drizzle/schema";
@@ -135,11 +136,15 @@ export const adminDashboardRouter = router({
       try {
         const db = (await getDb())!;
 
-        // Prevent self-demotion
-        if (input.userId === ctx.user.id && input.role !== "admin") {
+        // 2026-09-19 (L-wave, L-S-9): no self role change at all through this
+        // surface (previously only self-DEMOTION was blocked). users.role is
+        // what adminProcedure/financialProcedure trust, so self-service role
+        // writes are a privilege-entrenchment vector; role changes on self
+        // must come from Keycloak (the identity source of truth).
+        if (input.userId === ctx.user.id) {
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Cannot demote yourself",
+            code: "FORBIDDEN",
+            message: "Admins cannot change their own role",
           });
         }
 
@@ -147,6 +152,17 @@ export const adminDashboardRouter = router({
           .update(users)
           .set({ role: input.role, updatedAt: new Date() })
           .where(eq(users.id, input.userId));
+
+        // 2026-09-19 (L-wave, L-S-9): every users.role write is audited with
+        // the acting admin — admin minting was previously unaudited here.
+        await db.insert(auditLog).values({
+          agentId: ctx.user.id,
+          action: "USER_ROLE_CHANGED",
+          resource: "users",
+          resourceId: String(input.userId),
+          status: "success",
+          metadata: { newRole: input.role, actorUserId: ctx.user.id },
+        });
 
         return { success: true, userId: input.userId, newRole: input.role };
       } catch (error) {

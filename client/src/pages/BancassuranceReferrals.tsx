@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 /** Bancassurance — bank-partner referral intake (bancassuranceRouter.createReferral). */
 export default function BancassuranceReferrals() {
   const [partnerCode, setPartnerCode] = useState("");
+  // 2026-09-19: createReferral now requires the partner's issued API key (L-P-5);
+  // the partner authenticates with code + key, matching the server contract.
+  const [apiKey, setApiKey] = useState("");
   const [productType, setProductType] = useState("motor");
   const referral = trpc.bancassurance.createReferral.useMutation();
 
@@ -20,13 +23,19 @@ export default function BancassuranceReferrals() {
           onChange={e => setPartnerCode(e.target.value)}
         />
         <Input
+          type="password"
+          placeholder="Partner API key"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+        />
+        <Input
           placeholder="Product type"
           value={productType}
           onChange={e => setProductType(e.target.value)}
         />
         <Button
-          disabled={!partnerCode || referral.isPending}
-          onClick={() => referral.mutate({ partnerCode, productType })}
+          disabled={!partnerCode || !apiKey || referral.isPending}
+          onClick={() => referral.mutate({ partnerCode, apiKey, productType })}
         >
           Create referral
         </Button>
