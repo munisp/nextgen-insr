@@ -224,8 +224,12 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
 
     // Authenticated user with NO keycloak merchant binding → UNAUTHORIZED
     // (the removed X-Merchant-Code static bearer cannot substitute).
+    // 2026-09-19 (L-wave validation): regularUser now carries a keycloakSub
+    // (helpers/trpc.ts fixtures gained one for the L-wave SoD checks), so the
+    // "no keycloak identity" leg must strip it explicitly — otherwise the
+    // fail-closed sub check passes and the assertion sees FORBIDDEN instead.
     await expectTrpcError(
-      callerFor(regularUser).merchant.getProfile(),
+      callerFor({ ...regularUser, keycloakSub: undefined }).merchant.getProfile(),
       "UNAUTHORIZED"
     );
     // A Keycloak principal with NO bound merchant row → FORBIDDEN.

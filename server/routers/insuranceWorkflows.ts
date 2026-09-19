@@ -20,6 +20,7 @@ import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull, i
 import { z } from "zod";
 
 import {
+  users,
   policies,
   claims,
   beneficiaries,
@@ -50,6 +51,7 @@ import {
   claimAppeals,
   commissionClawbacks,
 } from "../../drizzle/schema";
+import { policyQuotes } from "../../drizzle/schema.additions";
 import { router, protectedProcedure } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { publishInsuranceEvent } from "../daprClient";
@@ -113,6 +115,78 @@ export const CANCELLABLE_POLICY_STATUSES = [
   "active",
   "lapsed",
 ] as const;
+
+// ─── L-wave stakeholder security helpers (L-S-1/2/3, L-P-1/3/4, 2026-09-19) ──
+/**
+ * Staff gate for insurer-side professional actions. The platform role enum
+ * (users.role) only carries "user" | "admin" | "supervisor"; professional
+ * roles (underwriter, claims_adjuster, ...) exist on stakeholder_profiles
+ * (schema.ts) and in the Keycloak realm, but Keycloak→platform role mapping
+ * (keycloak.ts mapKeycloakRoleToPlatformRole) still collapses them to
+ * admin/supervisor/user. 2026-09-19: professional-role enforcement beyond
+ * admin/supervisor + an active stakeholder_profiles record requires the
+ * Keycloak role-mapping work tracked under L-S-5 — disclosed, not faked.
+ */
+const STAFF_ROLES = ["admin", "supervisor"] as const;
+
+/** Server-side default commission for broker registrations (L-P-1): never caller-set. */
+const DEFAULT_BROKER_COMMISSION_RATE = "0.0500";
+
+function callerRole(ctx: { user?: { role?: string } | null }): string | undefined {
+  return ctx.user?.role ?? undefined;
+}
+
+function isStaff(ctx: { user?: { role?: string } | null }): boolean {
+  return (STAFF_ROLES as readonly string[]).includes(callerRole(ctx) ?? "");
+}
+
+function requireStaff(ctx: { user?: { role?: string } | null }, action: string): void {
+  if (!isStaff(ctx)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${action} is restricted to insurer staff (admin/supervisor)`,
+    });
+  }
+}
+
+/**
+ * Fail-closed Keycloak identity for segregation-of-duties comparisons.
+ * Repo convention (AB-8, I-wave): when a principal's identity cannot be
+ * verified, the financial action is refused — never assumed distinct.
+ */
+function callerKeycloakSub(ctx: { user?: { keycloakSub?: string | null } | null }, action: string): string {
+  const sub = ctx.user?.keycloakSub ?? null;
+  if (!sub) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${action}: caller identity (keycloakSub) is not verifiable — refusing (fail-closed SoD)`,
+    });
+  }
+  return sub;
+}
+
+/**
+ * Resolve an active stakeholder_profiles row for a user with one of the
+ * given professional roles. Returns null when no qualifying row exists.
+ */
+async function getActiveStakeholderProfile(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  userId: number,
+  roles: readonly string[]
+) {
+  const rows = await db
+    .select()
+    .from(stakeholderProfiles)
+    .where(
+      and(
+        eq(stakeholderProfiles.userId, userId),
+        eq(stakeholderProfiles.isActive, true),
+        inArray(stakeholderProfiles.role, roles as (typeof stakeholderProfiles.$inferSelect)["role"][]),
+      )
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
 
 // ─── Helper: Emit audit log entry ─────────────────────────────────────────────
 async function emitAuditLog(
@@ -195,15 +269,36 @@ export const insuranceWorkflowsRouter = router({
       const annualPremium = Math.round(basePremium * riskFactor * 100) / 100;
 
       const quoteRef = `QT-${Date.now()}-${input.customerId}`;
+      const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      // L-wave (L-P-4, 2026-09-19): the quote is PERSISTED (policy_quotes,
+      // status "pending", quoteRef bound in metadata) so bindPolicy can
+      // resolve → ownership-check → guarded-consume it (same
+      // QUOTE_OWNERSHIP/QUOTE_CONSUMED pattern as journey-activities.ts).
+      // Previously quoteRef was only echoed into a Fluvio event and bindPolicy
+      // never looked it up — caller-supplied premiums/sums bound ghost policies.
+      const [quoteRow] = await db.insert(policyQuotes).values({
+        customerId: input.customerId,
+        productId: input.productId,
+        productName: p.name ?? null,
+        sumInsured: String(input.coverageAmount),
+        premiumAmount: String(annualPremium),
+        totalPayable: String(annualPremium),
+        status: "pending",
+        validUntil,
+        metadata: { quoteRef, source: "insuranceWorkflows.getQuote" },
+      }).returning();
+
       await emitFluvioEvent(db, "policy-events", {
         eventType: "policy.quote_generated",
         quoteRef,
+        quoteId: quoteRow.id,
         customerId: input.customerId,
         productId: input.productId,
         annualPremium,
       });
 
-      return { quoteRef, annualPremium, product: p, validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() };
+      return { quoteRef, quoteId: quoteRow.id, annualPremium, product: p, validUntil: validUntil.toISOString() };
     }),
 
   /** PH-2: Bind a policy (convert quote to active policy) */
@@ -212,10 +307,14 @@ export const insuranceWorkflowsRouter = router({
       quoteRef: z.string(),
       productId: z.number(),
       customerId: z.number(),
-      agentId: z.number().optional(),
-      brokerId: z.number().optional(),
-      sumInsured: z.number(),
-      annualPremium: z.number(),
+      // L-wave (L-P-4, 2026-09-19): agentId/brokerId are no longer accepted
+      // from the caller — they are derived server-side from the consumed
+      // quote (agentId) and the caller's own broker record (brokerId).
+      // sumInsured/annualPremium are DERIVED from the quote; a caller may
+      // still assert them, and any mismatch with the recorded quote is
+      // rejected (ghost-premium/ghost-sum bind is impossible).
+      sumInsured: z.number().optional(),
+      annualPremium: z.number().optional(),
       startDate: z.string(),
       beneficiaries: z.array(z.object({
         name: z.string(),
@@ -226,6 +325,66 @@ export const insuranceWorkflowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // L-wave (L-P-4, 2026-09-19): identity binding — a non-staff caller can
+      // only bind a policy to THEMSELVES. Staff (admin/supervisor) retain the
+      // servicing path; every bind is audited with the caller identity.
+      if (!isStaff(ctx) && input.customerId !== ctx.user?.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only bind policies for your own customer account" });
+      }
+
+      // L-wave (L-P-4): resolve the quoteRef to a REAL persisted quote
+      // (policy_quotes.metadata->>'quoteRef'). Unknown refs are rejected —
+      // previously the ref was never looked up at all.
+      const [quote] = await db.select().from(policyQuotes)
+        .where(sql`${policyQuotes.metadata}::jsonb ->> 'quoteRef' = ${input.quoteRef}`)
+        .limit(1);
+      if (!quote) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Unknown quoteRef '${input.quoteRef}' — bind requires a real, unconsumed quote` });
+      }
+      if (quote.customerId !== input.customerId) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `QUOTE_OWNERSHIP: quote '${input.quoteRef}' does not belong to customer ${input.customerId}`,
+        });
+      }
+      if (quote.status !== "pending") {
+        throw new TRPCError({ code: "CONFLICT", message: `QUOTE_CONSUMED: quote '${input.quoteRef}' is no longer pending (status: ${quote.status})` });
+      }
+      if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Quote '${input.quoteRef}' has expired` });
+      }
+
+      // Premium and sum insured come from the QUOTE, never the caller.
+      const quoteSumInsured = Number(quote.sumInsured ?? NaN);
+      const quotePremium = Number(quote.premiumAmount ?? NaN);
+      if (!Number.isFinite(quoteSumInsured) || quoteSumInsured <= 0 || !Number.isFinite(quotePremium) || quotePremium <= 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Quote '${input.quoteRef}' has no recorded sumInsured/premium — refusing to bind (fail-closed for funds)`,
+        });
+      }
+      if (input.sumInsured !== undefined && input.sumInsured !== quoteSumInsured) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `sumInsured mismatch: quote recorded ${quoteSumInsured}, caller asserted ${input.sumInsured}`,
+        });
+      }
+      if (input.annualPremium !== undefined && input.annualPremium !== quotePremium) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `annualPremium mismatch: quote recorded ${quotePremium}, caller asserted ${input.annualPremium}`,
+        });
+      }
+
+      // brokerId derives from the caller's OWN active broker record (never
+      // caller-supplied); agentId from the quote.
+      const [callerBroker] = ctx.user?.id != null
+        ? await db.select({ id: brokers.id }).from(brokers)
+            .where(and(eq(brokers.userId, ctx.user.id), eq(brokers.isActive, true))).limit(1)
+        : [undefined];
+      const derivedBrokerId = callerBroker?.id ?? null;
+      const derivedAgentId = quote.agentId ?? null;
 
       // I-wave (AB-22a, 2026-09): policy numbers were
       // `POL-${Date.now()}-${customerId}` — fully predictable (enumerable
@@ -247,14 +406,14 @@ export const insuranceWorkflowsRouter = router({
 
       const policyValues = (policyNumber: string) => ({
         policyNumber,
-        productId: input.productId,
+        productId: quote.productId ?? input.productId,
         customerId: input.customerId,
-        agentId: input.agentId ?? null,
-        brokerId: input.brokerId ?? null,
+        agentId: derivedAgentId,
+        brokerId: derivedBrokerId,
         status: "bound" as const,
         coverageType: "life" as const,
-        sumInsured: String(input.sumInsured),
-        annualPremium: String(input.annualPremium),
+        sumInsured: String(quoteSumInsured),
+        annualPremium: String(quotePremium),
         startDate,
         endDate,
         renewalDate: endDate,
@@ -264,15 +423,61 @@ export const insuranceWorkflowsRouter = router({
 
       let policyNumber = genPolicyNumber();
       let policy: typeof policies.$inferSelect | undefined;
+      // L-wave (L-P-4, 2026-09-19): quote consume + policy insert are ATOMIC.
+      // The quote is claimed with a guarded UPDATE (pending → converted,
+      // bound to the owning customer) in the SAME transaction as the policy
+      // insert — a concurrent/duplicate bind gets zero rows and the whole
+      // bind fails with QUOTE_CONSUMED (journey-activities.ts pattern).
       try {
-        [policy] = await db.insert(policies).values(policyValues(policyNumber)).returning();
+        policy = await db.transaction(async (tx) => {
+          const claimed = await tx
+            .update(policyQuotes)
+            .set({ status: "converted", updatedAt: new Date() })
+            .where(
+              and(
+                eq(policyQuotes.id, quote.id),
+                eq(policyQuotes.customerId, input.customerId),
+                eq(policyQuotes.status, "pending")
+              )
+            )
+            .returning({ id: policyQuotes.id });
+          if (!claimed[0]) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `QUOTE_CONSUMED: quote '${input.quoteRef}' is no longer pending for this customer — concurrent, duplicate, or cross-customer use rejected`,
+            });
+          }
+          const [p] = await tx.insert(policies).values(policyValues(policyNumber)).returning();
+          return p;
+        });
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
         const pgCode =
           (err as { code?: string; cause?: { code?: string } })?.code ??
           (err as { cause?: { code?: string } })?.cause?.code;
         if (pgCode !== "23505") throw err;
         policyNumber = genPolicyNumber();
-        [policy] = await db.insert(policies).values(policyValues(policyNumber)).returning();
+        policy = await db.transaction(async (tx) => {
+          const claimed = await tx
+            .update(policyQuotes)
+            .set({ status: "converted", updatedAt: new Date() })
+            .where(
+              and(
+                eq(policyQuotes.id, quote.id),
+                eq(policyQuotes.customerId, input.customerId),
+                eq(policyQuotes.status, "pending")
+              )
+            )
+            .returning({ id: policyQuotes.id });
+          if (!claimed[0]) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `QUOTE_CONSUMED: quote '${input.quoteRef}' is no longer pending for this customer — concurrent, duplicate, or cross-customer use rejected`,
+            });
+          }
+          const [p] = await tx.insert(policies).values(policyValues(policyNumber)).returning();
+          return p;
+        });
       }
 
       // Insert beneficiaries
@@ -808,7 +1013,6 @@ export const insuranceWorkflowsRouter = router({
       licenseNumber: z.string(),
       licenseExpiry: z.string(),
       naicomRegNumber: z.string().optional(),
-      commissionRate: z.number().optional(),
       contactEmail: z.string().email(),
       contactPhone: z.string(),
       address: z.string(),
@@ -817,6 +1021,13 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // L-wave (L-P-1, 2026-09-19): registration is PENDING — the broker is
+      // created INACTIVE and only becomes active via approveBroker (admin
+      // license-record review). commissionRate is SERVER-DEFAULTED, never
+      // caller-set. NAICOM license live verification: the repo has NO NAICOM
+      // registry integration (verified by grep, 2026-09-19), so the license
+      // stays a pending-verification field gated at admin approval — no
+      // fake registry call is made.
       const brokerCode = `BRK-${Date.now()}`;
       const [broker] = await db.insert(brokers).values({
         userId: ctx.user?.id ?? undefined,
@@ -825,17 +1036,74 @@ export const insuranceWorkflowsRouter = router({
         licenseNumber: input.licenseNumber,
         licenseExpiry: new Date(input.licenseExpiry),
         naicomRegNumber: input.naicomRegNumber ?? null,
-        commissionRate: input.commissionRate ? String(input.commissionRate) : null,
+        commissionRate: DEFAULT_BROKER_COMMISSION_RATE,
         contactEmail: input.contactEmail,
         contactPhone: input.contactPhone,
         address: input.address,
-        isActive: true,
+        isActive: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "BROKER_REGISTERED", "broker", broker.id, ctx.user?.id, { brokerCode });
-      return { broker, brokerCode };
+      await emitAuditLog(db, "BROKER_REGISTERED", "broker", broker.id, ctx.user?.id, {
+        brokerCode, status: "pending_approval", naicomRegNumber: input.naicomRegNumber ?? null,
+      });
+      return { broker, brokerCode, status: "pending_approval" as const };
+    }),
+
+  /** BR-1b: Approve a pending broker (admin license-record review) — L-wave L-P-1 */
+  approveBroker: protectedProcedure
+    .input(z.object({
+      brokerId: z.number().int().positive(),
+      commissionRate: z.number().positive().max(1).optional(),
+      reviewNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Admin-only approval (license-record review is a compliance function).
+      if (callerRole(ctx) !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Broker approval is restricted to platform admins" });
+      }
+      // Approver identity must be verifiable for the audit trail (fail-closed).
+      const approverSub = callerKeycloakSub(ctx, "approveBroker");
+
+      const [broker] = await db.select().from(brokers).where(eq(brokers.id, input.brokerId)).limit(1);
+      if (!broker) throw new TRPCError({ code: "NOT_FOUND", message: "Broker not found" });
+      if (broker.isActive) {
+        throw new TRPCError({ code: "CONFLICT", message: `Broker ${input.brokerId} is already active` });
+      }
+      // License-record review (honest scope): the license number + NAICOM
+      // registration must be ON RECORD; live NAICOM registry verification is
+      // NOT integrated in this repo (2026-09-19) and is disclosed as pending.
+      if (!broker.licenseNumber || !broker.licenseExpiry) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Broker has no license record on file — cannot approve",
+        });
+      }
+      if (new Date(broker.licenseExpiry) < new Date()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Broker license is expired — cannot approve" });
+      }
+
+      const [updated] = await db.update(brokers).set({
+        isActive: true,
+        commissionRate: input.commissionRate != null ? String(input.commissionRate) : broker.commissionRate,
+        updatedAt: new Date(),
+      }).where(and(eq(brokers.id, input.brokerId), eq(brokers.isActive, false))).returning();
+      if (!updated) {
+        throw new TRPCError({ code: "CONFLICT", message: `Broker ${input.brokerId} is no longer pending (concurrent approval)` });
+      }
+
+      await emitAuditLog(db, "BROKER_APPROVED", "broker", input.brokerId, ctx.user?.id, {
+        approverKeycloakSub: approverSub,
+        licenseNumber: broker.licenseNumber,
+        naicomRegNumber: broker.naicomRegNumber ?? null,
+        naicomVerification: "pending_manual_review", // no live NAICOM integration exists
+        reviewNotes: input.reviewNotes ?? null,
+      });
+      return { broker: updated, approved: true as const };
     }),
 
   /** BR-2: Get broker portfolio (all policies managed) */
@@ -846,9 +1114,18 @@ export const insuranceWorkflowsRouter = router({
       limit: z.number().default(50),
       offset: z.number().default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { policies: [], total: 0 };
+
+      // L-wave (L-P-3, 2026-09-19): IDOR fix — a broker portfolio is readable
+      // only by the OWNING broker (session-derived brokers.userId) or staff.
+      const [broker] = await db.select({ userId: brokers.userId }).from(brokers)
+        .where(eq(brokers.id, input.brokerId)).limit(1);
+      if (!broker) throw new TRPCError({ code: "NOT_FOUND", message: "Broker not found" });
+      if (!isStaff(ctx) && broker.userId !== ctx.user?.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only read your own broker portfolio" });
+      }
 
       const conditions = [eq(policies.brokerId, input.brokerId)];
       if (input.status) conditions.push(eq(policies.status, input.status as any));
@@ -882,6 +1159,40 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // L-wave (L-S-2/L-P-2, 2026-09-19): underwriting decisions are
+      // staff-only. Platform admins/supervisors pass directly; any other
+      // caller must hold an ACTIVE stakeholder_profiles underwriter record
+      // (fail-closed). Professional roles beyond admin/supervisor need the
+      // Keycloak role-mapping work (L-S-5) — disclosed above.
+      if (ctx.user?.id == null) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
+      }
+      if (!isStaff(ctx)) {
+        const uw = await getActiveStakeholderProfile(db, ctx.user.id, ["underwriter"]);
+        if (!uw) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Underwriting decisions require admin/supervisor or an active underwriter stakeholder profile",
+          });
+        }
+      }
+
+      // Load + tenant-scope the policy BEFORE any decision is recorded.
+      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      assertTenantOwnership(policy.tenantId, ctx.user?.tenantId ?? 0, "Policy");
+
+      // L-wave: valid state transitions only — a decision is recorded from
+      // draft/quoted (pending underwriting); every other state is refused
+      // and the terminal flip below carries the guard atomically.
+      const ASSESSABLE_FROM = ["draft", "quoted"] as const;
+      if (!(ASSESSABLE_FROM as readonly string[]).includes(policy.status ?? "")) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Policy ${input.policyId} cannot be assessed from status '${policy.status}' (only draft/quoted)`,
+        });
+      }
+
       const [assessment] = await db.insert(underwritingAssessments).values({
         policyId: input.policyId,
         underwriterId: ctx.user?.id ?? undefined,
@@ -897,13 +1208,23 @@ export const insuranceWorkflowsRouter = router({
         updatedAt: new Date(),
       }).returning();
 
-      // Update policy status based on decision
+      // Update policy status based on decision — ATOMIC from-state guard so a
+      // concurrent bind/cancel cannot be clobbered, and referred /
+      // counter_offered leave the policy in its current state.
       if (input.decision === "approved" || input.decision === "approved_with_conditions") {
-        await db.update(policies).set({ status: "bound", updatedAt: new Date() })
-          .where(eq(policies.id, input.policyId));
+        const flipped = await db.update(policies).set({ status: "bound", updatedAt: new Date() })
+          .where(and(eq(policies.id, input.policyId), inArray(policies.status, [...ASSESSABLE_FROM])))
+          .returning({ id: policies.id });
+        if (flipped.length === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: `Policy ${input.policyId} is no longer assessable (concurrent status change)` });
+        }
       } else if (input.decision === "declined") {
-        await db.update(policies).set({ status: "cancelled", updatedAt: new Date() })
-          .where(eq(policies.id, input.policyId));
+        const flipped = await db.update(policies).set({ status: "cancelled", updatedAt: new Date() })
+          .where(and(eq(policies.id, input.policyId), inArray(policies.status, [...ASSESSABLE_FROM])))
+          .returning({ id: policies.id });
+        if (flipped.length === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: `Policy ${input.policyId} is no longer assessable (concurrent status change)` });
+        }
       }
 
       await emitFluvioEvent(db, "underwriting-events", {
@@ -915,6 +1236,8 @@ export const insuranceWorkflowsRouter = router({
 
       await emitAuditLog(db, "UNDERWRITING_DECISION", "underwriting_assessment", assessment.id, ctx.user?.id, {
         policyId: input.policyId, decision: input.decision,
+        approverUserId: ctx.user?.id ?? null,
+        approverRole: callerRole(ctx) ?? null,
       });
 
       return { assessment };
@@ -926,9 +1249,13 @@ export const insuranceWorkflowsRouter = router({
       limit: z.number().default(20),
       offset: z.number().default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { items: [], total: 0 };
+
+      // L-wave (L-P-2, 2026-09-19): the underwriting queue is staff-only —
+      // it enumerates every draft policy platform-wide (targeting surface).
+      requireStaff(ctx, "getUnderwritingQueue");
 
       const [items, [{ total }]] = await Promise.all([
         db.select().from(policies)
@@ -955,11 +1282,37 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // L-wave (L-S-1, 2026-09-19): claim assignment is staff-only
+      // (admin/supervisor — claims-manager mapping is pending L-S-5).
+      requireStaff(ctx, "assignClaim");
+
       // F11-2: read the claim so the workflow event records the REAL prior
       // status instead of a fabricated "submitted".
       const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
+      // Tenant isolation: same ownership rule as getClaimById.
+      assertTenantOwnership(claim.tenantId, ctx.user?.tenantId ?? 0, "Claim");
       const fromStatus = claim.status;
+
+      // L-wave (L-S-1): adjusterId must reference a VALID adjuster — an
+      // active stakeholder_profiles row with claims_adjuster capability and
+      // claim authority covering the claimed amount (fail-closed when no
+      // authority is recorded). adjusterId is the adjuster's userId, matching
+      // claims.assignedAdjusterId semantics.
+      const adjuster = await getActiveStakeholderProfile(db, input.adjusterId, ["claims_adjuster"]);
+      if (!adjuster) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `adjusterId ${input.adjusterId} is not an active claims_adjuster stakeholder`,
+        });
+      }
+      const authority = adjuster.maxClaimAuthority == null ? NaN : Number(adjuster.maxClaimAuthority);
+      if (!Number.isFinite(authority) || authority < Number(claim.claimedAmount ?? 0)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Adjuster ${input.adjusterId} has no claim authority covering the claimed amount ${claim.claimedAmount} (fail-closed)`,
+        });
+      }
 
       // INS-7: FROM-state guard applied atomically — assignment can never
       // regress a decided/terminal claim (approved/paid/closed/...) back to
@@ -986,6 +1339,13 @@ export const insuranceWorkflowsRouter = router({
         toStatus: "under_review",
         triggeredBy: ctx.user?.id ?? undefined,
         payload: { adjusterId: input.adjusterId },
+      });
+
+      // L-wave (L-S-1): audit every assignment with assigner identity.
+      await emitAuditLog(db, "CLAIM_ASSIGNED", "claim", input.claimId, ctx.user?.id, {
+        adjusterId: input.adjusterId,
+        adjusterStakeholderId: adjuster.id,
+        fromStatus,
       });
 
       return { success: true };
@@ -1030,6 +1390,42 @@ export const insuranceWorkflowsRouter = router({
       const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
       const fromStatus = claim.status;
+
+      // L-wave (L-S-3, 2026-09-19): segregation of duties — the adjudicator
+      // must be a DIFFERENT principal than the claimant and than the user who
+      // FILED the claim. Identities are compared on keycloakSub; an
+      // unverifiable caller identity fails closed (repo convention, AB-8).
+      const adjudicatorSub = callerKeycloakSub(ctx, "adjudicateClaim");
+      if (ctx.user?.id != null && claim.claimantId === ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the claimant cannot adjudicate their own claim",
+        });
+      }
+      const [filingEvent] = await db
+        .select({ triggeredBy: claimWorkflowEvents.triggeredBy })
+        .from(claimWorkflowEvents)
+        .where(and(eq(claimWorkflowEvents.claimId, input.claimId), eq(claimWorkflowEvents.eventType, "claim.submitted")))
+        .orderBy(asc(claimWorkflowEvents.id))
+        .limit(1);
+      if (filingEvent?.triggeredBy != null) {
+        if (filingEvent.triggeredBy === ctx.user?.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Segregation of duties: the claim filer cannot adjudicate the same claim",
+          });
+        }
+        // Defense in depth: distinct DB ids but the SAME Keycloak principal
+        // is still self-dealing.
+        const [filer] = await db.select({ keycloakSub: users.keycloakSub })
+          .from(users).where(eq(users.id, filingEvent.triggeredBy)).limit(1);
+        if (filer && filer.keycloakSub === adjudicatorSub) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Segregation of duties: the claim filer cannot adjudicate the same claim (Keycloak identity match)",
+          });
+        }
+      }
 
       // INS-3: adjudication caps — an approval can never exceed what was
       // claimed, nor the policy's sum insured.
@@ -1088,6 +1484,14 @@ export const insuranceWorkflowsRouter = router({
         eventType: `claim.${input.decision}`,
         claimId: input.claimId,
         approvedAmount: input.approvedAmount,
+      });
+
+      // L-wave (L-S-3, 2026-09-19): audit every adjudication with the
+      // adjudicator's verifiable identity.
+      await emitAuditLog(db, "CLAIM_ADJUDICATED", "claim", input.claimId, ctx.user?.id, {
+        decision: input.decision,
+        approvedAmount: input.approvedAmount ?? null,
+        adjudicatorKeycloakSub: adjudicatorSub,
       });
 
       return { success: true };
@@ -1196,16 +1600,64 @@ export const insuranceWorkflowsRouter = router({
         });
       }
 
+      // L-wave (L-S-3, 2026-09-19): segregation of duties — the SETTLER must
+      // be a different principal than the ADJUDICATOR. The adjudicator is the
+      // recorded claim.approved / claim.partially_approved workflow event
+      // actor; if none exists the claim's approval provenance is unverifiable
+      // and settlement fails closed.
+      const settlerSub = callerKeycloakSub(ctx, "settleClaimPayment");
+      const [decisionEvent] = await db
+        .select({ triggeredBy: claimWorkflowEvents.triggeredBy })
+        .from(claimWorkflowEvents)
+        .where(and(
+          eq(claimWorkflowEvents.claimId, input.claimId),
+          inArray(claimWorkflowEvents.eventType, ["claim.approved", "claim.partially_approved"]),
+        ))
+        .orderBy(desc(claimWorkflowEvents.id))
+        .limit(1);
+      if (decisionEvent?.triggeredBy == null) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Claim approval provenance is unverifiable (no adjudication event) — settlement refused (fail-closed SoD)",
+        });
+      }
+      if (decisionEvent.triggeredBy === ctx.user?.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the adjudicator cannot settle the same claim",
+        });
+      }
+      {
+        const [adjudicator] = await db.select({ keycloakSub: users.keycloakSub })
+          .from(users).where(eq(users.id, decisionEvent.triggeredBy)).limit(1);
+        if (adjudicator && adjudicator.keycloakSub === settlerSub) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Segregation of duties: the adjudicator cannot settle the same claim (Keycloak identity match)",
+          });
+        }
+      }
+
       // INS-13: the payout beneficiary resolves from the beneficiaries table,
       // never from caller-supplied free text. A minor beneficiary pays out to
       // the recorded guardian only.
+      // L-wave (L-S-3, 2026-09-19): a beneficiary OF RECORD is REQUIRED and
+      // the caller-supplied-account fallback is DELETED — previously any
+      // caller could name their own account when no beneficiaries row
+      // existed. Settlement without a beneficiary row now fails closed.
       let beneficiaryName = input.beneficiaryName ?? null;
-      let beneficiaryAccount = input.beneficiaryAccount ?? null;
+      let beneficiaryAccount: string | null = null;
       const beneficiaryBank = input.beneficiaryBank ?? null;
       const [bene] = await db.select().from(beneficiaries)
         .where(eq(beneficiaries.policyId, claim.policyId))
         .orderBy(desc(beneficiaries.percentage)).limit(1);
-      if (bene) {
+      if (!bene) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Policy ${claim.policyId} has no beneficiary of record — settlement refused (fail-closed; caller-supplied accounts are never accepted)`,
+        });
+      }
+      {
         if (bene.isMinor && !bene.guardianName) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -1213,7 +1665,7 @@ export const insuranceWorkflowsRouter = router({
           });
         }
         beneficiaryName = bene.isMinor ? (bene.guardianName ?? null) : bene.name;
-        if (beneficiaryAccount == null) beneficiaryAccount = bene.nationalId ?? null;
+        beneficiaryAccount = bene.nationalId ?? null;
         if (input.beneficiaryName && input.beneficiaryName !== beneficiaryName) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -1334,6 +1786,7 @@ export const insuranceWorkflowsRouter = router({
 
           await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.user?.id, {
             amount: payoutAmount, arrearsOffset, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
+            settlerKeycloakSub: settlerSub, adjudicatorUserId: decisionEvent.triggeredBy,
           });
         }
 

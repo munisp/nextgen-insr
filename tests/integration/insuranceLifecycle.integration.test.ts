@@ -30,11 +30,20 @@ import {
   callerFor,
   adminUser,
   regularUser,
+  approverUser,
   expectCounted as expect,
   expectTrpcError,
   resetAssertionCount,
   getAssertionCount,
 } from "./helpers/trpc";
+
+// 2026-09-19 (L-wave, L-S-3 SoD): adjudicator must differ from the claim
+// filer, and the settler from the adjudicator — both compared on Keycloak
+// identity (fail-closed). Fixtures below therefore file claims as adminUser
+// and adjudicate as approverUser (distinct keycloakSub), settling as
+// adminUser again (settler ≠ adjudicator).
+const adjudicator = () => callerFor(approverUser);
+const ADJUSTER_USER_ID = 980042; // seeded in beforeAll as an active claims_adjuster stakeholder
 
 const FILE = "insuranceLifecycle";
 const CUST = 980001;
@@ -70,7 +79,19 @@ async function seedPolicy(over: Partial<typeof policies.$inferInsert> & { policy
   return p;
 }
 
-beforeAll(() => resetAssertionCount());
+beforeAll(async () => {
+  resetAssertionCount();
+  // 2026-09-19 (L-wave, L-S-1): assignClaim now requires adjusterId to be a
+  // REAL active claims_adjuster stakeholder profile with claim authority.
+  const db = (await getDb())!;
+  const { stakeholderProfiles } = await import("../../drizzle/schema");
+  await db.insert(stakeholderProfiles).values({
+    userId: ADJUSTER_USER_ID,
+    role: "claims_adjuster",
+    maxClaimAuthority: "100000000.00",
+    isActive: true,
+  }).onConflictDoNothing();
+});
 afterAll(() => {
   console.log(`[${FILE}] assertions: ${getAssertionCount()}`);
 });
@@ -153,7 +174,9 @@ describe("INS-3 adjudication caps", () => {
       policyId: p.id, claimType: "death", incidentDate: iso(NOW - 10 * DAY),
       claimedAmount: 5000, incidentDescription: "cap test claim one",
     });
-    await expectTrpcError(caller.insuranceWorkflows.adjudicateClaim({
+    // 2026-09-19 (L-wave, L-S-3): adjudication by a distinct staff identity
+    // from the filer (SoD) — the caps assertions are unchanged.
+    await expectTrpcError(adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 5001,
     }), "BAD_REQUEST");
     // 2026-09-18 (F5/AB-7): fileClaim now rejects claimedAmount > sumInsured
@@ -172,11 +195,11 @@ describe("INS-3 adjudication caps", () => {
       claimedAmount: "50000",
       incidentDescription: "cap test claim two (seeded)",
     }).returning();
-    await expectTrpcError(caller.insuranceWorkflows.adjudicateClaim({
+    await expectTrpcError(adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: big.id, decision: "approved", approvedAmount: 25000,
     }), "BAD_REQUEST");
-    // A legal approval still works.
-    await caller.insuranceWorkflows.adjudicateClaim({
+    // A legal approval still works (distinct adjudicator — L-wave SoD).
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 4500,
     });
     const db = (await getDb())!;
@@ -221,7 +244,7 @@ describe("INS-5 appeal path", () => {
       callerFor(regularUser).insuranceWorkflows.appealClaim({ claimId: claim.id, reason: "premature appeal attempt" }),
       "CONFLICT"
     );
-    await admin.insuranceWorkflows.adjudicateClaim({
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "rejected", rejectionReason: "insufficient evidence",
     });
     // Claimant (owner) appeals.
@@ -233,7 +256,7 @@ describe("INS-5 appeal path", () => {
     const [after] = await db.select().from(claims).where(eq(claims.id, claim.id));
     expect(after.status).toBe("appealed");
     // Appealed is re-adjudicable (re-adjudication queue).
-    await admin.insuranceWorkflows.adjudicateClaim({
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 8000,
     });
     const [final] = await db.select().from(claims).where(eq(claims.id, claim.id));
@@ -249,11 +272,14 @@ describe("INS-7 assignClaim FROM-state guard", () => {
       policyId: p.id, claimType: "death", incidentDate: iso(NOW - 12 * DAY),
       claimedAmount: 2000, incidentDescription: "assign guard test",
     });
-    await caller.insuranceWorkflows.adjudicateClaim({
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "rejected", rejectionReason: "no cover",
     });
+    // 2026-09-19 (L-wave, L-S-1): adjusterId must now be a real active
+    // claims_adjuster stakeholder (seeded in beforeAll); the FROM-state guard
+    // assertion (CONFLICT on a decided claim) is unchanged.
     await expectTrpcError(
-      caller.insuranceWorkflows.assignClaim({ claimId: claim.id, adjusterId: 42 }),
+      caller.insuranceWorkflows.assignClaim({ claimId: claim.id, adjusterId: ADJUSTER_USER_ID }),
       "CONFLICT"
     );
   });
@@ -277,7 +303,12 @@ describe("INS-8 grace hold + arrears offset at settlement", () => {
     });
     const [raw] = await db.select().from(claims).where(eq(claims.id, claim.id));
     expect((raw.metadata as { graceHold?: boolean }).graceHold).toBe(true);
-    await caller.insuranceWorkflows.adjudicateClaim({
+    // 2026-09-19 (L-wave, L-S-3): settlement now requires a beneficiary of
+    // record (fail-closed) and a settler distinct from the adjudicator.
+    await db.insert(beneficiaries).values({
+      policyId: p.id, name: "Grace Beneficiary", relationship: "spouse", percentage: "100",
+    });
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 4000,
     });
     const res = await caller.insuranceWorkflows.settleClaimPayment({
@@ -489,7 +520,9 @@ describe("INS-13 beneficiary lifecycle", () => {
       policyId: p.id, claimType: "death", incidentDate: iso(NOW - 8 * DAY),
       claimedAmount: 7000, incidentDescription: "beneficiary resolution test",
     });
-    await admin.insuranceWorkflows.adjudicateClaim({
+    // 2026-09-19 (L-wave, L-S-3): adjudicator ≠ filer (approver adjudicates,
+    // admin settles).
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 7000,
     });
     // Caller-supplied name that contradicts the table is refused.
@@ -515,7 +548,7 @@ describe("INS-13 beneficiary lifecycle", () => {
       policyId: p.id, claimType: "death", incidentDate: iso(NOW - 7 * DAY),
       claimedAmount: 6000, incidentDescription: "minor guardian test",
     });
-    await admin.insuranceWorkflows.adjudicateClaim({
+    await adjudicator().insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 6000,
     });
     await expectTrpcError(admin.insuranceWorkflows.settleClaimPayment({
