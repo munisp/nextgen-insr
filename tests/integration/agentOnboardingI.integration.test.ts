@@ -19,6 +19,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 
 import {
   agents,
+  customers,
   disputes,
   floatReconciliations,
   policies,
@@ -62,7 +63,9 @@ let claimantNoEmailPk: number; // claimant with NULL email
 let claimantNormalPk: number; // ordinary claimant
 let sellingAgentPk: number; // policy selling agent (AB-20)
 let policyActiveId: number;
+let policyNullPremiumId: number;
 let refundAgentPk: number;
+let derivedRefundCustomerId = 0;
 let disputeOkId: number; // dispute → tx ₦10,000 from 0123456789
 let disputeNoTxId: number; // dispute with no linked transaction
 
@@ -108,7 +111,34 @@ beforeAll(async () => {
     .returning();
   policyActiveId = pol!.id;
 
+  // J-wave fixture: active policy whose expected premium is UNDETERMINABLE.
+  const [polNull] = await db
+    .insert(policies)
+    .values({
+      policyNumber: "POL-IFI-NULLPREM",
+      productId: 1,
+      customerId: 960102,
+      agentId: sellingAgentPk,
+      status: "active",
+      coverageType: "micro",
+      sumInsured: "1000000",
+      annualPremium: "0", // NOT NULL column — the undeterminable case in practice is zero
+    })
+    .returning();
+  policyNullPremiumId = polNull!.id;
+
   // AB-19 fixtures: real dispute → original transaction.
+  // 2026-09-18 (J-wave): refunds.customerId is DERIVED from the original
+  // transaction's customer (customers registry, unique phone) — the tx
+  // carries that customer's phone.
+  const [cust] = await db
+    .insert(customers)
+    .values({
+      firstName: "IFI",
+      lastName: "RefundCustomer",
+      phone: "0916100010",
+    })
+    .returning();
   const [tx] = await db
     .insert(transactions)
     .values({
@@ -117,9 +147,11 @@ beforeAll(async () => {
       type: "Cash In",
       amount: "10000.00",
       customerAccount: "0916100009",
+      customerPhone: cust!.phone,
       status: "success",
     })
     .returning();
+  derivedRefundCustomerId = cust!.id;
   const [d1] = await db
     .insert(disputes)
     .values({
@@ -278,6 +310,10 @@ describe("AB-19: refund terms always derived from the original transaction", () 
       .where(eq(refunds.ref, res.refundId));
     expect(row.destinationAccount).toBe("0916100009"); // original source
     expect(Number(row.refundAmount)).toBe(1000);
+    // J-wave: attribution derived from the original transaction's customer,
+    // not the client-supplied customerId (960204 was sent).
+    expect(row.customerId).toBe(derivedRefundCustomerId);
+    expect(row.customerId).not.toBe(960204);
   });
 });
 
@@ -346,5 +382,71 @@ describe("AB-20: premium amount + agent identity server-derived", () => {
     const md = log!.metadata as Record<string, unknown>;
     expect(md.overpaymentNGN).toBe(5000);
     expect(md.expectedPremium).toBe("25000.00");
+  });
+
+  it("J-wave: undeterminable (zero) annualPremium on an active policy → fail-closed rejection", async () => {
+    await expectTrpcError(
+      callerFor(adminUser).premiumTopUp.topUp({
+        policyId: policyNullPremiumId,
+        amountNGN: 999999,
+        paymentMethod: "cash",
+        reference: "FF-IFI-PM-NULL1",
+      }),
+      "PRECONDITION_FAILED"
+    );
+    const db = (await getDb())!;
+    const [tx] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ref, "FF-IFI-PM-NULL1"))
+      .limit(1);
+    expect(tx).toBeUndefined();
+  });
+
+  it("J-wave: spoofed agentId cannot reach the premiums ledger row OR the TB transfer", async () => {
+    const res = await callerFor(adminUser).premiumTopUp.topUp({
+      policyId: policyActiveId,
+      amountNGN: 25000,
+      paymentMethod: "card",
+      reference: "FF-IFI-PM-SPOOF2",
+      agentId: claimantNormalPk, // spoofed — policy belongs to sellingAgentPk
+    });
+    expect(res.idempotent).toBe(false);
+
+    // (a) premiums ledger row: attribution is the policy's selling agent.
+    const db = (await getDb())!;
+    const { premiums } = await import("../../drizzle/schema.additions");
+    const [prem] = await db
+      .select()
+      .from(premiums)
+      .where(eq(premiums.premiumRef, "FF-IFI-PM-SPOOF2"))
+      .limit(1);
+    expect(prem.agentId).toBe(sellingAgentPk);
+    expect(prem.agentId).not.toBe(claimantNormalPk);
+
+    // (b) TB transfer: replay the same ref against the real (mini) ledger —
+    // the STORED transfer's agentId is the policy-derived identity, proving
+    // the spoofed value never reached the ledger leg.
+    const sidecar = process.env.TB_SIDECAR_URL;
+    expect(sidecar, "TB_SIDECAR_URL must be set by integration globalSetup").toBeTruthy();
+    const replay = await fetch(`${sidecar}/transfers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        debitAccountId: "customer-960101",
+        creditAccountId: "insurer-premium-pool",
+        amount: 25000 * 100,
+        ledger: 3000,
+        code: 700,
+        ref: "FF-IFI-PM-SPOOF2",
+        txType: "premium_payment",
+        agentId: String(claimantNormalPk), // attacker value; fingerprint excludes it
+      }),
+    });
+    expect(replay.status).toBe(200);
+    const view = (await replay.json()) as { agentId: string | null; idempotentReplay: boolean };
+    expect(view.idempotentReplay).toBe(true);
+    expect(view.agentId).toBe(String(sellingAgentPk));
+    expect(view.agentId).not.toBe(String(claimantNormalPk));
   });
 });

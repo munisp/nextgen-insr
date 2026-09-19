@@ -226,6 +226,10 @@ export async function startMiniTigerBeetle(
     code: t.code,
     ref: t.ref ?? null,
     txType: t.txType ?? null,
+    // 2026-09-18 (J-wave): expose the stored transfer agentId so integration
+    // tests can assert server-derived attribution (real TB metadata is
+    // queryable; the harness now mirrors that).
+    agentId: t.agentId ?? null,
     timestamp: t.timestamp,
     idempotentReplay,
   });

@@ -14,7 +14,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { agents, disputes, refunds, transactions } from "../../drizzle/schema";
+import { agents, customers, disputes, refunds, transactions } from "../../drizzle/schema";
 import { router } from "../../server/_core/trpc";
 import { disputeRefundRouter } from "../../server/routers/disputeRefund";
 import { floatManagementRouter } from "../../server/routers/floatManagement";
@@ -83,6 +83,17 @@ beforeAll(async () => {
     txAmount: string,
     sourceAccount: string
   ): Promise<void> {
+    // 2026-09-18 (J-wave): refunds.customerId is DERIVED from the original
+    // transaction's customer (customers registry, unique phone) — seed the
+    // customer and put their phone on the transaction.
+    const [cust] = await db
+      .insert(customers)
+      .values({
+        firstName: "F1",
+        lastName: `RefundCust${n}`,
+        phone: `08055${String(n).padStart(6, "0")}`,
+      })
+      .returning();
     const [tx] = await db
       .insert(transactions)
       .values({
@@ -91,6 +102,7 @@ beforeAll(async () => {
         type: "Cash In",
         amount: txAmount,
         customerAccount: sourceAccount,
+        customerPhone: cust!.phone,
         status: "success",
       })
       .returning();
