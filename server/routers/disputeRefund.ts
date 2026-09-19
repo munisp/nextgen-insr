@@ -8,7 +8,7 @@ import { customers, disputes, refunds, transactions, type Refund } from "../../d
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, TBLedgerUnavailableError } from "../tbClient";
 import { deriveRefundTerms } from "../lib/refundTerms";
@@ -135,9 +135,19 @@ export const disputeRefundRouter = router({
       if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
 
       // Tenant isolation (F-05): tenant users only see their own tenant's
-      // disputes. Users without a tenantId (platform staff, tenantId=0
-      // sentinel per server/middleware/tenantIsolation.ts) are unscoped.
+      // disputes.
+      // 2026-09-19 (L-wave, L-S-7/L-P-8): previously users WITHOUT a
+      // tenantId (tenantId=0 sentinel) were silently UNSCOPED — every
+      // platform-scope account (the default for portal signups) read every
+      // tenant's disputes/refunds. Fail-closed: platform-scope reads now
+      // require the admin role; tenant users remain scoped to their tenant.
       const tenantId = ctx.user?.tenantId ?? 0;
+      if (tenantId === 0 && ctx.user?.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Platform-scope dispute/refund reads require the admin role",
+        });
+      }
       const where = tenantId !== 0 ? eq(disputes.tenantId, tenantId) : undefined;
 
       const results = await database.select().from(disputes).where(where).orderBy(desc(disputes.id)).limit(input.limit).offset(input.offset);
@@ -436,13 +446,88 @@ export const disputeRefundRouter = router({
     }),
 
   /**
-   * PAY-2: the missing refund payout path. Previously refunds were queued
-   * with status "pending" and NOTHING ever processed them — customer funds
-   * were never returned.
+   * 2026-09-19 (L-wave, L-S-4): staff approval gate for queued refunds.
+   * Previously NOTHING could move a refund out of "pending" while
+   * processRefund paid straight from "pending" — i.e. approval tiers were
+   * documentation-only and any authenticated user could trigger the payout.
+   * Now: a staff user with the "refund" financial op (admin/supervisor per
+   * ROLE_PERMISSIONS) approves a pending refund; a DIFFERENT staff user (or
+   * the same approver, but never the initiator) processes it. Auto-tier
+   * refunds (≤ ₦5,000) are queued without manual approval by design and may
+   * be processed directly from "pending" — still by staff, still with SoD
+   * vs the initiator.
+   */
+  approveRefund: financialProcedure
+    .input(z.object({ refundRef: z.string().min(5) }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [refund] = await database
+        .select()
+        .from(refunds)
+        .where(eq(refunds.ref, input.refundRef))
+        .limit(1);
+      if (!refund) throw new TRPCError({ code: "NOT_FOUND", message: "Refund not found" });
+
+      const tenantId = ctx.user?.tenantId ?? 0;
+      if (refund.tenantId != null) assertTenantOwnership(refund.tenantId, tenantId, "Refund");
+
+      // SoD (L-S-4): the approver must NOT be the user who initiated the
+      // refund — maker/checker on every refund above the auto tier.
+      if (refund.initiatedByUserId != null && refund.initiatedByUserId === ctx.user?.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the refund initiator cannot approve their own refund",
+        });
+      }
+
+      // Atomic transition pending/failed → approved; only one approver wins.
+      // "failed" is re-approvable so a ledger outage does not strand a
+      // legitimately approved payout; the ledger leg stays ref-deduped.
+      const claimed = await database
+        .update(refunds)
+        .set({
+          status: "approved",
+          approvedBy: String(ctx.user?.id ?? ""),
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(sql`ref = ${refund.ref} AND status IN ('pending','failed')`)
+        .returning({ ref: refunds.ref });
+      if (claimed.length === 0) {
+        if (refund.status === "approved") {
+          return { success: true, idempotent: true, refundRef: refund.ref, status: "approved" };
+        }
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Refund ${refund.ref} is in status '${refund.status}' and cannot be approved`,
+        });
+      }
+
+      await writeAuditLog({
+        agentId: ctx.user?.id ?? null,
+        action: "REFUND_APPROVED",
+        resource: "refund",
+        resourceId: refund.ref,
+        status: "success",
+        metadata: {
+          approverUserId: ctx.user?.id ?? null,
+          initiatedByUserId: refund.initiatedByUserId ?? null,
+          amount: Number(refund.refundAmount),
+          disputeId: refund.disputeId ?? null,
+        },
+      });
+      return { success: true, idempotent: false, refundRef: refund.ref, status: "approved" };
+    }),
+
+  /**
+   * PAY-2: the refund payout path.
    *
    * Real semantics (fail-closed):
-   *   1. Atomically claim the refund (pending/approved/failed → processing).
-   *      Exactly one processor wins; everyone else replays or conflicts.
+   *   1. Atomically claim the refund (approved, or auto-tier pending/failed
+   *      → processing). Exactly one processor wins; everyone else replays
+   *      or conflicts.
    *   2. Post the compensating ledger transfer via TigerBeetle: the refund
    *      pool is debited and the customer is credited back. The transfer ref
    *      `${refund.ref}-PAYOUT` is ref-deduped by tbClient, so a retry after
@@ -452,8 +537,14 @@ export const disputeRefundRouter = router({
    *   On ledger failure the refund is marked "failed" with the reason (loud)
    *   and the error propagates — it is retryable by calling processRefund
    *   again.
+   *
+   * 2026-09-19 (L-wave, L-S-4): rebuilt on financialProcedure (the
+   * ROUTER_OPERATION_MAP "refund" mapping was previously dead because this
+   * procedure was protectedProcedure — any authenticated user could pay out
+   * a pending refund). Now: admin/supervisor financial-op gate, SoD vs the
+   * initiating user, and staff approval required above the auto tier.
    */
-  processRefund: protectedProcedure
+  processRefund: financialProcedure
     .input(z.object({ refundRef: z.string().min(5) }))
     .mutation(async ({ ctx, input }) => {
       const database = await getDb();
@@ -471,6 +562,15 @@ export const disputeRefundRouter = router({
       const tenantId = ctx.user?.tenantId ?? 0;
       if (refund.tenantId != null) assertTenantOwnership(refund.tenantId, tenantId, "Refund");
 
+      // SoD (L-S-4): the processor must NOT be the user who initiated the
+      // refund. An insider can no longer initiate AND pay out the same refund.
+      if (refund.initiatedByUserId != null && refund.initiatedByUserId === ctx.user?.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the refund initiator cannot process their own refund",
+        });
+      }
+
       if (refund.status === "processed") {
         // Idempotent replay — the funds already moved; report, never re-pay.
         return { success: true, idempotent: true, refundRef: refund.ref, status: "processed" };
@@ -479,16 +579,35 @@ export const disputeRefundRouter = router({
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Refund ${refund.ref} was rejected and cannot be processed` });
       }
 
+      // 2026-09-19 (L-wave, L-S-4): approval gate. Payout requires either a
+      // recorded staff approval (status 'approved', or a 'failed' retry of a
+      // previously approved refund — approvedBy IS NOT NULL) or the auto
+      // tier (≤ ₦5,000 per REFUND_TIERS), which is queued without manual
+      // approval by design. A bare 'pending'/'failed' row above the auto
+      // tier can no longer be paid out.
+      const isAutoTier = Number(refund.refundAmount) <= REFUND_TIERS[0]!.max;
+
       // Atomic claim: exactly one concurrent processor transitions the row.
       const claimed = await database
         .update(refunds)
         .set({ status: "processing", updatedAt: new Date() })
-        .where(sql`ref = ${refund.ref} AND status IN ('pending','approved','failed')`)
+        .where(sql`ref = ${refund.ref} AND (
+          status = 'approved'
+          OR (status IN ('pending','failed') AND (${isAutoTier} OR "approvedBy" IS NOT NULL))
+        )`)
         .returning();
       if (claimed.length === 0) {
         const [now] = await database.select().from(refunds).where(eq(refunds.ref, input.refundRef)).limit(1);
         if (now?.status === "processed") {
           return { success: true, idempotent: true, refundRef: refund.ref, status: "processed" };
+        }
+        if (now?.status === "pending" || now?.status === "failed") {
+          // 2026-09-19 (L-wave, L-S-4): above the auto tier a refund must be
+          // staff-APPROVED before payout — fail loudly, never pay "pending".
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Refund ${refund.ref} requires staff approval before payout (status '${now.status}', above the ₦${REFUND_TIERS[0]!.max.toLocaleString()} auto tier)`,
+          });
         }
         throw new TRPCError({ code: "CONFLICT", message: `Refund ${refund.ref} is being processed concurrently` });
       }
@@ -517,6 +636,23 @@ export const disputeRefundRouter = router({
           })
           .where(eq(refunds.ref, refund.ref));
 
+        // 2026-09-19 (L-wave, L-S-4): durable audit of the payout with the
+        // processing principal — refunds are funds movement and must be
+        // attributable end-to-end (initiator → approver → processor).
+        await writeAuditLog({
+          agentId: ctx.user?.id ?? null,
+          action: "REFUND_PROCESSED",
+          resource: "refund",
+          resourceId: refund.ref,
+          status: "success",
+          metadata: {
+            processorUserId: ctx.user?.id ?? null,
+            initiatedByUserId: refund.initiatedByUserId ?? null,
+            approvedBy: refund.approvedBy ?? null,
+            amount: Number(refund.refundAmount),
+            tbTransferId: tbResult?.id ?? null,
+          },
+        });
         logger.info(`[RefundProcessor] processed ${refund.ref} ₦${refund.refundAmount} → customer ${refund.customerId} | TB: ${tbResult?.id ?? "n/a"}`);
         return { success: true, idempotent: false, refundRef: refund.ref, status: "processed", tbTransferId: tbResult?.id ?? null };
       } catch (err) {
@@ -545,7 +681,16 @@ export const disputeRefundRouter = router({
 
     // Tenant isolation (F-05): aggregate counts are scoped to the caller's
     // tenant; platform users (no tenantId) see global totals.
+    // 2026-09-19 (L-wave, L-S-7/L-P-8): platform-scope (tenantId=0 sentinel)
+    // global aggregates are admin-only — a plain platform account previously
+    // read cross-tenant refund volumes/counts. Fail-closed.
     const tenantId = ctx.user?.tenantId ?? 0;
+    if (tenantId === 0 && ctx.user?.role !== "admin") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Platform-scope refund summaries require the admin role",
+      });
+    }
     const disputeWhere = tenantId !== 0 ? eq(disputes.tenantId, tenantId) : undefined;
     const refundWhere = tenantId !== 0 ? eq(refunds.tenantId, tenantId) : undefined;
 

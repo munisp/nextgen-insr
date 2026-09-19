@@ -24,7 +24,10 @@ import { getDb } from "../db";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const VALID_SCOPES = [
+// 2026-09-19 (L-wave, L-P-9): exported so apiKeyManagement enforces the
+// SAME server-side scope allowlist (previously it accepted arbitrary
+// caller-supplied scope strings).
+export const VALID_SCOPES = [
   "transactions:read",
   "transactions:write",
   "agents:read",

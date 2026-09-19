@@ -59,6 +59,16 @@ import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
 import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
 import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
 import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboardingWizard";
+// L-wave (2026-09-19): ecosystem/tenancy routers under test — same mount
+// paths as production (server/routers.ts).
+import { apiKeyManagementRouter } from "../../../server/routers/apiKeyManagement";
+import { adminDashboardRouter } from "../../../server/routers/adminDashboard";
+import { pbacManagementRouter } from "../../../server/routers/pbacManagement";
+import {
+  p2pPoolsRouter,
+  groupInsuranceRouter,
+  bancassuranceRouter,
+} from "../../../server/routers/innovationRouters";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -128,6 +138,13 @@ export const integrationRouter = router({
   agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
   // H-wave: same mount path as production (routers.ts:845).
   agentOnboardingWizard: agentOnboardingWizardRouter,
+  // L-wave (2026-09-19, L-S/L-P fixes): production mount paths.
+  apiKeyManagement: apiKeyManagementRouter,
+  adminDashboard: adminDashboardRouter,
+  pbacManagement: pbacManagementRouter,
+  p2pPools: p2pPoolsRouter,
+  groupInsurance: groupInsuranceRouter,
+  bancassurance: bancassuranceRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

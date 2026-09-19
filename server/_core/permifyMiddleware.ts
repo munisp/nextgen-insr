@@ -59,7 +59,11 @@ const ROLE_PERMISSIONS: Record<string, Set<FinancialOperation>> = {
     "float_topup", "float_debit", "billing_record", "billing_reconcile",
     "reversal", "refund", "read",
   ]),
-  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal"]),
+  // 2026-09-19 (L-wave, L-S-4): supervisors hold "refund" so the documented
+  // refund-approval tier (supervisor, ₦5,001–₦100,000 — see disputeRefund.ts
+  // REFUND_TIERS) is actually reachable. Processing still requires SoD vs the
+  // initiating user, enforced inside disputeRefund.processRefund.
+  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal", "refund"]),
   agent: new Set(["transfer", "premium_collect", "float_debit", "read"]),
   underwriter: new Set(["read"]),
   compliance_officer: new Set(["read"]),
@@ -103,7 +107,12 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   "insuranceWorkflows.approveClaim": "claim_settle",
   "insuranceWorkflows.adjudicateClaim": "claim_settle",
   "insuranceWorkflows.cancelPolicy": "refund",
+  // 2026-09-19 (L-wave, L-S-4): these mappings were previously DEAD —
+  // disputeRefund.processRefund was built on protectedProcedure, so the
+  // "refund" op was never enforced on the real payout path. Both procedures
+  // now run on financialProcedure, which makes these mappings live.
   "disputeRefund.processRefund": "refund",
+  "disputeRefund.approveRefund": "refund",
   "disputeRefund.initiateRefund": "refund",
   // Commissions
   "commissionPayouts.process": "commission_pay",

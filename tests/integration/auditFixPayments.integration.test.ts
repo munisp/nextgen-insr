@@ -138,12 +138,20 @@ describe("PAY-2 refund pipeline (real processing)", () => {
     expect(init.success).toBe(true);
     expect(init.status).toBe("pending");
 
-    const processed = await c.disputeRefund.processRefund({ refundRef: init.refundId! });
+    // 2026-09-19 (L-wave, L-S-4): processRefund now enforces segregation of
+    // duties — the initiating user can NEVER process their own refund — and
+    // requires the staff "refund" financial op. Processing is therefore done
+    // by a DIFFERENT admin identity (approverUser.id), matching the new
+    // maker-checker contract; the auto-tier amount (≤ ₦5,000) needs no
+    // separate approval step. Pipeline semantics under test (real TB leg,
+    // replay safety, durable row) are unchanged.
+    const processor = caller(91003);
+    const processed = await processor.disputeRefund.processRefund({ refundRef: init.refundId! });
     expect(processed.success).toBe(true);
     expect(processed.status).toBe("processed");
 
     // Replay: already processed → idempotent, no second funds movement.
-    const replay = await c.disputeRefund.processRefund({ refundRef: init.refundId! });
+    const replay = await processor.disputeRefund.processRefund({ refundRef: init.refundId! });
     expect(replay.idempotent).toBe(true);
 
     const db = (await getDb())!;

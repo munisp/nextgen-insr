@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 
 import { auditLog, systemConfig } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
 
@@ -139,7 +139,11 @@ export const pbacManagementRouter = router({
       }
     }),
 
-  assignRole: protectedProcedure
+  // 2026-09-19 (L-wave, L-S-9): role assignment is admin-only. This was
+  // protectedProcedure — any authenticated user could write a PBAC role
+  // assignment for any subjectId. The audit row below also gains the acting
+  // admin's id.
+  assignRole: adminProcedure
     .input(
       z.object({
         id: z.union([z.number(), z.string()]).optional(),
@@ -147,7 +151,7 @@ export const pbacManagementRouter = router({
         role: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const subjectId = input.userId ?? input.id;
       if (!subjectId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "userId is required" });
@@ -172,11 +176,12 @@ export const pbacManagementRouter = router({
           set: { value, updatedAt: new Date() },
         });
       await db.insert(auditLog).values({
+        agentId: ctx.user.id,
         action: "pbac_role_assigned",
         resource: "pbac",
         resourceId: String(subjectId),
         status: "success",
-        metadata: { role: input.role },
+        metadata: { role: input.role, actorUserId: ctx.user.id },
       });
       return { success: true, userId: String(subjectId), role: input.role };
     }),

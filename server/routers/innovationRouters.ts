@@ -664,6 +664,13 @@ export const comparisonRouter = router({
 // ═══════════════════════════════════════════════════════════════════════════════
 // 7. P2P POOLS ROUTER
 // ═══════════════════════════════════════════════════════════════════════════════
+// 2026-09-19 (L-wave, L-P-11): server-set reinsurance threshold bounds.
+// The threshold decides how much of a claim the POOL absorbs before the
+// INSURER pays the remainder, so it is product/policy data — never a
+// caller-chosen knob for non-admins.
+const P2P_REINSURANCE_THRESHOLD_DEFAULT = 100000; // ₦100,000
+const P2P_REINSURANCE_THRESHOLD_MAX = 1000000; // ₦1,000,000 server cap
+
 export const p2pPoolsRouter = router({
 
   /** Create a new P2P risk pool */
@@ -675,7 +682,13 @@ export const p2pPoolsRouter = router({
       maxMembers: z.number().min(5).max(200).default(50),
       contributionAmount: z.number(),
       contributionFrequency: z.enum(["monthly", "quarterly", "annual"]).default("monthly"),
-      reinsuranceThreshold: z.number(),
+      // 2026-09-19 (L-wave, L-P-11): reinsuranceThreshold is now OPTIONAL
+      // and admin-only when supplied. Previously any pool creator set it
+      // arbitrarily — a tiny threshold shifted virtually every claim's loss
+      // onto the insurer (paidFromInsurer = claimAmount − ε). Non-admin
+      // creators get the server default; admins may set it but never above
+      // the server cap.
+      reinsuranceThreshold: z.number().positive().optional(),
       periodStart: z.string(),
       periodEnd: z.string(),
     }))
@@ -683,11 +696,31 @@ export const p2pPoolsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      let threshold = P2P_REINSURANCE_THRESHOLD_DEFAULT;
+      if (input.reinsuranceThreshold != null) {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "reinsuranceThreshold is server-set; only platform admins may override it",
+          });
+        }
+        if (input.reinsuranceThreshold > P2P_REINSURANCE_THRESHOLD_MAX) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `reinsuranceThreshold may not exceed the server cap of ${P2P_REINSURANCE_THRESHOLD_MAX}`,
+          });
+        }
+        threshold = input.reinsuranceThreshold;
+      }
+
+      // Never spread the caller's reinsuranceThreshold into the insert.
+      const poolInput = { ...input } as Partial<typeof input>;
+      delete poolInput.reinsuranceThreshold;
       const [pool] = await db.insert(p2pPools).values({
-        ...input,
+        ...poolInput,
         organiserId: ctx.user.id,
         contributionAmount: input.contributionAmount.toString(),
-        reinsuranceThreshold: input.reinsuranceThreshold.toString(),
+        reinsuranceThreshold: threshold.toString(),
       }).returning();
 
       await writeAuditLog({
@@ -747,42 +780,135 @@ export const p2pPoolsRouter = router({
           .limit(1);
         if (!member.length) throw new TRPCError({ code: "FORBIDDEN", message: "Not a pool member" });
 
-        const poolBalance = parseFloat(pool[0].poolBalance ?? "0");
-        const reinsuranceThreshold = parseFloat(pool[0].reinsuranceThreshold ?? "0");
-
-        // Determine split: pool pays up to threshold, insurer pays remainder
-        const paidFromPool = Math.min(input.claimAmount, poolBalance, reinsuranceThreshold);
-        const paidFromInsurer = input.claimAmount > reinsuranceThreshold
-          ? input.claimAmount - reinsuranceThreshold
-          : 0;
-
+        // 2026-09-19 (L-wave, L-P-11): a filed claim is a DECLARATION ONLY.
+        // Previously the pool balance was debited immediately on a
+        // self-declared pending claim (instant pool drain) and the
+        // insurer-share was booked on the caller's own numbers. Now NO
+        // balance moves at filing: paidFromPool/paidFromInsurer stay 0 until
+        // staff adjudication (adjudicatePoolClaim below) approves an amount.
         const [claim] = await db.insert(p2pPoolClaims).values({
           poolId: input.poolId,
           memberId: member[0].id,
           claimAmount: input.claimAmount.toString(),
-          paidFromPool: paidFromPool.toString(),
-          paidFromInsurer: paidFromInsurer.toString(),
+          paidFromPool: "0",
+          paidFromInsurer: "0",
           status: "pending",
         }).returning();
-
-        // Deduct from pool balance
-        if (paidFromPool > 0) {
-          await db.update(p2pPools)
-            .set({
-              poolBalance: (poolBalance - paidFromPool).toString(),
-              updatedAt: new Date(),
-            })
-            .where(eq(p2pPools.id, input.poolId));
-        }
 
         await fluvioProduce("p2p.pool.claim", {
           value: JSON.stringify({ poolId: input.poolId, claimId: claim.id, amount: input.claimAmount }),
         }).catch(() => {});
 
-        return { claimId: claim.id, paidFromPool, paidFromInsurer };
+        return { claimId: claim.id, status: "pending", paidFromPool: 0, paidFromInsurer: 0 };
       } finally {
         await releaseLock(lockKey);
       }
+    }),
+
+  /**
+   * 2026-09-19 (L-wave, L-P-11): staff adjudication gate for P2P pool
+   * claims. The pool is debited ONLY here, on an approved claim, by staff
+   * (admin/supervisor) — never at filing time on the claimant's own
+   * declaration. Rejection leaves balances untouched.
+   */
+  adjudicatePoolClaim: protectedProcedure
+    .input(z.object({
+      claimId: z.number(),
+      decision: z.enum(["approved", "rejected"]),
+      approvedAmount: z.number().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "supervisor") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Pool claim adjudication is staff-only" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [claim] = await db.select().from(p2pPoolClaims)
+        .where(eq(p2pPoolClaims.id, input.claimId)).limit(1);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
+      if (claim.status !== "pending") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Claim ${claim.id} is '${claim.status}', not pending` });
+      }
+
+      const [member] = await db.select().from(p2pPoolMembers)
+        .where(eq(p2pPoolMembers.id, claim.memberId)).limit(1);
+      // SoD: staff may not adjudicate a claim they filed themselves.
+      if (member && member.customerId === ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: staff cannot adjudicate their own pool claim",
+        });
+      }
+
+      if (input.decision === "rejected") {
+        await db.update(p2pPoolClaims)
+          .set({ status: "rejected" })
+          .where(eq(p2pPoolClaims.id, claim.id));
+        await writeAuditLog({
+          action: "P2P_CLAIM_REJECTED",
+          resource: "p2p_pool_claim",
+          resourceId: String(claim.id),
+          metadata: { adjudicatorUserId: ctx.user.id, claimAmount: claim.claimAmount },
+        });
+        return { claimId: claim.id, status: "rejected", paidFromPool: 0, paidFromInsurer: 0 };
+      }
+
+      const approvedAmount = input.approvedAmount ?? parseFloat(claim.claimAmount);
+      const [pool] = await db.select().from(p2pPools)
+        .where(eq(p2pPools.id, claim.poolId)).limit(1);
+      if (!pool) throw new TRPCError({ code: "NOT_FOUND", message: "Pool not found" });
+
+      const poolBalance = parseFloat(pool.poolBalance ?? "0");
+      const reinsuranceThreshold = parseFloat(pool.reinsuranceThreshold ?? "0");
+      // Split on the APPROVED amount: pool pays up to balance+threshold,
+      // insurer pays the remainder above the threshold.
+      const paidFromPool = Math.min(approvedAmount, poolBalance, reinsuranceThreshold);
+      const paidFromInsurer = approvedAmount > reinsuranceThreshold
+        ? approvedAmount - reinsuranceThreshold
+        : 0;
+
+      // Atomic: claim flips to approved AND the pool debit happens in ONE
+      // transaction; the balance guard (pool_balance >= debit) makes a
+      // concurrent double-spend of the pool impossible.
+      await db.transaction(async (tx) => {
+        const debited = await tx.update(p2pPools)
+          .set({
+            poolBalance: sql`(pool_balance - ${paidFromPool}::numeric)::numeric(15,2)`,
+            updatedAt: new Date(),
+          })
+          .where(sql`id = ${pool.id} AND pool_balance >= ${paidFromPool}::numeric`)
+          .returning({ id: p2pPools.id });
+        if (paidFromPool > 0 && debited.length === 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Pool balance changed concurrently — re-adjudicate against the current balance",
+          });
+        }
+        await tx.update(p2pPoolClaims)
+          .set({
+            status: "approved",
+            approvedAmount: approvedAmount.toString(),
+            paidFromPool: paidFromPool.toString(),
+            paidFromInsurer: paidFromInsurer.toString(),
+          })
+          .where(eq(p2pPoolClaims.id, claim.id));
+      });
+
+      await writeAuditLog({
+        action: "P2P_CLAIM_APPROVED",
+        resource: "p2p_pool_claim",
+        resourceId: String(claim.id),
+        metadata: {
+          adjudicatorUserId: ctx.user.id,
+          approvedAmount,
+          paidFromPool,
+          paidFromInsurer,
+          poolId: pool.id,
+        },
+      });
+
+      return { claimId: claim.id, status: "approved", paidFromPool, paidFromInsurer };
     }),
 
   /** List pools available to join */
@@ -1060,28 +1186,60 @@ export const groupInsuranceRouter = router({
       employeeId: z.string().optional(),
       memberType: z.enum(["principal", "spouse", "child"]).default("principal"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const [member] = await db.insert(groupMembers).values(input).returning();
-
-      // Update member count and total premium
-      const group = await db.select().from(groupPolicies)
+      // 2026-09-19 (L-wave, L-P-10): only the scheme organiser (the session
+      // user who created the group policy) or staff (admin/supervisor) may
+      // add members. Previously ANY authenticated user could enrol arbitrary
+      // customers into ANY employer scheme — roster tampering and
+      // non-consensual enrolment.
+      const [group] = await db.select().from(groupPolicies)
         .where(eq(groupPolicies.id, input.groupPolicyId)).limit(1);
-
-      if (group.length) {
-        const newTotal = parseFloat(group[0].totalPremium ?? "0") + parseFloat(group[0].premiumPerMember ?? "0");
-        await db.update(groupPolicies)
-          .set({
-            totalMembers: sql`total_members + 1`,
-            totalPremium: newTotal.toString(),
-            updatedAt: new Date(),
-          })
-          .where(eq(groupPolicies.id, input.groupPolicyId));
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "Group policy not found" });
+      const isStaff = ctx.user.role === "admin" || ctx.user.role === "supervisor";
+      if (group.organiserId !== ctx.user.id && !isStaff) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the scheme organiser or staff can add members to this group policy",
+        });
       }
 
-      return { memberId: member.id };
+      // 2026-09-19 (L-wave, L-P-10): honest premium handling. There is NO
+      // premium-collection rail wired for group schemes (no TigerBeetle
+      // account movement, no debit mandate). Previously addMember bumped
+      // group_policies.totalPremium as if funds were collected — accounting
+      // fiction an attacker could inflate. Now the member is enrolled with
+      // status "pending_payment", totalMembers reflects enrolments, and
+      // totalPremium is left untouched until a real collection rail exists;
+      // it must NEVER be read as collected funds.
+      const [member] = await db.insert(groupMembers).values({
+        ...input,
+        status: "pending_payment",
+      }).returning();
+
+      await db.update(groupPolicies)
+        .set({
+          totalMembers: sql`total_members + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(groupPolicies.id, input.groupPolicyId));
+
+      await writeAuditLog({
+        action: "GROUP_MEMBER_ADDED",
+        resource: "group_policy",
+        resourceId: String(input.groupPolicyId),
+        metadata: {
+          memberId: member.id,
+          customerId: input.customerId,
+          addedByUserId: ctx.user.id,
+          organiserId: group.organiserId,
+          premiumStatus: "pending_payment",
+        },
+      });
+
+      return { memberId: member.id, status: "pending_payment" };
     }),
 
   /** List group policies */
@@ -1130,6 +1288,13 @@ export const bancassuranceRouter = router({
   createReferral: publicProcedure
     .input(z.object({
       partnerCode: z.string(),
+      // 2026-09-19 (L-wave, L-P-5): the partner API key issued by
+      // registerPartner is now REQUIRED and actually validated. Previously
+      // the key was stored (hashed) at registration but never checked
+      // anywhere, so anyone who knew/guessed a 16-char partnerCode could
+      // forge unlimited referrals attributed to that partner. Key storage
+      // remains sha256-hashed; the compare is constant-time.
+      apiKey: z.string().min(32).max(128),
       productType: z.string(),
       customerData: z.record(z.string(), z.unknown()).optional(),
     }))
@@ -1141,7 +1306,18 @@ export const bancassuranceRouter = router({
         .where(and(eq(bancassurancePartners.partnerCode, input.partnerCode), eq(bancassurancePartners.status, "active")))
         .limit(1);
 
-      if (!partner) throw new TRPCError({ code: "NOT_FOUND", message: "Partner not found" });
+      // Constant-shape failure: unknown partner and bad key are
+      // indistinguishable (no partner-code enumeration oracle).
+      if (!partner || !partner.apiKeyHash) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid partner credentials" });
+      }
+      const { createHash, timingSafeEqual } = await import("crypto");
+      const presentedHash = createHash("sha256").update(input.apiKey).digest("hex");
+      const a = Buffer.from(presentedHash, "utf8");
+      const b = Buffer.from(partner.apiKeyHash, "utf8");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid partner credentials" });
+      }
 
       const { randomBytes } = await import("crypto");
       const referralCode = `REF-${input.partnerCode}-${randomBytes(4).toString("hex").toUpperCase()}`;

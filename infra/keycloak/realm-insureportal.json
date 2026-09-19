@@ -751,13 +751,6 @@
       "emailVerified": true,
       "firstName": "Platform",
       "lastName": "Admin",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "Admin@1234!",
-          "temporary": true
-        }
-      ],
       "realmRoles": [
         "insureportal-super-admin",
         "insureportal-admin",

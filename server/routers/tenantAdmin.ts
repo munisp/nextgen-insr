@@ -16,7 +16,7 @@ import {
 import { z } from "zod";
 
 import { tenants, auditLog, users } from "../../drizzle/schema";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { router, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
 
@@ -25,9 +25,18 @@ import { getDb } from "../db";
 // hardcoded empties. Invitations/removals now fail loudly (no identity or
 // email provider is wired), toggleLive/updateUser/listUsers/activityLog are
 // backed by the real tenants/users/audit_log tables.
+//
+// 2026-09-19 (L-wave, L-S-6/L-P-7): the ENTIRE router is now admin-gated
+// (adminProcedure = JWT role=admin + Permify admin check), matching the
+// superAdmin.tenants gating in superAdmin.ts. Previously createTenant /
+// updateTenant / suspendTenant / toggleLive were protectedProcedure — any
+// authenticated user could suspend or tamper with EVERY tenant
+// (platform-wide availability kill) and listTenants/getStats/getTenant
+// leaked platform-wide tenant/volume data. Every mutation writes an audit
+// row with the acting admin's user id.
 
 export const tenantAdminRouter = router({
-  getStats: protectedProcedure.query(async () => {
+  getStats: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db)
       return {
@@ -69,7 +78,7 @@ export const tenantAdminRouter = router({
       totalVolume: volSum.value,
     };
   }),
-  listTenants: protectedProcedure
+  listTenants: adminProcedure
     .input(
       z
         .object({
@@ -97,7 +106,7 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  getTenant: protectedProcedure
+  getTenant: adminProcedure
     .input(z.object({ tenantId: z.number() }))
     .query(async ({ input }) => {
       try {
@@ -118,7 +127,7 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  createTenant: protectedProcedure
+  createTenant: adminProcedure
     .input(
       z.object({
         name: z.string(),
@@ -130,7 +139,7 @@ export const tenantAdminRouter = router({
         currency: z.string().default("NGN"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -152,7 +161,9 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(tenant.id),
           status: "success",
-          metadata: { name: input.name, slug: input.slug },
+          // 2026-09-19 (L-wave, L-S-6): acting admin attribution.
+          agentId: ctx.user.id,
+          metadata: { name: input.name, slug: input.slug, actorUserId: ctx.user.id },
         });
         return { success: true, tenant };
       } catch (error) {
@@ -164,7 +175,7 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  updateTenant: protectedProcedure
+  updateTenant: adminProcedure
     .input(
       z.object({
         tenantId: z.number(),
@@ -175,7 +186,7 @@ export const tenantAdminRouter = router({
         status: z.enum(["active", "suspended", "trial", "churned"]).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -194,7 +205,8 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(tenantId),
           status: "success",
-          metadata: updates,
+          agentId: ctx.user.id,
+          metadata: { ...updates, actorUserId: ctx.user.id },
         });
         return { success: true, tenant: updated };
       } catch (error) {
@@ -206,9 +218,9 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  suspendTenant: protectedProcedure
+  suspendTenant: adminProcedure
     .input(z.object({ tenantId: z.number(), reason: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -222,7 +234,8 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(input.tenantId),
           status: "success",
-          metadata: { reason: input.reason },
+          agentId: ctx.user.id,
+          metadata: { reason: input.reason, actorUserId: ctx.user.id },
         });
         return { success: true, tenant: updated };
       } catch (error) {
@@ -235,7 +248,7 @@ export const tenantAdminRouter = router({
       }
     }),
 
-  dashboard: protectedProcedure.query(async () => {
+  dashboard: adminProcedure.query(async () => {
     return {
       totalItems: 0,
       activeItems: 0,
@@ -244,7 +257,7 @@ export const tenantAdminRouter = router({
     };
   }),
 
-  inviteUser: protectedProcedure
+  inviteUser: adminProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
@@ -256,7 +269,7 @@ export const tenantAdminRouter = router({
       });
     }),
 
-  listUsers: protectedProcedure.query(async () => {
+  listUsers: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { data: [], total: 0 };
     const rows = await db
@@ -273,7 +286,7 @@ export const tenantAdminRouter = router({
     return { data: rows, total: rows.length };
   }),
 
-  removeUser: protectedProcedure
+  removeUser: adminProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
@@ -285,15 +298,15 @@ export const tenantAdminRouter = router({
       });
     }),
 
-  settings: protectedProcedure.query(async () => {
+  settings: adminProcedure.query(async () => {
     return { data: [], total: 0 };
   }),
 
-  toggleLive: protectedProcedure
+  toggleLive: adminProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const tenantPk = Number(input?.id);
       if (!Number.isFinite(tenantPk)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "A numeric tenant id is required" });
@@ -319,7 +332,8 @@ export const tenantAdminRouter = router({
         resource: "tenants",
         resourceId: String(tenantPk),
         status: "success",
-        metadata: { status: updated?.status },
+        agentId: ctx.user.id,
+        metadata: { status: updated?.status, actorUserId: ctx.user.id },
       });
       return { success: true, status: updated?.status };
     }),
@@ -356,6 +370,16 @@ export const tenantAdminRouter = router({
       if (!target) {
         throw new TRPCError({ code: "NOT_FOUND", message: `User ${input.userId} not found` });
       }
+      // 2026-09-19 (L-wave, L-S-9): an admin may never change their OWN
+      // role through this surface (no self-elevation, no self-demotion) —
+      // role changes on self must go through Keycloak (single source of
+      // truth) so a compromised session cannot entrench itself.
+      if (input.role && userPk === ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admins cannot change their own role",
+        });
+      }
       const callerTenantId = (ctx.user as { tenantId?: number | null }).tenantId ?? null;
       if (callerTenantId !== null && target.tenantId !== callerTenantId) {
         // Tenant-scoped admin may not edit platform-scope (tenantId NULL) or
@@ -381,11 +405,12 @@ export const tenantAdminRouter = router({
         resource: "users",
         resourceId: input.userId,
         status: "success",
-        metadata: { role: input.role ?? null, name: input.name ?? null },
+        agentId: ctx.user.id,
+        metadata: { role: input.role ?? null, name: input.name ?? null, actorUserId: ctx.user.id },
       });
       return { success: true };
     }),
-  activityLog: protectedProcedure
+  activityLog: adminProcedure
     .input(z.object({ limit: z.number().default(50) }).default({ limit: 50 }))
     .query(async ({ input }) => {
       const db = await getDb();

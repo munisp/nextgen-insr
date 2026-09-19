@@ -541,7 +541,10 @@ export function DisputesAdminTab() {
                   disabled={approveRefund.isPending}
                   onClick={() => {
                     if (selectedRefundId)
-                      approveRefund.mutate({ ref: String(selectedRefundId) });
+                      // 2026-09-19 (L-wave, L-S-4): server input is
+                      // { refundRef } — the previous { ref } payload never
+                      // matched any shipped procedure.
+                      approveRefund.mutate({ refundRef: String(selectedRefundId) });
                   }}
                 >
                   {approveRefund.isPending ? (
@@ -674,13 +677,11 @@ export function DisputesAdminTab() {
                   disabled={processRefund.isPending}
                   onClick={() => {
                     if (selectedRefundId)
+                      // 2026-09-19 (L-wave, L-S-4): server input is
+                      // { refundRef } only — payout method is server-derived
+                      // (original_method), never caller-chosen.
                       processRefund.mutate({
-                        ref: String(selectedRefundId),
-                        method: refundProcessMethod as
-                          | "cash"
-                          | "bank_transfer"
-                          | "original_method"
-                          | "wallet_credit",
+                        refundRef: String(selectedRefundId),
                       });
                   }}
                 >

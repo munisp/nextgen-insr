@@ -11,6 +11,19 @@ import { z } from "zod";
 import { apiKeys } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { VALID_SCOPES } from "./developerPortal";
+
+// 2026-09-19 (L-wave, L-P-9): server-side rate-limit ceilings. Callers may
+// request a rateLimit but it is CLAMPED server-side — a non-admin can never
+// self-grant more than RATE_LIMIT_CAP_USER requests/hour; the schema max
+// (100k) is reserved for admins.
+const RATE_LIMIT_CAP_USER = 1000;
+const RATE_LIMIT_CAP_ADMIN = 100000;
+
+/** Non-admin callers only ever see their own keys; admins see all. */
+function ownershipWhere(user: { id: number; role?: string }) {
+  return user.role === "admin" ? undefined : eq(apiKeys.userId, user.id);
+}
 
 /** Same format as developerPortal.generateApiKey — raw shown ONCE. */
 function generateApiKey(): { raw: string; hash: string; prefix: string } {
@@ -28,21 +41,26 @@ const listKeys = protectedProcedure
       search: z.string().optional(),
     })
   )
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
+      // 2026-09-19 (L-wave, L-P-9): ownership scoping — previously this
+      // listed EVERY integrator's key metadata (prefixes, scopes, tenant
+      // linkage) platform-wide.
+      const where = ownershipWhere(ctx.user);
       const rows = await db
         .select()
         .from(apiKeys)
+        .where(where)
         .orderBy(desc(apiKeys.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
         .from(apiKeys)
-        .limit(100);
+        .where(where);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -115,21 +133,25 @@ const getUsage = protectedProcedure
       search: z.string().optional(),
     })
   )
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
+      // 2026-09-19 (L-wave, L-P-9): same ownership scoping as listKeys —
+      // usage rows leak the same cross-integrator metadata.
+      const where = ownershipWhere(ctx.user);
       const rows = await db
         .select()
         .from(apiKeys)
+        .where(where)
         .orderBy(desc(apiKeys.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
         .from(apiKeys)
-        .limit(100);
+        .where(where);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -200,7 +222,10 @@ const createKey = protectedProcedure
       // keyHash/status/userId through a free-form `data` bag.
       name: z.string().min(1).max(128),
       description: z.string().max(1024).optional(),
-      scopes: z.array(z.string()).optional(),
+      // 2026-09-19 (L-wave, L-P-9): scopes are validated against the
+      // server-side allowlist (same VALID_SCOPES as developerPortal) —
+      // callers can no longer self-grant arbitrary scope strings.
+      scopes: z.array(z.enum(VALID_SCOPES)).optional(),
       rateLimit: z.number().int().positive().max(100000).optional(),
       expiresAt: z.coerce.date().optional(),
     })
@@ -209,6 +234,10 @@ const createKey = protectedProcedure
     try {
       const db = (await getDb())!;
       const { raw, hash, prefix } = generateApiKey();
+      // 2026-09-19 (L-wave, L-P-9): rateLimit is server-capped per role —
+      // the requested value is a ceiling preference, never a self-grant.
+      const cap = ctx.user.role === "admin" ? RATE_LIMIT_CAP_ADMIN : RATE_LIMIT_CAP_USER;
+      const effectiveRateLimit = Math.min(input.rateLimit ?? RATE_LIMIT_CAP_USER, cap);
       const [row] = await db
         .insert(apiKeys)
         .values({
@@ -220,7 +249,7 @@ const createKey = protectedProcedure
           tenantId: ctx.user.tenantId ?? null,
           status: "active",
           scopes: input.scopes ?? [],
-          rateLimit: input.rateLimit ?? 1000,
+          rateLimit: effectiveRateLimit,
           expiresAt: input.expiresAt ?? null,
         })
         .returning();
