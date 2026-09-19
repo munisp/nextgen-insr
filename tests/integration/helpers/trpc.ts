@@ -31,6 +31,7 @@ import { encryptedFieldsRouter } from "../../../server/routers/encryptedFieldsCr
 import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
 import { commissionPayoutsRouter } from "../../../server/routers/commissionPayouts";
 import { premiumTopUpRouter } from "../../../server/routers/premiumTopUp";
+import { agentFloatInsuranceClaimsRouter } from "../../../server/routers/agentFloatInsuranceClaims";
 import { auditComplianceRouter } from "../../../server/routers/auditCompliance";
 import { gdprDashboardRouter } from "../../../server/routers/gdprDashboard";
 import { fxRatesRouter } from "../../../server/routers/fxRates";
@@ -82,6 +83,8 @@ export const integrationRouter = router({
   // F-02: additional money paths under the real middleware chain.
   commissionPayouts: commissionPayoutsRouter,
   premiumTopUp: premiumTopUpRouter,
+  // I-wave (AB-8): production mount path.
+  agentFloatInsuranceClaims: agentFloatInsuranceClaimsRouter,
   auditCompliance: auditComplianceRouter,
   gdprDashboard: gdprDashboardRouter,
   // Provider-integration routers (F-02) — same mount paths as production.

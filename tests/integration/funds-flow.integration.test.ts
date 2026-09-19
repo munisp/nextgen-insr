@@ -29,7 +29,7 @@ import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../../server/db";
-import { refunds, transactions, agents } from "../../drizzle/schema";
+import { refunds, transactions, agents, disputes } from "../../drizzle/schema";
 import {
   callerFor,
   adminUser,
@@ -47,8 +47,58 @@ const REFUND_KEY = "ff-refund-key-00001";
 const REFUND_KEY_CONFLICT = "ff-refund-key-00002";
 const REFUND_KEY_PARALLEL = "ff-refund-key-00003";
 
+// 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund terms
+// server-side from the original transaction linked through the dispute
+// (unlinked trust-the-client fallback removed, fail-closed). The three
+// refund scenarios below therefore use REAL seeded disputes+transactions;
+// the idempotency/replay/conflict/parallel semantics under test are
+// unchanged. Each scenario keeps its own destination account (velocity is
+// keyed on user+destination).
+let refundDisputeReplay = 0;
+let refundDisputeConflict = 0;
+let refundDisputeParallel = 0;
+
+async function seedRefundDispute(
+  n: number,
+  amount: string,
+  sourceAccount: string
+): Promise<number> {
+  const db = (await getDb())!;
+  const [agent] = await db
+    .insert(agents)
+    .values({
+      agentId: `AGT-FF-REFSEED-${n}`,
+      name: `FF Refund Seed ${n}`,
+      phone: `08077${String(n).padStart(6, "0")}`,
+      pinHash: "f".repeat(64),
+      isActive: true,
+    })
+    .returning();
+  const [tx] = await db
+    .insert(transactions)
+    .values({
+      ref: `FF-TX-REFSEED-${n}`,
+      agentId: agent!.id,
+      type: "Cash In",
+      amount,
+      customerAccount: sourceAccount,
+      status: "success",
+    })
+    .returning();
+  const [d] = await db
+    .insert(disputes)
+    .values({
+      ref: `FF-DSP-REFSEED-${n}`,
+      transactionId: tx!.id,
+      agentId: agent!.id,
+      status: "open",
+    })
+    .returning();
+  return d!.id;
+}
+
 const refundInput = {
-  disputeId: 5001,
+  disputeId: 0, // set in beforeAll (seeded dispute id)
   amount: 2500,
   reason: "Double charge on premium payment",
   customerId: REFUND_CUSTOMER,
@@ -131,6 +181,12 @@ async function txRowsByRef(ref: string) {
 
 describe("funds-flow integrity (integration, real DB)", () => {
   beforeAll(async () => {
+    // Seed the three refund disputes (+original transactions) — see the
+    // AB-19 note above refundInput.
+    refundDisputeReplay = await seedRefundDispute(1, "5000.00", "0123456789");
+    refundDisputeConflict = await seedRefundDispute(2, "100000.00", "0123456790");
+    refundDisputeParallel = await seedRefundDispute(3, "50000.00", "0123456791");
+    refundInput.disputeId = refundDisputeReplay;
     resetAssertionCount();
     senderStart = 100_000;
     receiverStart = 20_000;
@@ -181,13 +237,13 @@ describe("funds-flow integrity (integration, real DB)", () => {
     // 2026-09-18 (F5/AB-19): the duplicate rule is now keyed on the refund
     // DESTINATION account, so this scenario also uses its own accountNumber.
     // The CONFLICT-on-different-payload invariant is unchanged, asserted below.
-    const r1 = await caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: 5002, customerId: REFUND_CUSTOMER + 50, accountNumber: "0123456790", idempotencyKey: REFUND_KEY_CONFLICT });
+    const r1 = await caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: refundDisputeConflict, customerId: REFUND_CUSTOMER + 50, accountNumber: "0123456790", idempotencyKey: REFUND_KEY_CONFLICT });
     expect(r1.success).toBe(true);
 
     await expectTrpcError(
       caller.disputeRefund.initiateRefund({
         ...refundInput,
-        disputeId: 5002,
+        disputeId: refundDisputeConflict,
         customerId: REFUND_CUSTOMER + 50,
         accountNumber: "0123456790",
         amount: 9999, // different payload, same key
@@ -204,7 +260,7 @@ describe("funds-flow integrity (integration, real DB)", () => {
     const caller = callerFor(adminUser);
     const results = await Promise.all(
       Array.from({ length: 8 }, () =>
-        caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: 5003, customerId: REFUND_CUSTOMER + 100, accountNumber: "0123456791", idempotencyKey: REFUND_KEY_PARALLEL })
+        caller.disputeRefund.initiateRefund({ ...refundInput, disputeId: refundDisputeParallel, customerId: REFUND_CUSTOMER + 100, accountNumber: "0123456791", idempotencyKey: REFUND_KEY_PARALLEL })
       )
     );
     const refundIds = new Set(

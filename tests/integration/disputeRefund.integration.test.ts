@@ -14,7 +14,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and, count } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { refunds } from "../../drizzle/schema";
+import { agents, disputes, refunds, transactions } from "../../drizzle/schema";
 import {
   callerFor,
   adminUser,
@@ -30,6 +30,24 @@ const SUPERVISOR_CUSTOMER = 910102;
 const VELOCITY_CUSTOMER = 910103;
 const ANON_CUSTOMER = 910104;
 
+// 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund terms
+// server-side from the original transaction linked through the dispute —
+// the unlinked trust-the-client fallback was removed (fail-closed). These
+// fixtures therefore seed REAL disputes + original transactions; the
+// behaviors under test (tiering, persistence, velocity, authz) are
+// unchanged.
+let disputeAutoId = 0;
+let disputeSupervisorId = 0;
+let disputeVelocityId = 0;
+// 2026-09-18 (I-wave): the integration files share ONE PGlite database, and
+// other suites (agentOnboardingI, funds-flow, auditFixPayments) legitimately
+// persist refunds. getSummary is GLOBAL for platform users, so the honest
+// count assertions below are deltas over this file's own effects, captured
+// as a baseline before this file writes anything.
+let baselinePendingRefunds = 0;
+let baselineProcessedToday = 0;
+let baselineTotalRefunded = 0;
+
 async function refundCountFor(customerId: number): Promise<number> {
   const db = (await getDb())!;
   const [row] = await db
@@ -40,8 +58,54 @@ async function refundCountFor(customerId: number): Promise<number> {
 }
 
 describe("disputeRefund router (integration, real DB)", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     resetAssertionCount();
+    const db = (await getDb())!;
+    const [agent] = await db
+      .insert(agents)
+      .values({
+        agentId: "AGTI-REFUND-SEED",
+        name: "I Refund Seed Agent",
+        phone: "09150000001",
+        pinHash: "x",
+        isActive: true,
+        email: "i-refund-seed@integration.local",
+      })
+      .returning();
+    async function seedDispute(
+      n: number,
+      amount: string,
+      sourceAccount: string
+    ): Promise<number> {
+      const [tx] = await db
+        .insert(transactions)
+        .values({
+          ref: `TX-IT-REFUND-${n}`,
+          agentId: agent!.id,
+          type: "Cash In",
+          amount,
+          customerAccount: sourceAccount,
+          status: "success",
+        })
+        .returning();
+      const [d] = await db
+        .insert(disputes)
+        .values({
+          ref: `DSP-IT-${n}`,
+          transactionId: tx!.id,
+          agentId: agent!.id,
+          status: "open",
+        })
+        .returning();
+      return d!.id;
+    }
+    disputeAutoId = await seedDispute(1, "5000.00", "0123456789");
+    disputeSupervisorId = await seedDispute(2, "100000.00", "9876543210");
+    disputeVelocityId = await seedDispute(200, "10000.00", "0123456789");
+    const s0 = await callerFor(adminUser).disputeRefund.getSummary();
+    baselinePendingRefunds = s0.pendingRefunds;
+    baselineProcessedToday = s0.processedToday;
+    baselineTotalRefunded = s0.totalRefundedAmount;
   });
 
   afterAll(() => {
@@ -51,7 +115,7 @@ describe("disputeRefund router (integration, real DB)", () => {
   it("auto-tier refund (₦2,500) persists a real pending refunds row", async () => {
     const caller = callerFor(adminUser);
     const res = await caller.disputeRefund.initiateRefund({
-      disputeId: 1,
+      disputeId: disputeAutoId,
       amount: 2500,
       reason: "Customer charged twice for premium",
       customerId: AUTO_CUSTOMER,
@@ -81,15 +145,17 @@ describe("disputeRefund router (integration, real DB)", () => {
   it("getSummary reports honest pending/processed counts", async () => {
     const caller = callerFor(adminUser);
     const summary = await caller.disputeRefund.getSummary();
-    expect(summary.pendingRefunds).toBe(1);
-    expect(summary.processedToday).toBe(0);
-    expect(summary.totalRefundedAmount).toBe(0);
+    // Delta-based (shared cross-suite DB — see baseline note above): this
+    // file has persisted exactly one pending refund and processed none.
+    expect(summary.pendingRefunds).toBe(baselinePendingRefunds + 1);
+    expect(summary.processedToday).toBe(baselineProcessedToday);
+    expect(summary.totalRefundedAmount).toBe(baselineTotalRefunded);
   });
 
   it("supervisor tier (₦50,000) returns pending_approval and persists pending", async () => {
     const caller = callerFor(adminUser);
     const res = await caller.disputeRefund.initiateRefund({
-      disputeId: 2,
+      disputeId: disputeSupervisorId,
       amount: 50000,
       reason: "Policy cancelled within cooling-off period",
       customerId: SUPERVISOR_CUSTOMER,
@@ -140,7 +206,7 @@ describe("disputeRefund router (integration, real DB)", () => {
 
     const caller = callerFor(adminUser);
     const res = await caller.disputeRefund.initiateRefund({
-      disputeId: 200,
+      disputeId: disputeVelocityId,
       amount: 3000,
       reason: "Sixth refund attempt for same customer",
       customerId: VELOCITY_CUSTOMER,

@@ -189,26 +189,43 @@ export const disputeRefundRouter = router({
         assertTenantOwnership(linkedDispute.tenantId, tenantId, "Dispute");
       }
 
-      // ── AB-19: amount & destination derived from the ORIGINAL transaction ──
-      // When the disputed transaction is known, the client-supplied amount,
-      // accountNumber and customerId are NOT trusted: the refund may not
-      // exceed the original amount and must return to the source account.
-      let effectiveAmount = input.amount;
-      let effectiveDestination = input.accountNumber;
-      let originalTxId: number | null = null;
-      if (linkedDispute?.transactionId) {
-        const [origTx] = await database
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, linkedDispute.transactionId))
-          .limit(1);
-        if (origTx) {
-          const terms = deriveRefundTerms(origTx, input);
-          effectiveAmount = terms.effectiveAmount;
-          effectiveDestination = terms.effectiveDestination;
-          originalTxId = terms.originalTxId;
-        }
+      // ── AB-19 (I-wave): refund terms are ALWAYS derived server-side ─────
+      // Previously the client-supplied amount/accountNumber/customerId were
+      // only reconciled when a dispute with a linked transaction existed —
+      // the unlinked fallback trusted the client. Now fail-closed: the
+      // dispute AND its original transaction must exist, the amount may not
+      // exceed the original, and the destination is the original source
+      // account (no client override; no verified settlement-override infra
+      // exists for customer refunds).
+      if (!linkedDispute) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Dispute not found — refund terms cannot be derived server-side without the disputed transaction",
+        });
       }
+      if (!linkedDispute.transactionId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Dispute has no linked original transaction — client-supplied refund terms are not accepted",
+        });
+      }
+      const [origTx] = await database
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, linkedDispute.transactionId))
+        .limit(1);
+      if (!origTx) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Original transaction ${linkedDispute.transactionId} for dispute ${input.disputeId} not found — refusing client-supplied refund terms`,
+        });
+      }
+      const terms = deriveRefundTerms(origTx, input);
+      const effectiveAmount = terms.effectiveAmount;
+      const effectiveDestination = terms.effectiveDestination;
+      const originalTxId = terms.originalTxId;
       const tier = getRefundTier(effectiveAmount);
 
       // ── Idempotency: replay or reject before doing any work ─────────────

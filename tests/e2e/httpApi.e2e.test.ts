@@ -25,7 +25,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, count } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { disputes, refunds } from "../../drizzle/schema";
+import { disputes, refunds, transactions } from "../../drizzle/schema";
 import {
   bootServer,
   shutdownServer,
@@ -71,13 +71,43 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
     adminCookie = await sessionCookieFor(e2eAdmin);
     agentCookie = await sessionCookieFor(e2eAgent);
 
-    // Seed two real dispute rows (the refund flow's entry point).
+    // Seed real dispute rows (the refund flow's entry point).
+    // 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund
+    // terms server-side from the ORIGINAL transaction linked through the
+    // dispute (fail-closed; the unlinked trust-the-client fallback was
+    // removed). Each dispute therefore links a REAL seeded transaction whose
+    // SOURCE ACCOUNT is exactly the destination each test asserts against
+    // (the refund destination is now forced to that source account — the
+    // derivation contract itself stays under test). Tier/idempotency/409
+    // semantics are unchanged.
     const db = (await getDb())!;
+    async function seedOriginalTx(
+      n: string,
+      amount: string,
+      sourceAccount: string
+    ): Promise<number> {
+      const [tx] = await db
+        .insert(transactions)
+        .values({
+          ref: `E2ETX-ORIG-${n}`,
+          agentId: 1,
+          type: "Cash In",
+          amount,
+          customerAccount: sourceAccount,
+          status: "success",
+        })
+        .returning();
+      return tx!.id;
+    }
+    const txAutoId = await seedOriginalTx("AUTO", "5000.00", "0123456789");
+    const txIdemId = await seedOriginalTx("IDEM", "10000.00", "1122334455");
+    const txSupId = await seedOriginalTx("SUP", "100000.00", "0987654321");
     await db
       .insert(disputes)
       .values([
         {
           ref: E2E_DISPUTE_REF_AUTO,
+          transactionId: txAutoId,
           agentId: 1,
           type: "double_charge",
           status: "open",
@@ -87,6 +117,7 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
         },
         {
           ref: E2E_DISPUTE_REF_IDEM,
+          transactionId: txIdemId,
           agentId: 1,
           type: "double_charge",
           status: "open",
@@ -96,6 +127,7 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
         },
         {
           ref: E2E_DISPUTE_REF_SUP,
+          transactionId: txSupId,
           agentId: 1,
           type: "service_not_rendered",
           status: "open",
