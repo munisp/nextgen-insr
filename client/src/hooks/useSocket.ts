@@ -294,67 +294,8 @@ export function useTerminalSocket(agentId?: string) {
 
   return socketRef;
 }
-
-// ─── Settlement batch progress socket ────────────────────────────────────────
-
-export interface BatchProgressEvent {
-  batchId: string;
-  type: "batch.progress" | "batch.started" | "batch.completed" | "batch.failed";
-  processed: number;
-  total: number;
-  percentage: number;
-  rate: number;
-  estimatedSecondsRemaining: number;
-  errors: number;
-  startedAt: number;
-  updatedAt: number;
-  metadata?: Record<string, unknown>;
-}
-
-export function useSettlementProgressSocket(
-  onProgress?: (event: BatchProgressEvent) => void
-) {
-  const socketRef = useRef<Socket | null>(null);
-
-  useEffect(() => {
-    const socket = io(`${SOCKET_URL}/settlement`, {
-      path: "/api/socket.io",
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
-
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("[Settlement Socket] Connected:", socket.id);
-    });
-
-    // Listen for all batch progress events
-    socket.on("settlement:progress:all", (event: BatchProgressEvent) => {
-      onProgress?.(event);
-    });
-
-    // Also listen for targeted progress
-    socket.on("settlement:progress", (event: BatchProgressEvent) => {
-      onProgress?.(event);
-    });
-
-    socket.on("disconnect", () => {
-      console.log("[Settlement Socket] Disconnected");
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [onProgress]);
-
-  const subscribeToBatch = (batchId: string) => {
-    socketRef.current?.emit("settlement:subscribe", batchId);
-  };
-
-  const unsubscribeFromBatch = (batchId: string) => {
-    socketRef.current?.emit("settlement:unsubscribe", batchId);
-  };
-
-  return { subscribeToBatch, unsubscribeFromBatch, socket: socketRef };
-}
+// NOTE (I2-wave, 2026-02): useSettlementProgressSocket and the
+// BatchProgressEvent interface were REMOVED — the server-side /settlement
+// Socket.IO namespace no longer exists (H2: dead unauthenticated broadcaster
+// deleted; the remaining emitter in server/lib/batchProgressReporter.ts is
+// unwired). SettlementBatchProcessor now polls the batch API instead.

@@ -186,11 +186,14 @@ describe("AB-12 loyalty earnPoints funds-grade gating", () => {
     const [v] = await db.select().from(loyaltyAccounts).where(eq(loyaltyAccounts.customerId, victim.id));
     expect(v.points).toBe(0);
 
-    // (b) session-bound earn (no customerId) works, bounded
+    // (b) session-bound earn (no customerId) works, bounded.
+    // 2026-02 (I2 robustness fix): the session customer's loyalty account is
+    // shared across suites — assert the DELTA, not an absolute balance.
+    const [before] = await db.select().from(loyaltyAccounts).where(eq(loyaltyAccounts.customerId, me.id));
     const ok = await iCaller(regularUser).promotions.earnPoints({ points: 250, type: "purchase" });
-    expect(ok.points).toBe(250);
+    expect(ok.points).toBe(before.points + 250);
     const [m] = await db.select().from(loyaltyAccounts).where(eq(loyaltyAccounts.customerId, me.id));
-    expect(m.points).toBe(250);
+    expect(m.points).toBe(before.points + 250);
 
     // (c) out-of-bounds grants are rejected by input validation
     await expect(

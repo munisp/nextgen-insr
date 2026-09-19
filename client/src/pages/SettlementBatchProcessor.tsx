@@ -2,7 +2,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -10,13 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useCallback, useMemo } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import {
-  useSettlementProgressSocket,
-  type BatchProgressEvent,
-} from "@/hooks/useSocket";
 import {
   RefreshCw,
   Layers,
@@ -24,8 +19,6 @@ import {
   Clock,
   DollarSign,
   Activity,
-  Zap,
-  AlertTriangle,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -35,167 +28,34 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "bg-red-500/20 text-red-400",
 };
 
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-}
 
-function formatRate(rate: number): string {
-  if (rate >= 1000) return `${(rate / 1000).toFixed(1)}K/s`;
-  return `${rate}/s`;
-}
-
-// ─── Progress Bar Component ──────────────────────────────────────────────────
-
-function BatchProgressBar({ event }: { event: BatchProgressEvent }) {
-  const isCompleted = event.type === "batch.completed";
-  const isFailed = event.type === "batch.failed";
-  const isStarted = event.type === "batch.started";
-
-  const statusColor = isFailed
-    ? "text-red-400"
-    : isCompleted
-      ? "text-emerald-400"
-      : "text-blue-400";
-
-  const statusLabel = isFailed
-    ? "Failed"
-    : isCompleted
-      ? "Completed"
-      : isStarted
-        ? "Starting..."
-        : "Processing";
-
-  const progressValue = event.percentage;
-  const elapsed = Math.round((event.updatedAt - event.startedAt) / 1000);
-
-  return (
-    <div className="p-4 border border-border/50 rounded-lg bg-card/50 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isFailed ? (
-            <AlertTriangle className="h-4 w-4 text-red-400" />
-          ) : isCompleted ? (
-            <CheckCircle className="h-4 w-4 text-emerald-400" />
-          ) : (
-            <Activity className="h-4 w-4 text-blue-400 animate-pulse" />
-          )}
-          <span className="font-mono text-sm font-medium">{event.batchId}</span>
-          <Badge
-            className={`text-xs ${isFailed ? "bg-red-500/20 text-red-400" : isCompleted ? "bg-emerald-500/20 text-emerald-400" : "bg-blue-500/20 text-blue-400"}`}
-          >
-            {statusLabel}
-          </Badge>
-        </div>
-        <span className={`text-sm font-bold ${statusColor}`}>
-          {event.percentage}%
-        </span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="relative">
-        <Progress
-          value={progressValue}
-          className={`h-3 ${isFailed ? "[&>div]:bg-red-500" : isCompleted ? "[&>div]:bg-emerald-500" : "[&>div]:bg-blue-500"}`}
-        />
-      </div>
-
-      {/* Stats row */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {event.processed.toLocaleString()} / {event.total.toLocaleString()}{" "}
-          items
-        </span>
-        <div className="flex items-center gap-4">
-          {event.rate > 0 && (
-            <span className="flex items-center gap-1">
-              <Zap className="h-3 w-3" /> {formatRate(event.rate)}
-            </span>
-          )}
-          {event.errors > 0 && (
-            <span className="text-red-400 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" /> {event.errors} errors
-            </span>
-          )}
-          {!isCompleted && !isFailed && event.estimatedSecondsRemaining > 0 && (
-            <span>ETA: {formatDuration(event.estimatedSecondsRemaining)}</span>
-          )}
-          <span>Elapsed: {formatDuration(elapsed)}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function SettlementBatchProcessor() {
   const [statusFilter, setStatusFilter] = useState("all");
-  const [activeProgressEvents, setActiveProgressEvents] = useState<
-    Map<string, BatchProgressEvent>
-  >(new Map());
 
+  // I2-wave 2026-02: the Socket.IO /settlement namespace is DELETED on the
+  // server (H2: it was a dead, unauthenticated broadcaster; the only emitter
+  // — batchProgressReporter.createSocketIOProgressHandler — is unwired). The
+  // old useSettlementProgressSocket client path could never connect. Live
+  // progress is now served honestly by polling the batch API.
   // @ts-ignore Sprint 85
   const statsQuery = trpc.settlementBatchProcessor.getStats.useQuery();
   // @ts-ignore Sprint 85
-  const batchesQuery = trpc.settlementBatchProcessor.listBatches.useQuery({
-    status: statusFilter as any,
-    limit: 50,
-    offset: 0,
-  });
+  const batchesQuery = trpc.settlementBatchProcessor.listBatches.useQuery(
+    {
+      status: statusFilter as any,
+      limit: 50,
+      offset: 0,
+    },
+    { refetchInterval: 3000 }
+  );
   const stats = statsQuery.data as any;
   const batches = (batchesQuery.data as any)?.batches ?? [];
-
-  // Socket.IO progress handler
-  const handleProgress = useCallback(
-    (event: BatchProgressEvent) => {
-      setActiveProgressEvents(prev => {
-        const next = new Map(prev);
-        if (event.type === "batch.completed" || event.type === "batch.failed") {
-          // Keep completed/failed for 10 seconds then remove
-          next.set(event.batchId, event);
-          setTimeout(() => {
-            setActiveProgressEvents(p => {
-              const updated = new Map(p);
-              updated.delete(event.batchId);
-              return updated;
-            });
-          }, 10000);
-        } else {
-          next.set(event.batchId, event);
-        }
-        return next;
-      });
-
-      // Toast notifications for key events
-      if (event.type === "batch.started") {
-        toast.info(
-          `Settlement batch ${event.batchId} started (${event.total.toLocaleString()} items)`
-        );
-      } else if (event.type === "batch.completed") {
-        toast.success(
-          `Batch ${event.batchId} completed: ${event.processed.toLocaleString()} items processed`
-        );
-        // Refresh data
-        statsQuery.refetch();
-        batchesQuery.refetch();
-      } else if (event.type === "batch.failed") {
-        toast.error(`Batch ${event.batchId} failed at ${event.percentage}%`);
-      }
-    },
-    [statsQuery, batchesQuery]
-  );
-
-  useSettlementProgressSocket(handleProgress);
-
-  const progressEvents = useMemo(
-    () =>
-      Array.from(activeProgressEvents.values()).sort(
-        (a: any, b: any) => b.updatedAt - a.updatedAt
-      ),
-    [activeProgressEvents]
-  );
+  const activeBatchCount = batches.filter(
+    (b: any) => b.status === "processing" || b.status === "pending"
+  ).length;
 
   return (
     <DashboardLayout>
@@ -288,47 +148,21 @@ export default function SettlementBatchProcessor() {
           </Card>
         </div>
 
-        {/* Real-Time Progress Section */}
-        {progressEvents.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-blue-400 animate-pulse" />
-                Live Batch Progress
-                <Badge className="bg-blue-500/20 text-blue-400 text-xs ml-2">
-                  {
-                    progressEvents.filter(
-                      (e: any) =>
-                        e.type === "batch.progress" ||
-                        e.type === "batch.started"
-                    ).length
-                  }{" "}
-                  active
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {progressEvents.map((event: any) => (
-                <BatchProgressBar key={event.batchId} event={event} />
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* No active batches indicator */}
-        {progressEvents.length === 0 && (
-          <Card className="border-dashed">
-            <CardContent className="py-6">
-              <div className="flex items-center justify-center gap-3 text-muted-foreground">
-                <Activity className="h-5 w-5" />
-                <span className="text-sm">
-                  No active batch processing. Progress bars will appear here
-                  when batches are running.
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Live progress (polling — the /settlement socket namespace no longer exists) */}
+        <Card className={activeBatchCount > 0 ? "" : "border-dashed"}>
+          <CardContent className="py-6">
+            <div className="flex items-center justify-center gap-3 text-muted-foreground">
+              <Activity
+                className={`h-5 w-5 ${activeBatchCount > 0 ? "text-blue-400 animate-pulse" : ""}`}
+              />
+              <span className="text-sm">
+                {activeBatchCount > 0
+                  ? `${activeBatchCount} batch(es) active — list refreshes every 3s.`
+                  : "No active batch processing. The list refreshes automatically every 3s."}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Batch Table */}
         <Card>
