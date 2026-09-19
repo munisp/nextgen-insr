@@ -42,6 +42,79 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // HealthHandler returns service health with DB/Redis connectivity status.
+// VelocityStorer is the velocity-dimension contract satisfied by the Redis
+// cache (I-wave AB-21). It exists so tests can exercise the scoring path
+// with an in-memory implementation of the SAME contract — not a mock of
+// the scorer.
+type VelocityStorer interface {
+	CheckVelocityDimension(ctx context.Context, dimension, id string, window time.Duration) (int, error)
+	TrackVelocityDimension(ctx context.Context, dimension, id string) error
+}
+
+// VelocityResult reports the maximum transaction count across dimensions
+// and which dimensions individually breached the threshold.
+type VelocityResult struct {
+	MaxCount   int
+	Breached   []string
+	Dimensions map[string]int
+}
+
+// velocityDimensions returns the honestly available dimensions for a
+// transaction: account always; IP and device only when supplied (empty
+// strings never key a window).
+func velocityDimensions(input models.TransactionInput) map[string]string {
+	dims := map[string]string{"account": input.AccountID}
+	if input.IP != "" {
+		dims["ip"] = input.IP
+	}
+	if input.DeviceID != "" {
+		dims["device"] = input.DeviceID
+	}
+	return dims
+}
+
+// EvaluateVelocity checks the account/IP/device velocity dimensions and
+// returns the aggregate result. Posture matches the pre-existing
+// account-dimension behavior (fail-loud, degrade honestly): a dimension
+// whose check errors is logged and skipped — never silently counted as
+// zero — while the remaining dimensions still decide.
+func EvaluateVelocity(ctx context.Context, store VelocityStorer, input models.TransactionInput, window time.Duration, threshold int, log *zap.Logger) VelocityResult {
+	res := VelocityResult{Dimensions: map[string]int{}}
+	for dim, id := range velocityDimensions(input) {
+		count, err := store.CheckVelocityDimension(ctx, dim, id, window)
+		if err != nil {
+			log.Warn("velocity dimension check failed — skipping dimension (fail-loud)",
+				zap.String("dimension", dim), zap.Error(err))
+			continue
+		}
+		res.Dimensions[dim] = count
+		if count > res.MaxCount {
+			res.MaxCount = count
+		}
+		if count+1 >= threshold {
+			res.Breached = append(res.Breached, dim)
+		}
+	}
+	return res
+}
+
+// TrackVelocityDimensions records the transaction against every available
+// dimension (account, IP, device) so account-switching cannot reset the
+// window.
+func TrackVelocityDimensions(ctx context.Context, store VelocityStorer, input models.TransactionInput, log *zap.Logger) error {
+	var firstErr error
+	for dim, id := range velocityDimensions(input) {
+		if err := store.TrackVelocityDimension(ctx, dim, id); err != nil {
+			log.Warn("velocity dimension track failed",
+				zap.String("dimension", dim), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
 func (s *Service) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	checks := make(map[string]string)
 
@@ -125,25 +198,26 @@ func (s *Service) ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	// Run scoring rules
 	score, rules := s.calculateScore(body.Amount, hourOfDay, body.DeviceID)
 
-	// Check velocity
-	velocityCount, velErr := s.cache.CheckVelocity(ctx, body.AccountID, s.cfg.Fraud.VelocityWindow)
-	if velErr != nil {
-		s.logger.Warn("velocity check failed, continuing without it", zap.Error(velErr))
-	}
-	velocityCount++ // include this transaction
+	// Check velocity across ALL dimensions (I-wave AB-21, 2026-09):
+	// account-only windows were bypassed by switching accounts behind one
+	// IP/device. Posture unchanged: a dimension whose check fails is logged
+	// loudly and skipped; the remaining dimensions still decide.
+	velocity := EvaluateVelocity(ctx, s.cache, body, s.cfg.Fraud.VelocityWindow, s.cfg.Fraud.VelocityThreshold, s.logger)
+	velocityCount := velocity.MaxCount + 1 // include this transaction
 
 	if velocityCount >= s.cfg.Fraud.VelocityThreshold {
 		score += 25
 		rules = append(rules, models.Rule{
 			Name:   "velocity_breach",
 			Impact: 25,
-			Detail: fmt.Sprintf("%d transactions in %.0fm (threshold: %d)",
-				velocityCount, s.cfg.Fraud.VelocityWindow.Minutes(), s.cfg.Fraud.VelocityThreshold),
+			Detail: fmt.Sprintf("%d transactions in %.0fm (threshold: %d; breached dimensions: %s)",
+				velocityCount, s.cfg.Fraud.VelocityWindow.Minutes(), s.cfg.Fraud.VelocityThreshold,
+				strings.Join(velocity.Breached, ",")),
 		})
 	}
 
-	// Track this transaction in Redis
-	if err := s.cache.TrackTransactionCount(ctx, body.AccountID); err != nil {
+	// Track this transaction in Redis across all available dimensions
+	if err := TrackVelocityDimensions(ctx, s.cache, body, s.logger); err != nil {
 		s.logger.Warn("track transaction failed", zap.Error(err))
 	}
 

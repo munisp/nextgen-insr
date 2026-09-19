@@ -60,7 +60,24 @@ func (rc *RedisCache) Ping(ctx context.Context) error {
 // TrackTransactionCount records a transaction timestamp for an account
 // using a Redis sorted set (score = unix timestamp).
 func (rc *RedisCache) TrackTransactionCount(ctx context.Context, accountID string) error {
-	key := velocityKeyPrefix + accountID
+	return rc.TrackVelocityDimension(ctx, "account", accountID)
+}
+
+// CheckVelocity returns the number of transactions an account has made
+// within the last `window` duration.
+func (rc *RedisCache) CheckVelocity(ctx context.Context, accountID string, window time.Duration) (int, error) {
+	return rc.CheckVelocityDimension(ctx, "account", accountID, window)
+}
+
+// TrackVelocityDimension records a transaction timestamp for ANY velocity
+// dimension ("account", "ip", "device") — I-wave (AB-21, 2026-09): the
+// account-only window was bypassed by switching accounts, so velocity is
+// now evaluated per-account AND per-IP AND per-device. Keys are namespaced
+// by dimension ("velocity:<dimension>:<id>"); the legacy per-account keys
+// were "velocity:<accountID>", so the dimensioned form deliberately differs
+// (no stale-data collision).
+func (rc *RedisCache) TrackVelocityDimension(ctx context.Context, dimension, id string) error {
+	key := velocityKeyPrefix + dimension + ":" + id
 	now := float64(time.Now().Unix())
 	pipe := rc.client.Pipeline()
 	pipe.ZAdd(ctx, key, redis.Z{Score: now, Member: now})
@@ -68,21 +85,21 @@ func (rc *RedisCache) TrackTransactionCount(ctx context.Context, accountID strin
 	pipe.Expire(ctx, key, 2*time.Hour)
 	_, err := pipe.Exec(ctx)
 	if err != nil && err != redis.Nil {
-		return fmt.Errorf("track transaction: %w", err)
+		return fmt.Errorf("track %s velocity: %w", dimension, err)
 	}
 	return nil
 }
 
-// CheckVelocity returns the number of transactions an account has made
-// within the last `window` duration.
-func (rc *RedisCache) CheckVelocity(ctx context.Context, accountID string, window time.Duration) (int, error) {
-	key := velocityKeyPrefix + accountID
+// CheckVelocityDimension returns the transaction count for a velocity
+// dimension within the last `window` duration.
+func (rc *RedisCache) CheckVelocityDimension(ctx context.Context, dimension, id string, window time.Duration) (int, error) {
+	key := velocityKeyPrefix + dimension + ":" + id
 	now := float64(time.Now().Unix())
 	cutoff := now - float64(window.Seconds())
 
 	val, err := rc.client.ZCount(ctx, key, fmt.Sprintf("(%f", cutoff), "+inf").Result()
 	if err != nil && err != redis.Nil {
-		return 0, fmt.Errorf("check velocity: %w", err)
+		return 0, fmt.Errorf("check %s velocity: %w", dimension, err)
 	}
 	return int(val), nil
 }

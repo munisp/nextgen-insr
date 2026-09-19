@@ -18,7 +18,7 @@
  *   - Lakehouse — analytics ingestion
  *   - OpenAppSec — WAF, threat detection
  */
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 import { eq, and, desc, count, sql, gte, lt } from "drizzle-orm";
 
@@ -513,7 +513,10 @@ export async function createInsurancePolicy(input: {
       : "micro";
 
   const productId = input.productId ?? quote?.productId ?? 0;
-  const policyNumber = `POL-${Date.now().toString(36).toUpperCase()}-${productId}`;
+  // I-wave (AB-22a, 2026-09): same predictable-policy-number fix as
+  // insuranceWorkflows.ts — CSPRNG body (8 bytes hex), millisecond
+  // component kept only for sortability; uniqueness stays DB-enforced.
+  const policyNumber = `POL-${Date.now().toString(36).toUpperCase()}-${randomBytes(8).toString("hex").toUpperCase()}`;
   const startDate = new Date(input.coverageStartDate ?? input.startDate ?? Date.now());
   const endDate = input.endDate ? new Date(input.endDate) : new Date(startDate);
   if (!input.endDate) endDate.setMonth(endDate.getMonth() + (input.durationMonths ?? 12));
@@ -1104,7 +1107,10 @@ export async function processRenewal(input: {
   });
 
   // Create renewal policy
-  const newPolicyNumber = `POL-RNW-${Date.now().toString(36).toUpperCase()}`;
+  // I-wave (AB-22a, 2026-09): renewal numbers were bare millisecond
+  // timestamps — enumerable. CSPRNG body, "POL-RNW-" prefix retained
+  // (format contract used by renewal reporting).
+  const newPolicyNumber = `POL-RNW-${Date.now().toString(36).toUpperCase()}-${randomBytes(8).toString("hex").toUpperCase()}`;
   const startDate = policy.endDate ?? new Date();
   const endDate = new Date(startDate);
   endDate.setFullYear(endDate.getFullYear() + 1);
