@@ -10,6 +10,16 @@
  * with the given user (or null for anonymous), matching the shape produced by
  * server/_core/context.ts.
  */
+// L-wave (2026-09-19): ecosystem/tenancy routers under test — same mount
+// paths as production (server/routers.ts).
+import { apiKeyManagementRouter } from "../../../server/routers/apiKeyManagement";
+import { adminDashboardRouter } from "../../../server/routers/adminDashboard";
+import { pbacManagementRouter } from "../../../server/routers/pbacManagement";
+import {
+  p2pPoolsRouter,
+  groupInsuranceRouter,
+  bancassuranceRouter,
+} from "../../../server/routers/innovationRouters";
 import { expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { router } from "../../../server/_core/trpc";
@@ -59,19 +69,16 @@ import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
 import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
 import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
 import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboardingWizard";
-// L-wave (2026-09-19): ecosystem/tenancy routers under test — same mount
-// paths as production (server/routers.ts).
-import { apiKeyManagementRouter } from "../../../server/routers/apiKeyManagement";
-import { adminDashboardRouter } from "../../../server/routers/adminDashboard";
-import { pbacManagementRouter } from "../../../server/routers/pbacManagement";
-import {
-  p2pPoolsRouter,
-  groupInsuranceRouter,
-  bancassuranceRouter,
-} from "../../../server/routers/innovationRouters";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
+  // L-wave (2026-09-19, L-S/L-P fixes): production mount paths.
+  apiKeyManagement: apiKeyManagementRouter,
+  adminDashboard: adminDashboardRouter,
+  pbacManagement: pbacManagementRouter,
+  p2pPools: p2pPoolsRouter,
+  groupInsurance: groupInsuranceRouter,
+  bancassurance: bancassuranceRouter,
   disputeRefund: disputeRefundRouter,
   agentFloatTransfer: agentFloatTransferRouter,
   // Imported and mounted (same path as production) so the suite can never
@@ -138,13 +145,6 @@ export const integrationRouter = router({
   agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
   // H-wave: same mount path as production (routers.ts:845).
   agentOnboardingWizard: agentOnboardingWizardRouter,
-  // L-wave (2026-09-19, L-S/L-P fixes): production mount paths.
-  apiKeyManagement: apiKeyManagementRouter,
-  adminDashboard: adminDashboardRouter,
-  pbacManagement: pbacManagementRouter,
-  p2pPools: p2pPoolsRouter,
-  groupInsurance: groupInsuranceRouter,
-  bancassurance: bancassuranceRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
@@ -156,11 +156,15 @@ export type TestUser = Pick<User, "id" | "email" | "name" | "role"> & {
   keycloakSub?: string;
 };
 
+// 2026-09-19 (L-wave, L-S-3): shared staff fixtures now carry a keycloakSub —
+// claims adjudication/settlement SoD compares Keycloak identities and fails
+// closed when the caller's identity is unverifiable.
 export const adminUser: TestUser = {
   id: 91001,
   email: "admin@integration.local",
   name: "Integration Admin",
   role: "admin",
+  keycloakSub: "kc-integration-admin-91001",
 };
 
 export const regularUser: TestUser = {
@@ -168,6 +172,7 @@ export const regularUser: TestUser = {
   email: "agent@integration.local",
   name: "Integration Agent",
   role: "user",
+  keycloakSub: "kc-integration-agent-91002",
 };
 
 /**
@@ -179,6 +184,7 @@ export const approverUser: TestUser = {
   email: "approver@integration.local",
   name: "Integration Approver",
   role: "admin",
+  keycloakSub: "kc-integration-approver-91003",
 };
 
 /**

@@ -59,11 +59,16 @@ const ROLE_PERMISSIONS: Record<string, Set<FinancialOperation>> = {
     "float_topup", "float_debit", "billing_record", "billing_reconcile",
     "reversal", "refund", "read",
   ]),
+  // L-wave (L-S-5, 2026-09-19): the documented matrix (header comment, lines
+  // above) states supervisors approve claims, but claim_settle was missing —
+  // supervisors can now approve/settle claims as documented. Professional
+  // roles beyond admin/supervisor still require the Keycloak role-mapping
+  // work (users.role cannot carry them) — disclosed, not faked.
   // 2026-09-19 (L-wave, L-S-4): supervisors hold "refund" so the documented
   // refund-approval tier (supervisor, ₦5,001–₦100,000 — see disputeRefund.ts
   // REFUND_TIERS) is actually reachable. Processing still requires SoD vs the
   // initiating user, enforced inside disputeRefund.processRefund.
-  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal", "refund"]),
+  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal", "claim_settle", "refund"]),
   agent: new Set(["transfer", "premium_collect", "float_debit", "read"]),
   underwriter: new Set(["read"]),
   compliance_officer: new Set(["read"]),
@@ -112,8 +117,8 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   // "refund" op was never enforced on the real payout path. Both procedures
   // now run on financialProcedure, which makes these mappings live.
   "disputeRefund.processRefund": "refund",
-  "disputeRefund.approveRefund": "refund",
   "disputeRefund.initiateRefund": "refund",
+  "disputeRefund.approveRefund": "refund",
   // Commissions
   "commissionPayouts.process": "commission_pay",
   "commissionPayouts.approve": "commission_pay",
