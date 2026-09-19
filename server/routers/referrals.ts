@@ -514,7 +514,9 @@ export const referralsRouter = router({
           // Atomic guarded flip: only an ACTIVATED referral can be rewarded.
           const [referral] = await tx
             .update(referrals)
-            .set({ status: "rewarded", rewardedAt: new Date(), updatedAt: new Date() })
+            // NOTE (2026-02): the referrals table has no updated_at column —
+            // rewardedAt is the event timestamp. (TS2353 fix, PR #211 CI.)
+            .set({ status: "rewarded", rewardedAt: new Date() })
             .where(and(eq(referrals.id, input.id), eq(referrals.status, "activated")))
             .returning();
           if (!referral) {
