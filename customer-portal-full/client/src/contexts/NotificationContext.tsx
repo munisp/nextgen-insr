@@ -43,7 +43,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const addNotification = useCallback((notification: Omit<Notification, "id" | "timestamp" | "read">) => {
     const newNotification: Notification = {
       ...notification,
-      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      // J-wave (2026-09): UI-local notification id — Math.random removed.
+      id: `notif-${Date.now().toString(36).toUpperCase()}-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`,
       timestamp: new Date(),
       read: false,
     };

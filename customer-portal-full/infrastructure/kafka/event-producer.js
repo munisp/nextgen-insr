@@ -34,7 +34,7 @@ async function init() {
 
 async function publish(topic, payload, key) {
   const event = {
-    eventId: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    eventId: `evt-${Date.now().toString(36).toUpperCase()}-${require('crypto').randomBytes(8).toString('hex').toUpperCase()}`, // J-wave (2026-09): was ms+Math.random — predictable
     timestamp: new Date().toISOString(),
     topic,
     ...payload,

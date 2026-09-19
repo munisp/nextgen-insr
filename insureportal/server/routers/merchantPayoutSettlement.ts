@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { merchantPayouts, merchants, merchantSettlementChangeRequests } from "@schema";
+import { merchantPayouts, merchants, merchantSettlementChangeRequests, auditLog } from "@schema";
 import { eq, desc, and, gte, count, sum, sql, isNull, isNotNull, ne } from "drizzle-orm";
 
 function isNotNullGuard() {
@@ -284,18 +284,44 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        const claimed = await db
-          .update(merchantPayouts)
-          .set({ status: "approved" })
-          .where(
-            and(
-              eq(merchantPayouts.id, input.payoutId),
-              eq(merchantPayouts.status, "pending"),
-              isNotNullGuard(),
-              ne(merchantPayouts.initiatedBy, ctx.user!.id)
+        // J-wave (2026-09): the guarded claim AND the actor-attributed audit
+        // row are ONE transaction — an approval without its audit entry (or
+        // vice versa) must be impossible. Matches the settlement-change
+        // audit pattern in merchant.ts.
+        const claimed = await db.transaction(async tx => {
+          const rows = await tx
+            .update(merchantPayouts)
+            .set({ status: "approved" })
+            .where(
+              and(
+                eq(merchantPayouts.id, input.payoutId),
+                eq(merchantPayouts.status, "pending"),
+                isNotNullGuard(),
+                ne(merchantPayouts.initiatedBy, ctx.user!.id)
+              )
             )
-          )
-          .returning({ id: merchantPayouts.id });
+            .returning({
+              id: merchantPayouts.id,
+              merchantId: merchantPayouts.merchantId,
+              amount: merchantPayouts.amount,
+              initiatedBy: merchantPayouts.initiatedBy,
+            });
+          if (rows.length > 0) {
+            await tx.insert(auditLog).values({
+              action: "MERCHANT_PAYOUT_APPROVED",
+              resource: "merchant_payouts",
+              resourceId: String(rows[0].id),
+              status: "success",
+              metadata: {
+                merchantId: rows[0].merchantId,
+                amount: String(rows[0].amount),
+                initiatedBy: rows[0].initiatedBy,
+                approvedBy: ctx.user!.id,
+              },
+            });
+          }
+          return rows;
+        });
         if (claimed.length === 0) {
           const [current] = await db
             .select()

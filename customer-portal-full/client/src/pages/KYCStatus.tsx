@@ -18,6 +18,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 type VerificationStep = 'overview' | 'identity' | 'document' | 'liveness' | 'review';
 
+// J-wave (2026-09): liveness session ids were bare ms — predictable.
+function livenessSessionId(kind: string): string {
+  const rb = new Uint8Array(6);
+  globalThis.crypto.getRandomValues(rb);
+  return `${kind}-${Date.now().toString(36).toUpperCase()}-${Array.from(rb, b => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
 const KYCStatus: React.FC = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const utils = trpc.useUtils();
@@ -217,7 +223,7 @@ const KYCStatus: React.FC = () => {
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Camera className="h-5 w-5 text-rose-600" />Passive Liveness</CardTitle><CardDescription>DeepFace anti-spoofing</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-rose-50 p-3 rounded-lg text-sm"><p className="font-medium text-rose-800">Multi-Signal: Texture, Frequency, Edge, Color</p></div>
-              <Button onClick={() => livenessMut.mutate({ sessionId: `sess-${Date.now()}` })} disabled={livenessMut.isLoading} className="w-full">{livenessMut.isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}Start Passive Liveness</Button>
+              <Button onClick={() => livenessMut.mutate({ sessionId: livenessSessionId("sess") })} disabled={livenessMut.isLoading} className="w-full">{livenessMut.isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}Start Passive Liveness</Button>
             </CardContent>
           </Card>
           <Card>
@@ -225,9 +231,9 @@ const KYCStatus: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="bg-violet-50 p-3 rounded-lg text-sm"><p className="font-medium text-violet-800">Interactive verification challenges</p></div>
               <div className="grid grid-cols-3 gap-2">
-                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: `blink-${Date.now()}` })}>Blink</Button>
-                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: `head-${Date.now()}` })}>Head Turn</Button>
-                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: `smile-${Date.now()}` })}>Smile</Button>
+                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: livenessSessionId("blink") })}>Blink</Button>
+                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: livenessSessionId("head") })}>Head Turn</Button>
+                <Button variant="outline" size="sm" onClick={() => livenessMut.mutate({ sessionId: livenessSessionId("smile") })}>Smile</Button>
               </div>
             </CardContent>
           </Card>
