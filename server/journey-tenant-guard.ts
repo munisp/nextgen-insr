@@ -61,20 +61,46 @@ export interface TenantContext {
 }
 
 /**
- * Extract tenant context from journey input.
- * All journey inputs must include `triggeredBy` (userId) and optionally
- * `tenantId`. If tenantId is absent, defaults to "insureportal" (single-tenant).
+ * Extract tenant context for the Permify check.
+ *
+ * N-wave (2026-09-19): `tenantId`/`userRole` are NEVER taken from
+ * caller-supplied journey input — a generic-trigger caller could otherwise
+ * smuggle `userRole: "admin"` (or a foreign tenant) into the Permify
+ * subject and bypass tenant isolation. They are derived exclusively from
+ * the authenticated session (ctx.user), injected server-side by the journey
+ * routers as `authenticatedTenantId` / `authenticatedUserRole` (see
+ * insuranceJourneyOrchestrator.ts / insuranceJourneyOrchestratorV2.ts /
+ * j20SchedulerRouter.ts). The raw `tenantId`/`userRole` journey-input fields
+ * are accepted in the type for backward compatibility but are IGNORED.
+ * When the authenticated role is unresolvable the guard FAILS CLOSED.
  */
 export function buildTenantContext(input: {
   triggeredBy?: number | string;
+  /** UNTRUSTED caller field — ignored (N-wave). */
   tenantId?: string;
+  /** UNTRUSTED caller field — ignored (N-wave). */
   userRole?: string;
   organizationId?: string;
+  /** Server-injected from the authenticated session at the router boundary. */
+  authenticatedTenantId?: string;
+  /** Server-injected from the authenticated session at the router boundary. */
+  authenticatedUserRole?: string;
 } & object): TenantContext {
+  const userRole = input.authenticatedUserRole;
+  if (!userRole) {
+    // Fail-closed: without a session-derived role the Permify subject (and
+    // the admin-bypass decision) is unresolvable — deny the journey.
+    logger.error("[TenantGuard] authenticated user role unresolvable — denying journey (fail-closed)");
+    throw ApplicationFailure.create({
+      message: "[TenantGuard] Authenticated user role unresolvable — journey denied (fail-closed)",
+      type: "AUTHORIZATION_DENIED",
+      nonRetryable: true,
+    });
+  }
   return {
-    tenantId: input.tenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal",
+    tenantId: input.authenticatedTenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal",
     userId: input.triggeredBy != null ? String(input.triggeredBy) : "system",
-    userRole: input.userRole ?? "agent",
+    userRole,
     organizationId: input.organizationId,
   };
 }

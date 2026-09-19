@@ -83,6 +83,12 @@ export async function createJ20Schedule(
         args: [{
           ...config.input,
           triggeredBy: createdBy,
+          // N-wave (2026-09-19): buildTenantContext now fails closed without a
+          // session-derived role. Scheduled runs have no caller session — this
+          // is a platform-internal ops actor, so the role is a server-side
+          // constant (never caller-supplied; createJ20Schedule is invoked only
+          // from the admin-gated bootstrap path).
+          authenticatedUserRole: "admin",
           idempotencyKey: `${config.scheduleId}-${Date.now()}`,
           scheduled: true,
           scheduleId: config.scheduleId,

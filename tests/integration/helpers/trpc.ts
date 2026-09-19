@@ -24,6 +24,9 @@ import {
 } from "../../../server/routers/innovationRouters";
 // M-wave (W1, 2026-09-19): journey triggers under the real middleware chain.
 import { insuranceJourneyOrchestratorV2Router } from "../../../server/routers/insuranceJourneyOrchestratorV2";
+// N-wave (2026-09-19): V1 orchestrator under test (generic-trigger J03 /
+// staff-context smuggle closure).
+import { insuranceJourneyOrchestratorRouter } from "../../../server/routers/insuranceJourneyOrchestrator";
 import { expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { router } from "../../../server/_core/trpc";
@@ -85,6 +88,8 @@ export const integrationRouter = router({
   bancassurance: bancassuranceRouter,
   // M-wave (W1, 2026-09-19): production mount paths (server/routers.ts).
   journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
+  // N-wave (2026-09-19): production mount path (server/routers.ts:1154).
+  insuranceJourneyOrchestrator: insuranceJourneyOrchestratorRouter,
   cvClaims: cvClaimsRouter,
   disputeRefund: disputeRefundRouter,
   agentFloatTransfer: agentFloatTransferRouter,

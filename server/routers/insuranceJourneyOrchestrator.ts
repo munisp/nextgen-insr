@@ -21,6 +21,7 @@ import { customers, policies, auditLog } from "../../drizzle/schema";
 import { policyQuotes } from "../../drizzle/schema.additions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { sanitizeGenericJourneyInput, stripForgedTrustedFields } from "../lib/journeyTriggerPolicy";
 import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
 
@@ -263,7 +264,11 @@ const JOURNEY_DEFINITIONS = [
   { id: "J20", name: "Platform Health & SLA Monitoring", description: "Health Probes → SLA Breach Detection → Incident → Resolution", category: "platform", estimatedDuration: "1-2 min" },
 ];
 
-async function startJourneyWorkflow(journeyId: string, workflowType: string, input: unknown, userId: number) {
+// N-wave (2026-09-19): trusted journey-input fields (triggeredBy /
+// authenticatedUserRole) are derived from the authenticated session and
+// injected SERVER-SIDE at workflow start; caller-forged copies are stripped
+// first (journeyTriggerPolicy). buildTenantContext consumes ONLY these.
+async function startJourneyWorkflow(journeyId: string, workflowType: string, input: unknown, userId: number, userRole: string) {
   const temporal = await getTemporalClient();
       if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
   const workflowId = `${journeyId}-${Date.now()}-user${userId}`;
@@ -271,7 +276,11 @@ async function startJourneyWorkflow(journeyId: string, workflowType: string, inp
   const handle = await temporal.workflow.start(workflowType, {
     taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "insureportal-journeys",
     workflowId,
-    args: [input],
+    args: [{
+      ...stripForgedTrustedFields(input),
+      triggeredBy: userId,
+      authenticatedUserRole: userRole,
+    }],
   });
 
   return { workflowId, runId: handle.firstExecutionRunId };
@@ -329,7 +338,7 @@ export const insuranceJourneyOrchestratorRouter = router({
   // ── Journey Triggers ──────────────────────────────────────────────────────
 
   triggerJ01: protectedProcedure.input(J01Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J01", "J01_CustomerOnboardingWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J01", "J01_CustomerOnboardingWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J01", message: "Customer onboarding journey started" };
   }),
 
@@ -368,7 +377,7 @@ export const insuranceJourneyOrchestratorRouter = router({
       durationMonths: quote.durationMonths ?? 12,
       paymentRef: input.paymentRef ?? `PAY-J02-${quote.id}-${Date.now().toString(36).toUpperCase()}`,
     };
-    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", journeyInput, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", journeyInput, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J02", message: "Policy purchase journey started" };
   }),
 
@@ -451,92 +460,92 @@ export const insuranceJourneyOrchestratorRouter = router({
       paymentRef: `CLM-J03-${input.policyId}-${Date.now().toString(36).toUpperCase()}`,
       initiatedByStaff: staff,
     };
-    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J03", message: "Claims settlement journey started" };
   }),
 
   triggerJ04: protectedProcedure.input(J04Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J04", "J04_AgentOnboardingWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J04", "J04_AgentOnboardingWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J04", message: "Agent onboarding journey started" };
   }),
 
   triggerJ05: protectedProcedure.input(J05Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J05", "J05_AgentDailyOpsWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J05", "J05_AgentDailyOpsWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J05", message: "Agent daily ops journey started" };
   }),
 
   triggerJ06: protectedProcedure.input(J06Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J06", "J06_PolicyRenewalWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J06", "J06_PolicyRenewalWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J06", message: "Policy renewal journey started" };
   }),
 
   triggerJ07: protectedProcedure.input(J07Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J07", "J07_FraudResponseWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J07", "J07_FraudResponseWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J07", message: "Fraud response journey started" };
   }),
 
   triggerJ08: protectedProcedure.input(J08Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J08", "J08_CommissionPayoutWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J08", "J08_CommissionPayoutWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J08", message: "Commission payout journey started" };
   }),
 
   triggerJ09: protectedProcedure.input(J09Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J09", "J09_RemittanceWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J09", "J09_RemittanceWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J09", message: "Remittance journey started" };
   }),
 
   triggerJ10: protectedProcedure.input(J10Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J10", message: "Claim dispute journey started" };
   }),
 
   triggerJ11: protectedProcedure.input(J11Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J11", "J11_BrokerPolicyManagementWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J11", "J11_BrokerPolicyManagementWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J11", message: "Broker policy management journey started" };
   }),
 
   triggerJ12: protectedProcedure.input(J12Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J12", "J12_ActuaryIfrs17Workflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J12", "J12_ActuaryIfrs17Workflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J12", message: "IFRS17 computation journey started" };
   }),
 
   triggerJ13: protectedProcedure.input(J13Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J13", "J13_ComplianceMonitoringWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J13", "J13_ComplianceMonitoringWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J13", message: "Compliance monitoring journey started" };
   }),
 
   triggerJ14: protectedProcedure.input(J14Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J14", "J14_PosTerminalLifecycleWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J14", "J14_PosTerminalLifecycleWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J14", message: "POS terminal lifecycle journey started" };
   }),
 
   triggerJ15: protectedProcedure.input(J15Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J15", "J15_ReinsuranceCessionWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J15", "J15_ReinsuranceCessionWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J15", message: "Reinsurance cession journey started" };
   }),
 
   triggerJ16: protectedProcedure.input(J16Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J16", "J16_CustomerSelfServiceWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J16", "J16_CustomerSelfServiceWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J16", message: "Customer self-service journey started" };
   }),
 
   triggerJ17: protectedProcedure.input(J17Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J17", "J17_BulkPremiumPaymentWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J17", "J17_BulkPremiumPaymentWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J17", message: "Bulk payment journey started" };
   }),
 
   triggerJ18: protectedProcedure.input(J18Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J18", "J18_AgentFloatReconciliationWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J18", "J18_AgentFloatReconciliationWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J18", message: "Float reconciliation journey started" };
   }),
 
   triggerJ19: protectedProcedure.input(J19Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J19", "J19_UnderwritingDecisionWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J19", "J19_UnderwritingDecisionWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J19", message: "Underwriting decision journey started" };
   }),
 
   triggerJ20: protectedProcedure.input(J20Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J20", "J20_PlatformHealthMonitoringWorkflow", input, ctx.user.id);
+    const { workflowId, runId } = await startJourneyWorkflow("J20", "J20_PlatformHealthMonitoringWorkflow", input, ctx.user.id, ctx.user.role);
     return { success: true, workflowId, runId, journeyId: "J20", message: "Platform health monitoring journey started" };
   }),
 
@@ -560,7 +569,21 @@ export const insuranceJourneyOrchestratorRouter = router({
         J19: "J19_UnderwritingDecisionWorkflow", J20: "J20_PlatformHealthMonitoringWorkflow",
       };
       const workflowType = workflowTypeMap[input.journeyId];
-      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, input.input, ctx.user.id);
+      // N-wave (2026-09-19): parity with the V2 generic trigger (M-wave W1).
+      // The generic trigger must not bypass the hardened J03 guard or smuggle
+      // staff/settlement context into workflows. J03 is only startable via
+      // the dedicated triggerJ03 (ownership + coverage + staff routing);
+      // initiatedByStaff is computed SERVER-SIDE from the session; staff
+      // context / settlement destinations / tenant-identity fields are
+      // stripped from caller input for ALL journey types (fail-closed).
+      if (input.journeyId === "J03") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "J03 (claims settlement) must be started via triggerJ03 — it enforces ownership, coverage and staff-routing validation",
+        });
+      }
+      const sanitizedInput = sanitizeGenericJourneyInput(input.input, isStaffCaller(ctx));
+      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, sanitizedInput, ctx.user.id, ctx.user.role);
       const def = JOURNEY_DEFINITIONS.find(d => d.id === input.journeyId);
       return { success: true, workflowId, runId, journeyId: input.journeyId, message: `${def?.name ?? input.journeyId} journey started` };
     }),

@@ -19,6 +19,7 @@ import { customers, policies, auditLog } from "../../drizzle/schema";
 import { journeyExecutions, journeyStepEvents, journeySchedules } from "../../drizzle/schema.journeys";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { sanitizeGenericJourneyInput, stripForgedTrustedFields } from "../lib/journeyTriggerPolicy";
 import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
 
@@ -162,11 +163,16 @@ const J19Schema = z.object({ customerId: z.number().positive(), productId: z.num
 const J20Schema = z.object({ services: z.array(z.string()).optional(), slaThresholdMs: z.number().optional(), idempotencyKey: z.string().optional() });
 
 // ── Helper: start a journey workflow ─────────────────────────────────────────
+// N-wave (2026-09-19): trusted journey-input fields (triggeredBy /
+// authenticatedUserRole) are derived from the authenticated session and
+// injected SERVER-SIDE at workflow start; caller-forged copies are stripped
+// first (journeyTriggerPolicy). buildTenantContext consumes ONLY these.
 async function startJourneyWorkflow(
   journeyId: string,
   workflowType: string,
   input: unknown,
   userId: number,
+  userRole: string,
   idempotencyKey?: string
 ): Promise<{ workflowId: string; runId: string; executionDbId?: number }> {
   const d = await getDb();
@@ -193,7 +199,12 @@ async function startJourneyWorkflow(
   const handle = await temporal.workflow.start(workflowType, {
     taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "insureportal-journeys",
     workflowId,
-    args: [{ ...input as object, triggeredBy: userId, idempotencyKey }],
+    args: [{
+      ...stripForgedTrustedFields(input),
+      triggeredBy: userId,
+      authenticatedUserRole: userRole,
+      idempotencyKey,
+    }],
   });
 
   return { workflowId, runId: handle.firstExecutionRunId };
@@ -442,21 +453,24 @@ export const insuranceJourneyOrchestratorV2Router = router({
           message: "J03 (claims settlement) must be started via triggerJ03 — it enforces ownership, coverage and staff-routing validation",
         });
       }
-      const sanitizedInput: Record<string, unknown> = { ...input.input, initiatedByStaff: isStaffCaller(ctx) };
-      delete sanitizedInput.beneficiaryAccount;
-      delete sanitizedInput.beneficiaryBank;
-      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, sanitizedInput, ctx.user.id, input.idempotencyKey);
+      // N-wave (2026-09-19): the same staff-context smuggle applies to the
+      // other journeys — sanitizeGenericJourneyInput also strips staff
+      // context and caller-chosen tenant identity for ALL journey types
+      // (fail-closed). Tenant identity for the Permify check is
+      // session-derived (journey-tenant-guard.ts).
+      const sanitizedInput = sanitizeGenericJourneyInput(input.input, isStaffCaller(ctx));
+      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, sanitizedInput, ctx.user.id, ctx.user.role, input.idempotencyKey);
       const def = JOURNEY_DEFINITIONS.find(d => d.id === input.journeyId);
       return { success: true, workflowId, runId, journeyId: input.journeyId, message: `${def?.name ?? input.journeyId} journey started` };
     }),
 
   // ── Individual journey triggers ───────────────────────────────────────────
   triggerJ01: protectedProcedure.input(J01Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J01", "J01_CustomerOnboardingWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J01", "J01_CustomerOnboardingWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J01" };
   }),
   triggerJ02: protectedProcedure.input(J02Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J02", "J02_PolicyPurchaseWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J02" };
   }),
   triggerJ03: protectedProcedure.input(J03Schema).mutation(async ({ input, ctx }) => {
@@ -468,77 +482,77 @@ export const insuranceJourneyOrchestratorV2Router = router({
     // not accepted (beneficiary of record pays out).
     const { customerId, initiatedByStaff } = await validateJ03Trigger(ctx, input);
     const journeyInput = { ...input, customerId, initiatedByStaff };
-    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J03" };
   }),
   triggerJ04: protectedProcedure.input(J04Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J04", "J04_AgentOnboardingWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J04", "J04_AgentOnboardingWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J04" };
   }),
   triggerJ05: protectedProcedure.input(J05Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J05", "J05_AgentDailyOpsWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J05", "J05_AgentDailyOpsWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J05" };
   }),
   triggerJ06: protectedProcedure.input(J06Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J06", "J06_PolicyRenewalWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J06", "J06_PolicyRenewalWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J06" };
   }),
   triggerJ07: protectedProcedure.input(J07Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J07", "J07_FraudResponseWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J07", "J07_FraudResponseWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J07" };
   }),
   triggerJ08: protectedProcedure.input(J08Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J08", "J08_CommissionPayoutWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J08", "J08_CommissionPayoutWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J08" };
   }),
   triggerJ09: protectedProcedure.input(J09Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J09", "J09_RemittanceWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J09", "J09_RemittanceWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J09" };
   }),
   triggerJ10: protectedProcedure.input(J10Schema).mutation(async ({ input, ctx }) => {
     // M-wave (W1, 2026-09-19): propagate the server-computed staff flag — the
     // J10 adjuster-assignment activity is staff-context-gated.
-    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", { ...input, initiatedByStaff: isStaffCaller(ctx) }, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", { ...input, initiatedByStaff: isStaffCaller(ctx) }, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J10" };
   }),
   triggerJ11: protectedProcedure.input(J11Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J11", "J11_BrokerPolicyManagementWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J11", "J11_BrokerPolicyManagementWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J11" };
   }),
   triggerJ12: protectedProcedure.input(J12Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J12", "J12_ActuaryIfrs17Workflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J12", "J12_ActuaryIfrs17Workflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J12" };
   }),
   triggerJ13: protectedProcedure.input(J13Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J13", "J13_ComplianceMonitoringWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J13", "J13_ComplianceMonitoringWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J13" };
   }),
   triggerJ14: protectedProcedure.input(J14Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J14", "J14_PosTerminalLifecycleWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J14", "J14_PosTerminalLifecycleWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J14" };
   }),
   triggerJ15: protectedProcedure.input(J15Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J15", "J15_ReinsuranceCessionWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J15", "J15_ReinsuranceCessionWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J15" };
   }),
   triggerJ16: protectedProcedure.input(J16Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J16", "J16_CustomerSelfServiceWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J16", "J16_CustomerSelfServiceWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J16" };
   }),
   triggerJ17: protectedProcedure.input(J17Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J17", "J17_BulkPremiumPaymentWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J17", "J17_BulkPremiumPaymentWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J17" };
   }),
   triggerJ18: protectedProcedure.input(J18Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J18", "J18_AgentFloatReconciliationWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J18", "J18_AgentFloatReconciliationWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J18" };
   }),
   triggerJ19: protectedProcedure.input(J19Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J19", "J19_UnderwritingDecisionWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J19", "J19_UnderwritingDecisionWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J19" };
   }),
   triggerJ20: protectedProcedure.input(J20Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J20", "J20_PlatformHealthMonitoringWorkflow", input, ctx.user.id, input.idempotencyKey);
+    const { workflowId, runId } = await startJourneyWorkflow("J20", "J20_PlatformHealthMonitoringWorkflow", input, ctx.user.id, ctx.user.role, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J20" };
   }),
 });

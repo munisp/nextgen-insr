@@ -101,6 +101,9 @@ export const j20SchedulerRouter = router({
         workflowId,
         args: [{
           triggeredBy: ctx.user.id,
+          // N-wave (2026-09-19): session-derived role for the tenant guard —
+          // buildTenantContext fails closed without it.
+          authenticatedUserRole: ctx.user.role,
           idempotencyKey: workflowId,
           scheduled: false,
         }],
