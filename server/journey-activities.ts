@@ -26,20 +26,22 @@ import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
 import { daprPublish } from "./daprClient";
 import { getDb } from "./db";
-import { encryptPii, piiDedupeHash } from "./lib/piiCrypto";
-import { hasPhoneOwnershipProof } from "./lib/phoneOtp";
 import { fluvioProduce } from "./fluvio";
+// M-wave (2026-09-19): import group re-ordered to satisfy import/order.
+import { J03_AUTO_ADJUDICATION_CAP_NGN } from "./lib/claimsJourneyPolicy";
+import { hasPhoneOwnershipProof } from "./lib/phoneOtp";
+import { encryptPii, piiDedupeHash } from "./lib/piiCrypto";
+import { validateIncidentWindow, validateWaitingPeriod } from "./lib/policyLifecycle";
+import { acquireLock, releaseLock, getRedisClient } from "./lib/redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import {
   customers, agents, policies, claims, policyQuotes, transactions,
   kycVerifications, fraudAlerts, auditLog, notifications,
   insuranceProducts, underwritingApplications as underwritingApps,
   complianceChecks, policyRenewals, reinsuranceTreaties,
-  posTerminals, idempotencyRecords,
+  posTerminals, idempotencyRecords, beneficiaries,
 } from "../drizzle/schema";
 import { premiums, claimsPayments, commissions } from "../drizzle/schema.additions";
-import { validateIncidentWindow, validateWaitingPeriod } from "./lib/policyLifecycle";
-import { acquireLock, releaseLock, getRedisClient } from "./lib/redisClient";
 
 // ─── Helper: get DB instance ─────────────────────────────────────────────────
 async function db() {
@@ -812,10 +814,48 @@ Analyze for fraud indicators. Return JSON:
   return { fraudScore, flagged, reasons };
 }
 
+// ─── M-wave (W1, 2026-09-19): journey claims auto-adjudication tier ──────────
+// Canonical definition lives in ./lib/claimsJourneyPolicy (pure module,
+// Temporal-workflow-bundle-safe; imported at the top of this file);
+// re-exported here for activities/routers.
+export { J03_AUTO_ADJUDICATION_CAP_NGN, resolveJ03AdjudicationRoute } from "./lib/claimsJourneyPolicy";
+
+/**
+ * M-wave (W1, 2026-09-19): move a claim into the staff adjudication queue.
+ * Used by the J03 journey when auto-adjudication is not permitted. The claim
+ * becomes adjudicable/assignable via the hardened staff router path only.
+ */
+export async function routeClaimToAdjudicationQueue(input: {
+  claimId: number;
+  reason: string;
+  triggeredBy?: number;
+}): Promise<{ claimId: number; status: "pending_adjudication" }> {
+  const d = await db();
+  await d.update(claims)
+    .set({ status: "pending_adjudication", updatedAt: new Date() })
+    .where(eq(claims.id, input.claimId));
+  await emit("claims-events", { eventType: "claim.pending_adjudication", claimId: input.claimId, reason: input.reason });
+  await audit("CLAIM_ROUTED_TO_ADJUDICATION", "claims", String(input.claimId), {
+    reason: input.reason, triggeredBy: input.triggeredBy ?? null,
+  });
+  return { claimId: input.claimId, status: "pending_adjudication" };
+}
+
 export async function assignClaimAdjuster(input: {
   claimId: number;
   adjusterId?: number;
+  // M-wave (W1, 2026-09-19): this activity writes claims.assignedAdjusterId
+  // unguarded by any router gate, so it is invocable ONLY from a
+  // staff-initiated workflow context. The workflows propagate the
+  // server-computed staff flag from the tRPC trigger; absent/false fails
+  // closed.
+  staffContext?: boolean;
 }): Promise<{ adjusterId: number; assignedAt: string }> {
+  if (input.staffContext !== true) {
+    throw new Error(
+      "assignClaimAdjuster: requires a staff-initiated workflow context (staffContext=true) — refusing (fail-closed)"
+    );
+  }
   const d = await db();
 
   // Auto-assign if no adjuster specified
@@ -842,6 +882,23 @@ export async function adjudicateClaim(input: {
 }): Promise<{ decision: string; approvedAmount: number | null }> {
   const d = await db();
   const statusMap = { approved: "approved", partially_approved: "partially_approved", rejected: "rejected" } as const;
+
+  // M-wave (W1, 2026-09-19): journey auto-adjudication is capped at
+  // J03_AUTO_ADJUDICATION_CAP_NGN. Above-cap approvals must go through the
+  // staff router path (insuranceWorkflows.adjudicateClaim) which enforces
+  // segregation of duties — this activity is server-trusted and previously
+  // approved any caller-influenced amount with no SoD at all.
+  if (
+    input.decision !== "rejected" &&
+    (input.approvedAmount == null ||
+      !Number.isFinite(input.approvedAmount) ||
+      input.approvedAmount <= 0 ||
+      input.approvedAmount > J03_AUTO_ADJUDICATION_CAP_NGN)
+  ) {
+    throw new Error(
+      `adjudicateClaim (journey activity): approvals require 0 < approvedAmount <= ₦${J03_AUTO_ADJUDICATION_CAP_NGN} auto-tier — route larger claims to the staff adjudication queue`
+    );
+  }
 
   await d.update(claims).set({
     status: statusMap[input.decision],
@@ -873,11 +930,51 @@ export async function settleClaimPayment(input: {
   if (!claim) throw new Error(`Claim ${input.claimId} not found`);
   if (!["approved", "partially_approved"].includes(claim.status ?? "")) throw new Error(`Claim not approved for settlement`);
 
+  // M-wave (W1, 2026-09-19): defense in depth — this ACTIVITY (not just the
+  // trigger) enforces the same contract as the hardened router path
+  // (insuranceWorkflows.settleClaimPayment, L-S-3):
+  //   1. The settled amount is the server-side adjudicated
+  //      claim.approvedAmount — a caller/workflow-supplied figure that
+  //      disagrees with it is rejected, never paid.
+  //   2. The payout beneficiary resolves from the beneficiaries table
+  //      (beneficiary OF RECORD for the claim's policy). Caller-supplied
+  //      beneficiaryAccount/beneficiaryBank inputs are NEVER honoured; a
+  //      conflicting supplied account is rejected, and a claim with no
+  //      beneficiary of record fails closed.
+  const recordedAmount = Number(claim.approvedAmount ?? NaN);
+  if (!Number.isFinite(recordedAmount) || recordedAmount <= 0) {
+    throw new Error(`Claim ${input.claimId} has no recorded approvedAmount — adjudicate before settling (fail-closed)`);
+  }
+  if (Number(input.approvedAmount) !== recordedAmount) {
+    throw new Error(
+      `settleClaimPayment: supplied amount ${input.approvedAmount} does not match the adjudicated amount ${recordedAmount} for claim ${input.claimId}`
+    );
+  }
+
+  const [bene] = await d.select().from(beneficiaries)
+    .where(eq(beneficiaries.policyId, claim.policyId))
+    .orderBy(desc(beneficiaries.percentage)).limit(1);
+  if (!bene) {
+    throw new Error(
+      `Policy ${claim.policyId} has no beneficiary of record — settlement refused (fail-closed; caller-supplied accounts are never accepted)`
+    );
+  }
+  if (bene.isMinor && !bene.guardianName) {
+    throw new Error("Beneficiary is a minor with no guardian on record — assign a guardian before settlement");
+  }
+  const beneficiaryAccount = bene.nationalId ?? null;
+  if (input.beneficiaryAccount && input.beneficiaryAccount !== beneficiaryAccount) {
+    throw new Error(
+      `settleClaimPayment: beneficiaryAccount does not match the recorded beneficiary for policy ${claim.policyId}`
+    );
+  }
+  const beneficiaryBank = input.beneficiaryBank ?? null;
+
   // TigerBeetle: insurer-claims-pool → claimant
   const tbResult = await tbCreateTransfer({
     debitAccountId: "insurer-claims-pool",
     creditAccountId: `claimant-${claim.claimantId}`,
-    amount: Math.round(input.approvedAmount * 100),
+    amount: Math.round(recordedAmount * 100),
     ledger: 4000,
     code: 800,
     ref: input.paymentRef,
@@ -887,19 +984,19 @@ export async function settleClaimPayment(input: {
   const [payment] = await d.insert(claimsPayments).values({
     claimId: input.claimId,
     paymentRef: input.paymentRef,
-    amount: String(input.approvedAmount),
+    amount: String(recordedAmount),
     currency: "NGN",
     paymentMethod: input.paymentMethod,
-    beneficiaryAccount: input.beneficiaryAccount ?? null,
-    beneficiaryBank: input.beneficiaryBank ?? null,
+    beneficiaryAccount,
+    beneficiaryBank,
     status: "processed",
     tbTransferId: tbResult?.id ?? null,
     processedAt: new Date(),
   }).returning();
 
-  await d.update(claims).set({ status: "paid", paidAmount: String(input.approvedAmount), settlementDate: new Date(), updatedAt: new Date() }).where(eq(claims.id, input.claimId));
-  await emit("payment-events", { eventType: "claim.settled", claimId: input.claimId, amount: input.approvedAmount, tbTransferId: tbResult?.id });
-  await audit("CLAIM_SETTLED", "claims", String(input.claimId), { amount: input.approvedAmount, tbTransferId: tbResult?.id ?? null });
+  await d.update(claims).set({ status: "paid", paidAmount: String(recordedAmount), settlementDate: new Date(), updatedAt: new Date() }).where(eq(claims.id, input.claimId));
+  await emit("payment-events", { eventType: "claim.settled", claimId: input.claimId, amount: recordedAmount, tbTransferId: tbResult?.id });
+  await audit("CLAIM_SETTLED", "claims", String(input.claimId), { amount: recordedAmount, tbTransferId: tbResult?.id ?? null });
   return { settled: true, tbTransferId: tbResult?.id ?? null, paymentId: payment.id };
 }
 

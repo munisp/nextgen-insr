@@ -84,6 +84,9 @@ export const ADJUDICATABLE_FROM_STATUSES = [
   "investigation",
   "appealed",
   "escalated",
+  // M-wave (W1, 2026-09-19): journey-routed staff adjudication queue claims
+  // are adjudicable via this hardened path (SoD enforced below).
+  "pending_adjudication",
 ] as const;
 
 /**
@@ -107,6 +110,8 @@ export const ASSIGNABLE_FROM_STATUSES = [
   "investigation",
   "appealed",
   "escalated",
+  // M-wave (W1, 2026-09-19): staff adjudication queue claims are assignable.
+  "pending_adjudication",
 ] as const;
 
 /** Statuses from which a policy may be cancelled (INS-12). */
@@ -2371,8 +2376,20 @@ export const insuranceWorkflowsRouter = router({
 
       const conditions: ReturnType<typeof eq>[] = [];
       // Tenant isolation (F-05): tenant users only list their own tenant's
-      // policies. Platform users (no tenantId → 0 sentinel) are unscoped.
+      // policies.
+      // M-wave (W2, 2026-09-19): previously users WITHOUT a tenantId
+      // (tenantId=0 sentinel — the default for portal signups) were silently
+      // UNSCOPED and read every tenant's policies. Fail-closed, matching the
+      // L-eco disputeRefund.list gate: platform-scope reads require the
+      // admin role; everyone else is scoped to their tenantId, and an
+      // unresolvable tenantId denies the read.
       const tenantId = ctx.user?.tenantId ?? 0;
+      if (tenantId === 0 && ctx.user?.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Platform-scope policy reads require the admin role",
+        });
+      }
       if (tenantId !== 0) conditions.push(eq(policies.tenantId, tenantId));
       if (input.customerId) conditions.push(eq(policies.customerId, input.customerId));
       if (input.agentId) conditions.push(eq(policies.agentId, input.agentId));
@@ -2403,8 +2420,18 @@ export const insuranceWorkflowsRouter = router({
 
       const conditions: ReturnType<typeof eq>[] = [];
       // Tenant isolation (F-05): tenant users only list their own tenant's
-      // claims. Platform users (no tenantId → 0 sentinel) are unscoped.
+      // claims.
+      // M-wave (W2, 2026-09-19): platform-scope reads (tenantId=0 sentinel)
+      // now require the admin role — same gate as listPolicies above and the
+      // L-eco disputeRefund.list pattern. Fail-closed when tenantId is
+      // unresolvable for non-admin callers.
       const tenantId = ctx.user?.tenantId ?? 0;
+      if (tenantId === 0 && ctx.user?.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Platform-scope claim reads require the admin role",
+        });
+      }
       if (tenantId !== 0) conditions.push(eq(claims.tenantId, tenantId));
       if (input.policyId) conditions.push(eq(claims.policyId, input.policyId));
       if (input.status) conditions.push(eq(claims.status, input.status as any));

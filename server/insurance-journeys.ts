@@ -41,6 +41,8 @@ import {
 } from "@temporalio/workflow";
 
 import type * as journeyActivities from "./journey-activities";
+// M-wave (W1, 2026-09-19): pure policy module — safe for the workflow bundle.
+import { resolveJ03AdjudicationRoute } from "./lib/claimsJourneyPolicy";
 
 // ─── Activity proxy with retry policy ────────────────────────────────────────
 const acts = proxyActivities<typeof journeyActivities>({
@@ -268,8 +270,12 @@ export interface J03_ClaimsSettlementInput {
   agentId?: number;
   paymentRef: string;
   paymentMethod?: string;
-  beneficiaryAccount?: string;
-  beneficiaryBank?: string;
+  // M-wave (W1, 2026-09-19): beneficiaryAccount/beneficiaryBank inputs are
+  // DELETED — the settlement destination is the beneficiary of record,
+  // resolved server-side inside the settleClaimPayment activity.
+  // initiatedByStaff is computed SERVER-SIDE at the tRPC trigger; it gates
+  // journey auto-adjudication (fail-closed default).
+  initiatedByStaff?: boolean;
 }
 
 export async function J03_ClaimsSettlementWorkflow(input: J03_ClaimsSettlementInput) {
@@ -288,9 +294,24 @@ export async function J03_ClaimsSettlementWorkflow(input: J03_ClaimsSettlementIn
     return { success: false, claimId: claim.claimId, claimNumber: claim.claimNumber, status: "suspended", reason: "High fraud score — manual investigation required", fraudScore: fraud.fraudScore };
   }
 
+  // M-wave (W1, 2026-09-19): auto-adjudication tier gate. Only small,
+  // STAFF-initiated claims auto-adjudicate in the journey; everything else
+  // routes to the staff adjudication queue (status pending_adjudication) and
+  // is decided via the hardened router path with segregation of duties.
+  if (resolveJ03AdjudicationRoute(input.claimedAmount, input.initiatedByStaff === true) === "staff_queue") {
+    currentStep = "pending_adjudication";
+    await acts.routeClaimToAdjudicationQueue({
+      claimId: claim.claimId,
+      reason: input.initiatedByStaff === true
+        ? "claimedAmount exceeds the journey auto-adjudication tier"
+        : "customer-initiated claims journey — staff adjudication required",
+    });
+    return { success: true, claimId: claim.claimId, claimNumber: claim.claimNumber, status: "pending_adjudication" };
+  }
+
   // Step 3: Assign adjuster
   currentStep = "assign_adjuster";
-  const assignment = await acts.assignClaimAdjuster({ claimId: claim.claimId });
+  const assignment = await acts.assignClaimAdjuster({ claimId: claim.claimId, staffContext: input.initiatedByStaff === true });
 
   // Step 4: AML screening
   currentStep = "aml_screening";
@@ -306,7 +327,7 @@ export async function J03_ClaimsSettlementWorkflow(input: J03_ClaimsSettlementIn
 
   // Step 6: Settle payment
   currentStep = "settle_payment";
-  const settlement = await acts.settleClaimPayment({ claimId: claim.claimId, approvedAmount: adjudication.approvedAmount ?? approvedAmount, paymentMethod: input.paymentMethod ?? "bank_transfer", beneficiaryAccount: input.beneficiaryAccount, beneficiaryBank: input.beneficiaryBank, paymentRef: input.paymentRef });
+  const settlement = await acts.settleClaimPayment({ claimId: claim.claimId, approvedAmount: adjudication.approvedAmount ?? approvedAmount, paymentMethod: input.paymentMethod ?? "bank_transfer", paymentRef: input.paymentRef });
 
   // Step 7: Notify
   currentStep = "notify";

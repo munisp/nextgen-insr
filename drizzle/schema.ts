@@ -4808,6 +4808,9 @@ export const claimStatusEnum = pgEnum("claim_status", [
   "closed",
   "appealed",
   "escalated",
+  // M-wave (W1, 2026-09-19): staff adjudication queue state for claims
+  // routed out of journey auto-adjudication (migration 0084).
+  "pending_adjudication",
 ]);
 
 export const underwritingDecisionEnum = pgEnum("underwriting_decision", [

@@ -50,6 +50,8 @@ import {
 import type * as acts from "./journey-activities";
 import type * as exts from "./journey-activities-extended";
 import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
+// M-wave (W1, 2026-09-19): pure policy module — safe for the workflow bundle.
+import { resolveJ03AdjudicationRoute, J03_AUTO_ADJUDICATION_CAP_NGN } from "./lib/claimsJourneyPolicy";
 
 
 // ── Activity proxies ──────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ const {
   createInsurancePolicy, issuePolicyCertificate, notifyPolicyStakeholders,
   emitInsuranceEvent, compensatePolicyBindingStep, fileClaim,
   runClaimFraudCheck, assignClaimAdjuster, adjudicateClaim, settleClaimPayment,
+  routeClaimToAdjudicationQueue,
   registerAgent, activateAgent, provisionAgentPosTerminal,
   detectExpiringPolicies, generateRenewalQuote, processRenewal,
   runTransactionFraudCheck, freezeAgentAccount, unfreezeAgentAccount,
@@ -436,8 +439,13 @@ export interface J03Input {
   agentId?: number;
   paymentRef: string;
   paymentMethod?: string;
-  beneficiaryAccount?: string;
-  beneficiaryBank?: string;
+  // M-wave (W1, 2026-09-19): beneficiaryAccount/beneficiaryBank inputs are
+  // DELETED — the settlement destination is the beneficiary of record,
+  // resolved server-side inside the settleClaimPayment activity (same
+  // contract as insuranceWorkflows.settleClaimPayment, L-S-3).
+  // initiatedByStaff is computed SERVER-SIDE at the tRPC trigger (never
+  // trusted from client payloads); it gates journey auto-adjudication.
+  initiatedByStaff?: boolean;
   triggeredBy: number;
   idempotencyKey?: string;
 }
@@ -516,9 +524,31 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
       if (!approved || cancelled) throw new Error("Claim fraud review timeout or cancelled");
     }
 
+    // M-wave (W1, 2026-09-19): auto-adjudication tier gate. Journeys may
+    // auto-adjudicate only small claims initiated by staff; everything else
+    // goes to the staff adjudication queue (status pending_adjudication) and
+    // is decided via the hardened router path with segregation of duties.
+    const adjudicationRoute = resolveJ03AdjudicationRoute(input.claimedAmount, input.initiatedByStaff === true);
+    if (adjudicationRoute === "staff_queue") {
+      currentStep = "pending_adjudication";
+      await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "postgresql" });
+      await routeClaimToAdjudicationQueue({
+        claimId: claim.claimId,
+        reason: input.initiatedByStaff === true
+          ? `claimedAmount ₦${input.claimedAmount} exceeds the ₦${J03_AUTO_ADJUDICATION_CAP_NGN} journey auto-adjudication tier`
+          : "customer-initiated claims journey — staff adjudication required",
+        triggeredBy: input.triggeredBy,
+      });
+      await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "postgresql",
+        metadata: { claimId: claim.claimId, queue: "staff_adjudication" } });
+      await recordJourneyComplete({ executionId, workflowId: `J03-${Date.now()}`, status: "completed",
+        resultSnapshot: { claimId: claim.claimId, decision: "pending_adjudication" } });
+      return { success: true, claimId: claim.claimId, decision: "pending_adjudication" };
+    }
+
     // Step 5: Assign adjuster
     currentStep = "assign_adjuster";
-    const adjuster = await assignClaimAdjuster({ claimId: claim.claimId });
+    const adjuster = await assignClaimAdjuster({ claimId: claim.claimId, staffContext: input.initiatedByStaff === true });
 
     // Step 6: Ollama AI — adjudication narrative
     currentStep = "ai_adjudication";
@@ -562,7 +592,7 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
       claimId: claim.claimId,
       approvedAmount: adjudication.approvedAmount ?? input.claimedAmount, paymentRef: input.paymentRef,
       paymentMethod: input.paymentMethod ?? "bank_transfer",
-      beneficiaryAccount: input.beneficiaryAccount, beneficiaryBank: input.beneficiaryBank,
+      // No beneficiary fields: the activity derives the beneficiary of record.
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "tigerbeetle",
       metadata: { transactionId: settlement.tbTransferId } });
@@ -1290,6 +1320,9 @@ export interface J10Input {
   disputeReason: string;
   evidenceUrls?: string[];
   requestedAmount: number;
+  // M-wave (W1, 2026-09-19): server-computed at the tRPC trigger; gates the
+  // adjuster-assignment activity (staff-initiated contexts only).
+  initiatedByStaff?: boolean;
   triggeredBy: number;
   idempotencyKey?: string;
 }
@@ -1332,7 +1365,7 @@ export async function J10_ClaimDisputeWorkflow(input: J10Input) {
 
     // Step 3: Assign senior adjuster
     currentStep = "assign_senior_adjuster";
-    const adjuster = await assignClaimAdjuster({ claimId: input.claimId });
+    const adjuster = await assignClaimAdjuster({ claimId: input.claimId, staffContext: input.initiatedByStaff === true });
 
     // Step 4: Fluvio — emit dispute event
     await emitInsuranceEvent({
