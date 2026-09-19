@@ -14,7 +14,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { agents, refunds } from "../../drizzle/schema";
+import { agents, disputes, refunds, transactions } from "../../drizzle/schema";
 import { router } from "../../server/_core/trpc";
 import { disputeRefundRouter } from "../../server/routers/disputeRefund";
 import { floatManagementRouter } from "../../server/routers/floatManagement";
@@ -69,6 +69,47 @@ beforeAll(async () => {
     // explicitly, preserving the pre-G3 behavior under test.
     isActive: true,
   });
+
+  // 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund
+  // terms server-side from the original transaction linked through the
+  // dispute (fail-closed; the unlinked trust-the-client fallback was
+  // removed). Every disputeId used below therefore gets a REAL dispute +
+  // original transaction whose source account matches the account the test
+  // asserts against (the refund destination is now forced to that source
+  // account). The pipeline behaviors under test (process/replay,
+  // double-refund, duplicate window, daily cap) are unchanged.
+  async function seedRefundDispute(
+    n: number,
+    txAmount: string,
+    sourceAccount: string
+  ): Promise<void> {
+    const [tx] = await db
+      .insert(transactions)
+      .values({
+        ref: `TX-F1-REF-${n}`,
+        agentId: AGENT_ID,
+        type: "Cash In",
+        amount: txAmount,
+        customerAccount: sourceAccount,
+        status: "success",
+      })
+      .returning();
+    await db.insert(disputes).values({
+      id: BASE + n,
+      ref: `DSP-F1-${n}`,
+      transactionId: tx!.id,
+      agentId: AGENT_ID,
+      status: "open",
+    });
+  }
+  await seedRefundDispute(101, "10000.00", "0123456789");
+  await seedRefundDispute(102, "10000.00", "0123456789");
+  await seedRefundDispute(103, "10000.00", "0999999999");
+  await seedRefundDispute(104, "10000.00", "0999999999");
+  for (let i = 0; i < 4; i++) {
+    await seedRefundDispute(200 + i, "600000.00", `01234567${80 + i}`);
+  }
+  await seedRefundDispute(299, "5000.00", "0123456799");
 });
 
 describe("PAY-2 refund pipeline (real processing)", () => {

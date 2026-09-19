@@ -68,10 +68,38 @@ export const premiumTopUpRouter = router({
       });
       if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to post premium payments" });
 
-      const txAgentId = input.agentId ?? policy.agentId;
-      if (txAgentId == null) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "agentId required: policy has no agent and none was provided" });
+      // ── I-wave (AB-20): amount & agent identity are server-derived ──────
+      // For active/bound policies the amount is compared to the policy's
+      // expected premium: underpayment is rejected outright (a partial
+      // "premium" must never book full coverage); overpayment follows the
+      // repo's cover-the-required-amount convention (validateReinstatement
+      // accepts amount >= arrears) and is credited with an explicit audit
+      // note. Lapsed policies validate against arrears below.
+      if (policy.status === "active" || policy.status === "bound") {
+        const expectedPremium = Number(policy.annualPremium);
+        if (expectedPremium > 0 && input.amountNGN < expectedPremium) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Underpayment: ₦${input.amountNGN} is below the expected premium of ₦${expectedPremium} for policy ${policy.policyNumber ?? input.policyId}`,
+          });
+        }
       }
+
+      // agentId is NEVER client-derived: the premium belongs to the policy's
+      // selling agent on record. A spoofed input.agentId is ignored and
+      // audited, not honored.
+      const txAgentId = policy.agentId;
+      if (txAgentId == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Policy has no selling agent on record — premium cannot be attributed; fix the policy first",
+        });
+      }
+      const spoofedAgentId =
+        input.agentId != null && input.agentId !== policy.agentId
+          ? input.agentId
+          : null;
 
       const lockKey = `premium-topup:${input.policyId}:${input.reference}`;
       const locked = await acquireLock(lockKey, 15_000);
@@ -182,7 +210,18 @@ export const premiumTopUpRouter = router({
           resource: "policy",
           resourceId: String(input.policyId),
           status: "success",
-          metadata: { amountNGN: input.amountNGN, reference: input.reference },
+          metadata: {
+            amountNGN: input.amountNGN,
+            reference: input.reference,
+            // I-wave (AB-20): server-derived terms on record.
+            expectedPremium: policy.annualPremium,
+            overpaymentNGN:
+              input.amountNGN > Number(policy.annualPremium)
+                ? input.amountNGN - Number(policy.annualPremium)
+                : 0,
+            agentId: txAgentId,
+            spoofedAgentIdIgnored: spoofedAgentId,
+          },
         }).catch(() => {});
 
         // Sprint 44 wiring (F-12): event fan-out + status cache. Best-effort

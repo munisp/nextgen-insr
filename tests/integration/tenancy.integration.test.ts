@@ -34,6 +34,7 @@ import {
   disputes,
   refunds,
   agents,
+  transactions,
 } from "../../drizzle/schema";
 import {
   callerFor,
@@ -160,10 +161,27 @@ describe("cross-tenant isolation (integration, real DB)", () => {
     void cA;
 
     // ── Disputes: one per tenant ─────────────────────────────────────────
+    // 2026-09-18 (I-wave/AB-19): initiateRefund now ALWAYS derives refund
+    // terms server-side from the original transaction linked through the
+    // dispute — tenant A's dispute therefore gets a REAL original
+    // transaction (the tenant-scoping behavior under test is unchanged).
+    const [txA] = await db
+      .insert(transactions)
+      .values({
+        ref: "TX-TEN-A-001",
+        agentId: 920301,
+        type: "Cash In",
+        amount: "5000.00",
+        customerAccount: "0123456789",
+        status: "success",
+        tenantId: TENANT_A,
+      })
+      .returning();
     const [dA] = await db
       .insert(disputes)
       .values({
         ref: "DSP-TEN-A-001",
+        transactionId: txA!.id,
         agentId: 920301,
         amount: "1500",
         description: "Tenant A dispute",

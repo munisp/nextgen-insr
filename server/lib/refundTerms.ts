@@ -39,10 +39,23 @@ export function deriveRefundTerms(
       message: `Refund amount (₦${input.amount}) exceeds the original transaction amount (₦${origAmount})`,
     });
   }
+  // I-wave (AB-19): the refund destination is ALWAYS the original source
+  // account (no verified settlement-account override infra exists for
+  // customer refunds). When the original transaction records neither a
+  // customerAccount nor a destinationAccount, there is no trustworthy
+  // destination — fail CLOSED instead of trusting the client-supplied
+  // accountNumber.
   const sourceAccount = origTx.customerAccount || origTx.destinationAccount;
+  if (!sourceAccount) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "Original transaction has no source account on record — refund destination cannot be derived server-side",
+    });
+  }
   return {
     effectiveAmount: input.amount,
-    effectiveDestination: sourceAccount || input.accountNumber,
+    effectiveDestination: sourceAccount,
     originalTxId: origTx.id,
   };
 }

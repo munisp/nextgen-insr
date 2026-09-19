@@ -90,7 +90,12 @@ async function seedPolicy(policyNumber: string, status: "active" | "cancelled", 
     status,
     coverageType: "micro",
     sumInsured: "1000000",
-    annualPremium: "25000",
+    // 2026-09-18 (I-wave/AB-20): premiumTopUp now rejects underpayment vs
+    // the policy's expected premium. These fixtures exercise idempotency/
+    // atomicity/race semantics (not the amount rule), so the expected
+    // premium is set to the happy-path amount (₦2,500); the race test's
+    // ₦3,000 is an allowed overpayment (credited + audited).
+    annualPremium: "2500",
   }).returning();
   return p!.id;
 }
