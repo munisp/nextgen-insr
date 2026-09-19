@@ -15,11 +15,100 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, like, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 
+import { customers, policies, auditLog } from "../../drizzle/schema";
 import { journeyExecutions, journeyStepEvents, journeySchedules } from "../../drizzle/schema.journeys";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
+
+// ── M-wave (W1, 2026-09-19): staff detection for journey triggers ───────────
+// Same staff convention as insuranceWorkflows.ts (L-wave): the platform role
+// enum carries only admin/supervisor as staff. Computed SERVER-SIDE from the
+// session — never from client payloads.
+const JOURNEY_STAFF_ROLES = ["admin", "supervisor"] as const;
+function isStaffCaller(ctx: { user?: { role?: string } | null }): boolean {
+  return (JOURNEY_STAFF_ROLES as readonly string[]).includes(ctx.user?.role ?? "");
+}
+
+/**
+ * M-wave (W1, 2026-09-19): shared J03 trigger guard. The Temporal claims
+ * journey previously accepted caller-chosen customerId/claimedAmount/
+ * beneficiaryAccount from ANY authenticated user and settled real
+ * TigerBeetle funds with no staff role and no SoD. Now, before any workflow
+ * starts:
+ *   - customerId is SESSION-DERIVED for non-staff (the caller must own the
+ *     customer record, resolved via customers.keycloakSub — the same
+ *     convention as V1 triggerJ02); staff may act on behalf of any existing
+ *     customer, with an audit record;
+ *   - the policy must belong to that customer and claimedAmount must not
+ *     exceed the policy's sumInsured (server-side coverage check);
+ *   - beneficiary fields are never accepted here — settlement pays the
+ *     beneficiary of record inside the activity.
+ * Returns the validated journey input.
+ */
+async function validateJ03Trigger(
+  ctx: { user?: { id?: number; role?: string } | null },
+  input: { policyId: number; customerId: number; claimedAmount: number },
+): Promise<{ customerId: number; initiatedByStaff: boolean }> {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+  const staff = isStaffCaller(ctx);
+  let customerId = input.customerId;
+  if (!staff) {
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.keycloakSub, String(ctx.user?.id)))
+      .limit(1);
+    if (!customer) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+    }
+    if (customer.id !== input.customerId) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "customerId does not match the authenticated account" });
+    }
+    customerId = customer.id;
+  } else {
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.id, input.customerId))
+      .limit(1);
+    if (!customer) {
+      throw new TRPCError({ code: "NOT_FOUND", message: `Customer ${input.customerId} not found` });
+    }
+  }
+
+  const [policy] = await db
+    .select({ id: policies.id, customerId: policies.customerId, sumInsured: policies.sumInsured })
+    .from(policies)
+    .where(eq(policies.id, input.policyId))
+    .limit(1);
+  if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: `Policy ${input.policyId} not found` });
+  if (policy.customerId !== customerId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Policy does not belong to the claiming customer" });
+  }
+  const coverage = Number(policy.sumInsured ?? NaN);
+  if (!Number.isFinite(coverage) || input.claimedAmount > coverage) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `claimedAmount ₦${input.claimedAmount} exceeds the policy coverage ₦${policy.sumInsured ?? 0}`,
+    });
+  }
+
+  if (staff) {
+    // Staff acting on behalf of a customer — audited.
+    await db.insert(auditLog).values({
+      action: "J03_TRIGGERED_ON_BEHALF",
+      resource: "customers",
+      resourceId: String(customerId),
+      status: "success",
+      metadata: { staffUserId: ctx.user?.id ?? null, policyId: input.policyId, claimedAmount: input.claimedAmount },
+    }).catch(() => {});
+  }
+  return { customerId, initiatedByStaff: staff };
+}
 
 
 
@@ -50,7 +139,10 @@ export const JOURNEY_DEFINITIONS = [
 // ── Input schemas ─────────────────────────────────────────────────────────────
 const J01Schema = z.object({ email: z.string().email(), phone: z.string().min(11), firstName: z.string().min(1), lastName: z.string().min(1), dateOfBirth: z.string(), nin: z.string().optional(), bvn: z.string().optional(), address: z.string().min(5), state: z.string().min(2), policyType: z.string(), sumInsured: z.number().positive(), premiumAmount: z.number().positive(), idempotencyKey: z.string().optional() });
 const J02Schema = z.object({ customerId: z.number().positive(), productId: z.number().positive(), sumInsured: z.number().positive(), premiumAmount: z.number().positive(), durationMonths: z.number().min(1).max(120).default(12), paymentRef: z.string(), agentId: z.number().optional(), beneficiaryName: z.string().optional(), idempotencyKey: z.string().optional() });
-const J03Schema = z.object({ policyId: z.number().positive(), customerId: z.number().positive(), claimType: z.string(), incidentDate: z.string(), claimedAmount: z.number().positive(), description: z.string().min(10), agentId: z.number().optional(), paymentRef: z.string(), paymentMethod: z.string().optional(), beneficiaryAccount: z.string().optional(), beneficiaryBank: z.string().optional(), idempotencyKey: z.string().optional() });
+// M-wave (W1, 2026-09-19): beneficiaryAccount/beneficiaryBank REMOVED from the
+// trigger schema — settlement pays the beneficiary of record, never a
+// caller-named account.
+const J03Schema = z.object({ policyId: z.number().positive(), customerId: z.number().positive(), claimType: z.string(), incidentDate: z.string(), claimedAmount: z.number().positive(), description: z.string().min(10), agentId: z.number().optional(), paymentRef: z.string(), paymentMethod: z.string().optional(), idempotencyKey: z.string().optional() });
 const J04Schema = z.object({ email: z.string().email(), phone: z.string().min(11), firstName: z.string(), lastName: z.string(), nin: z.string(), bvn: z.string(), agentType: z.enum(["individual", "corporate"]), state: z.string(), lga: z.string(), initialFloatAmount: z.number().positive(), idempotencyKey: z.string().optional() });
 const J05Schema = z.object({ agentId: z.number().positive(), agentCode: z.string(), operationType: z.enum(["airtime", "bill_payment", "mobile_money", "premium_collection"]), amount: z.number().positive(), customerId: z.number().optional(), policyId: z.number().optional(), billType: z.string().optional(), phone: z.string().optional(), paymentRef: z.string(), idempotencyKey: z.string().optional() });
 const J06Schema = z.object({ policyId: z.number().positive(), customerId: z.number().positive(), renewalType: z.enum(["standard", "enhanced", "reduced"]).default("standard"), newSumInsured: z.number().positive().optional(), idempotencyKey: z.string().optional() });
@@ -340,7 +432,20 @@ export const insuranceJourneyOrchestratorV2Router = router({
         J19: "J19_UnderwritingDecisionWorkflow", J20: "J20_PlatformHealthMonitoringWorkflow",
       };
       const workflowType = workflowTypeMap[input.journeyId];
-      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, input.input, ctx.user.id, input.idempotencyKey);
+      // M-wave (W1, 2026-09-19): the generic trigger must not bypass the J03
+      // ownership/coverage guard or smuggle staff context / settlement
+      // destinations into workflows. J03 is only startable via triggerJ03;
+      // initiatedByStaff is computed server-side; beneficiary fields stripped.
+      if (input.journeyId === "J03") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "J03 (claims settlement) must be started via triggerJ03 — it enforces ownership, coverage and staff-routing validation",
+        });
+      }
+      const sanitizedInput: Record<string, unknown> = { ...input.input, initiatedByStaff: isStaffCaller(ctx) };
+      delete sanitizedInput.beneficiaryAccount;
+      delete sanitizedInput.beneficiaryBank;
+      const { workflowId, runId } = await startJourneyWorkflow(input.journeyId, workflowType, sanitizedInput, ctx.user.id, input.idempotencyKey);
       const def = JOURNEY_DEFINITIONS.find(d => d.id === input.journeyId);
       return { success: true, workflowId, runId, journeyId: input.journeyId, message: `${def?.name ?? input.journeyId} journey started` };
     }),
@@ -358,7 +463,12 @@ export const insuranceJourneyOrchestratorV2Router = router({
     // INS-2/23: validate the incident date against the REAL policy period
     // before starting the claims journey workflow.
     await assertClaimIncidentValid(input.policyId, input.incidentDate);
-    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", input, ctx.user.id, input.idempotencyKey);
+    // M-wave (W1, 2026-09-19): session-derived ownership + server-side
+    // coverage validation; staff on-behalf is audited. beneficiaryAccount is
+    // not accepted (beneficiary of record pays out).
+    const { customerId, initiatedByStaff } = await validateJ03Trigger(ctx, input);
+    const journeyInput = { ...input, customerId, initiatedByStaff };
+    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J03" };
   }),
   triggerJ04: protectedProcedure.input(J04Schema).mutation(async ({ input, ctx }) => {
@@ -386,7 +496,9 @@ export const insuranceJourneyOrchestratorV2Router = router({
     return { success: true, workflowId, runId, journeyId: "J09" };
   }),
   triggerJ10: protectedProcedure.input(J10Schema).mutation(async ({ input, ctx }) => {
-    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", input, ctx.user.id, input.idempotencyKey);
+    // M-wave (W1, 2026-09-19): propagate the server-computed staff flag — the
+    // J10 adjuster-assignment activity is staff-context-gated.
+    const { workflowId, runId } = await startJourneyWorkflow("J10", "J10_ClaimDisputeWorkflow", { ...input, initiatedByStaff: isStaffCaller(ctx) }, ctx.user.id, input.idempotencyKey);
     return { success: true, workflowId, runId, journeyId: "J10" };
   }),
   triggerJ11: protectedProcedure.input(J11Schema).mutation(async ({ input, ctx }) => {

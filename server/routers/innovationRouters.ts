@@ -237,17 +237,20 @@ export const cvClaimsRouter = router({
 
         assessments.push({ ...record, autoApproved: autoApprove });
 
-        // If auto-approved, update claim status
+        // M-wave (W1, 2026-09-19): the auto-approve claim-status flip is
+        // REMOVED. This protectedProcedure had no ownership/state guard and
+        // flipped ANY claim to "approved" purely on a CV confidence score —
+        // ungoverned adjudication-state tampering. The autoApproved flag is
+        // retained on the assessment record as an advisory signal only;
+        // adjudication happens exclusively via the staff router path
+        // (insuranceWorkflows.adjudicateClaim, SoD-enforced) or the staff
+        // adjudication queue.
         if (autoApprove) {
-          await db.update(claims)
-            .set({ status: "approved", updatedAt: new Date() })
-            .where(eq(claims.id, input.claimId));
-
           await writeAuditLog({
-            action: "CLAIM_AUTO_APPROVED_CV",
+            action: "CLAIM_CV_AUTO_APPROVE_SIGNAL",
             resource: "claim",
             resourceId: String(input.claimId),
-            metadata: { confidence: assessment.confidence, repairCost: assessment.estimated_repair_cost },
+            metadata: { confidence: assessment.confidence, repairCost: assessment.estimated_repair_cost, note: "advisory only — claim status unchanged" },
           });
         }
       }

@@ -19,7 +19,11 @@ import {
   p2pPoolsRouter,
   groupInsuranceRouter,
   bancassuranceRouter,
+  // M-wave (W1, 2026-09-19): cvClaims under test (auto-approve flip removed).
+  cvClaimsRouter,
 } from "../../../server/routers/innovationRouters";
+// M-wave (W1, 2026-09-19): journey triggers under the real middleware chain.
+import { insuranceJourneyOrchestratorV2Router } from "../../../server/routers/insuranceJourneyOrchestratorV2";
 import { expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { router } from "../../../server/_core/trpc";
@@ -79,6 +83,9 @@ export const integrationRouter = router({
   p2pPools: p2pPoolsRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
+  // M-wave (W1, 2026-09-19): production mount paths (server/routers.ts).
+  journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
+  cvClaims: cvClaimsRouter,
   disputeRefund: disputeRefundRouter,
   agentFloatTransfer: agentFloatTransferRouter,
   // Imported and mounted (same path as production) so the suite can never

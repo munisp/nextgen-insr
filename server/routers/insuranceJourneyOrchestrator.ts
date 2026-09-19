@@ -17,12 +17,20 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { customers } from "../../drizzle/schema";
+import { customers, policies, auditLog } from "../../drizzle/schema";
 import { policyQuotes } from "../../drizzle/schema.additions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertClaimIncidentValid } from "../lib/policyLifecycle";
 import { getTemporalClient } from "../temporal";
+
+// ── M-wave (W1, 2026-09-19): staff detection for journey triggers ───────────
+// Same staff convention as insuranceWorkflows.ts (L-wave): computed
+// SERVER-SIDE from the session, never from client payloads.
+const JOURNEY_STAFF_ROLES = ["admin", "supervisor"] as const;
+function isStaffCaller(ctx: { user?: { role?: string } | null }): boolean {
+  return (JOURNEY_STAFF_ROLES as readonly string[]).includes(ctx.user?.role ?? "");
+}
 
 
 // Journey input schemas
@@ -369,7 +377,81 @@ export const insuranceJourneyOrchestratorRouter = router({
     // before a claims workflow is even started (fail-fast, same rules as the
     // direct fileClaim path and the journey activity itself).
     await assertClaimIncidentValid(input.policyId, input.incidentDate);
-    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", input, ctx.user.id);
+
+    // M-wave (W1, 2026-09-19): the Temporal claims journey previously
+    // accepted a caller-chosen customerId/claimAmount and auto-settled real
+    // funds with no staff role and no SoD. Now:
+    //   - customerId is SESSION-DERIVED for non-staff (same keycloakSub
+    //     convention as triggerJ02 above); staff may act on behalf of any
+    //     existing customer, with an audit record;
+    //   - the policy must belong to that customer and the claimed amount
+    //     must not exceed the policy's sumInsured (server-side check);
+    //   - no beneficiary fields are accepted — settlement pays the
+    //     beneficiary of record inside the activity.
+    const db = (await getDb())!;
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+    const staff = isStaffCaller(ctx);
+    let customerId = input.customerId;
+    if (!staff) {
+      const [customer] = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      if (!customer) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+      }
+      if (customer.id !== input.customerId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "customerId does not match the authenticated account" });
+      }
+      customerId = customer.id;
+    } else {
+      const [customer] = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.id, input.customerId))
+        .limit(1);
+      if (!customer) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Customer ${input.customerId} not found` });
+      }
+      await db.insert(auditLog).values({
+        action: "J03_TRIGGERED_ON_BEHALF",
+        resource: "customers",
+        resourceId: String(customerId),
+        status: "success",
+        metadata: { staffUserId: ctx.user.id, policyId: input.policyId, claimedAmount: input.claimAmount },
+      }).catch(() => {});
+    }
+
+    const [policy] = await db
+      .select({ id: policies.id, customerId: policies.customerId, sumInsured: policies.sumInsured })
+      .from(policies)
+      .where(eq(policies.id, input.policyId))
+      .limit(1);
+    if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: `Policy ${input.policyId} not found` });
+    if (policy.customerId !== customerId) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Policy does not belong to the claiming customer" });
+    }
+    const coverage = Number(policy.sumInsured ?? NaN);
+    if (!Number.isFinite(coverage) || input.claimAmount > coverage) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `claimAmount ₦${input.claimAmount} exceeds the policy coverage ₦${policy.sumInsured ?? 0}`,
+      });
+    }
+
+    const journeyInput = {
+      policyId: input.policyId,
+      customerId,
+      claimType: input.claimType,
+      incidentDate: input.incidentDate,
+      claimedAmount: input.claimAmount,
+      description: input.description,
+      paymentRef: `CLM-J03-${input.policyId}-${Date.now().toString(36).toUpperCase()}`,
+      initiatedByStaff: staff,
+    };
+    const { workflowId, runId } = await startJourneyWorkflow("J03", "J03_ClaimsSettlementWorkflow", journeyInput, ctx.user.id);
     return { success: true, workflowId, runId, journeyId: "J03", message: "Claims settlement journey started" };
   }),
 
