@@ -277,7 +277,10 @@ describe("AUTH-8/9: apiKeyManagement real lifecycle", () => {
     } as any);
     await expect(anonCaller.getStats({})).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
-    const created = await caller.createKey({ name: "ci-key", scopes: ["read"] });
+    // 2026-09-19 (L-wave, L-P-9): createKey now validates scopes against the
+      // developerPortal VALID_SCOPES allowlist — arbitrary strings like "read"
+      // are rejected by contract. Use a real allowlisted scope.
+      const created = await caller.createKey({ name: "ci-key", scopes: ["transactions:read"] });
     expect(created.success).toBe(true);
     expect(created.rawKey).toMatch(/^54lk_/);
     const [row] = await db.select().from(apiKeys).where(eq(apiKeys.id, created.id));
