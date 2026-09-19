@@ -2,9 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { z } from "zod";
 
-import { loyaltyHistory, customers, auditLog } from "../../drizzle/schema";
+import { loyaltyHistory, customers, agents, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 
 
 export const customerLoyaltyProgramRouter = router({
@@ -69,34 +69,65 @@ export const customerLoyaltyProgramRouter = router({
         });
       }
     }),
+  // I-wave 2026-02 (AB-12): points are redeemable at 1pt = ₦1 — granting
+  // them is a FUNDS operation. This back-office grant is STAFF/ADMIN ONLY
+  // (there is no legitimate user-facing arbitrary-grant path on this
+  // endpoint), bounded, and audited.
   earnPoints: protectedProcedure
     .input(
       z.object({
         customerId: z.number(),
-        points: z.number().positive(),
+        points: z.number().int().positive().max(100_000),
         reason: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        if (ctx.user?.role !== "admin") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only staff can grant loyalty points",
+          });
+        }
         const db = (await getDb())!;
-        const [entry] = await db
-          .insert(loyaltyHistory)
-          .values({
-            customerId: input.customerId,
-            points: input.points,
-            type: "earned",
-            description: input.reason,
-          } as any)
-          .returning();
-        await db.insert(auditLog).values({
-          action: "loyalty_points_earned",
-          resource: "loyalty_history",
-          resourceId: String(entry.id),
-          status: "success",
-          metadata: { customerId: input.customerId, points: input.points },
-        } as any);
-        return entry;
+        // loyalty_history is keyed by agentId (the "customerId" input name is
+        // legacy) — the previous insert referenced a non-existent customerId
+        // column and could never have succeeded against a real database.
+        // The grant credits the agent's loyalty balance AND writes the ledger
+        // entry atomically (coupled award, same discipline as AB-11).
+        return await db.transaction(async (tx) => {
+          const [agent] = await tx
+            .select({ loyaltyPoints: agents.loyaltyPoints })
+            .from(agents)
+            .where(eq(agents.id, input.customerId))
+            .limit(1);
+          if (!agent) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+          }
+          const balanceAfter = (agent.loyaltyPoints ?? 0) + input.points;
+          await tx
+            .update(agents)
+            .set({ loyaltyPoints: balanceAfter, updatedAt: new Date() })
+            .where(eq(agents.id, input.customerId));
+          const [entry] = await tx
+            .insert(loyaltyHistory)
+            .values({
+              agentId: input.customerId,
+              points: input.points,
+              type: "earned",
+              description: input.reason,
+              balanceAfter,
+            } as any)
+            .returning();
+          await writeAuditLog({
+            action: "loyalty_points_earned",
+            resource: "loyalty_history",
+            resourceId: String(entry.id),
+            status: "success",
+            metadata: { agentId: input.customerId, points: input.points, staffUser: String(ctx.user.id) },
+          });
+          return entry;
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
