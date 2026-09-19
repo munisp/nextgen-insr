@@ -98,7 +98,7 @@ app.post('/naicom/submit', async (req, res) => {
     // In production, this would POST to NAICOM's e-submission portal
     const result = {
       submitted: true,
-      submissionId: `NAICOM-SUB-${Date.now()}`,
+      submissionId: `NAICOM-SUB-${Date.now().toString(36).toUpperCase()}-${require('crypto').randomBytes(8).toString('hex').toUpperCase()}`, // J-wave (2026-09): was bare decimal ms — enumerable
       timestamp: new Date().toISOString(),
       reportId,
       portal: 'https://esubmission.naicom.gov.ng',

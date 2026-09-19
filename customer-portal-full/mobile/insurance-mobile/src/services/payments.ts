@@ -33,7 +33,12 @@ export class MobilePaymentService {
 
   async initiatePayment(req: PaymentRequest): Promise<PaymentResult> {
     const token = await AsyncStorage.getItem('auth_token');
-    const reference = req.reference || `MOB-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // J-wave (2026-09): CSPRNG reference body (was ms+Math.random).
+    const rb = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(rb);
+    const reference =
+      req.reference ||
+      `MOB-${Date.now().toString(36).toUpperCase()}-${Array.from(rb, b => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 
     const response = await fetch(`${API_BASE}/api/v1/payments/initiate`, {
       method: 'POST',

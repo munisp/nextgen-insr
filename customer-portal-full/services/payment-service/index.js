@@ -40,7 +40,7 @@ app.get('/health', (req, res) => res.json({ service: 'payment', status: 'healthy
 app.post('/payments/initiate', async (req, res) => {
   try {
     const { gateway, amount, email, currency, reference, metadata } = req.body;
-    const ref = reference || `PAY-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const ref = reference || `PAY-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(8).toString('hex').toUpperCase()}`; // J-wave (2026-09): 32-bit suffix widened to 64-bit CSPRNG
     if (gateway === 'paystack') {
       if (!PAYSTACK_SECRET) {
         return res.json({ gateway: 'paystack', reference: ref, checkoutUrl: `https://checkout.paystack.com/test/${ref}`, status: 'sandbox' });

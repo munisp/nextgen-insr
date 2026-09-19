@@ -4,6 +4,18 @@
  * Offline-first: queues payment intents when offline.
  */
 
+// J-wave (2026-09): client-side payment references were ms(+Math.random) —
+// predictable idempotency/document refs. CSPRNG body via WebCrypto.
+function csprngHex(bytes: number): string {
+  const a = new Uint8Array(bytes);
+  globalThis.crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+}
+function paymentRef(): string {
+  return `PAY-${Date.now().toString(36).toUpperCase()}-${csprngHex(8)}`;
+}
 export type PaymentProvider = 'paystack' | 'flutterwave' | 'mojaloop';
 export type PaymentChannel = 'card' | 'bank_transfer' | 'ussd' | 'mobile_money' | 'qr';
 
@@ -57,7 +69,7 @@ export class PaymentSDK {
       body: JSON.stringify({
         amount: req.amount * 100, // Convert to kobo
         email: req.email,
-        reference: req.reference || `PAY-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        reference: req.reference || paymentRef(),
         channel: req.channel || 'card',
         provider: this.config.provider,
         policy_id: req.policyId,
@@ -115,7 +127,7 @@ export class PaymentSDK {
     resolve: (r: PaymentResult) => void,
     reject: (e: Error) => void
   ): void {
-    const ref = req.reference || `PAY-${Date.now()}`;
+    const ref = req.reference || paymentRef();
     // @ts-ignore - Paystack inline JS loaded externally
     const handler = (window as any).PaystackPop?.setup({
       key: this.config.publicKey,
@@ -148,7 +160,7 @@ export class PaymentSDK {
     resolve: (r: PaymentResult) => void,
     reject: (e: Error) => void
   ): void {
-    const ref = req.reference || `PAY-${Date.now()}`;
+    const ref = req.reference || paymentRef();
     // @ts-ignore - Flutterwave inline JS loaded externally
     (window as any).FlutterwaveCheckout?.({
       public_key: this.config.publicKey,

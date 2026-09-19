@@ -106,7 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const rnBiometrics = new ReactNativeBiometrics();
     const { success, signature } = await rnBiometrics.createSignature({
       promptMessage: 'Sign in to InsurePortal',
-      payload: `insureportal-auth-${Date.now()}`,
+      // J-wave (2026-09): auth payload was bare ms — CSPRNG body.
+      payload: `insureportal-auth-${Date.now().toString(36).toUpperCase()}-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`,
     });
     if (!success) throw new Error('Biometric authentication failed');
     const { data } = await authApi.loginBiometric(signature);

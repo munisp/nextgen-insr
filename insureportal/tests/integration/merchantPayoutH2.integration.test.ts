@@ -142,6 +142,20 @@ CREATE TABLE IF NOT EXISTS "merchant_payouts" (
   "initiated_by" integer,
   "created_at" timestamp DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS "audit_log" (
+  "id" bigserial PRIMARY KEY,
+  "agentId" integer,
+  "userId" varchar(32),
+  "action" varchar(128) NOT NULL,
+  "resource" varchar(64),
+  "resourceId" varchar(64),
+  "ipAddress" varchar(45),
+  "userAgent" varchar(256),
+  "status" varchar(16) DEFAULT 'success',
+  "metadata" json,
+  "tenantId" integer,
+  "createdAt" timestamp DEFAULT now() NOT NULL
+);
 CREATE TABLE IF NOT EXISTS "merchant_settlement_change_requests" (
   "id" serial PRIMARY KEY,
   "merchantId" integer NOT NULL,
@@ -295,6 +309,18 @@ describe("H2-wave: payout binding + atomic debit (real PGlite DB)", () => {
       .createCaller(ctxFor(adminB))
       .approvePayout({ payoutId: res2.payout.id });
     expect(ok.success).toBe(true);
+
+    // J-wave: the approval wrote an actor-attributed audit row IN THE SAME
+    // transaction (metadata.approvedBy = the approving admin, initiatedBy
+    // preserved for the maker-checker trail).
+    const db2 = (await getDb())!;
+    const auditRows = (await db2.execute(
+      `SELECT action, resource, "resourceId", metadata FROM audit_log WHERE action = 'MERCHANT_PAYOUT_APPROVED' AND "resourceId" = '${res2.payout.id}'` as never
+    )) as unknown as { rows?: Array<{ action: string; metadata: { approvedBy?: number; initiatedBy?: number } }> };
+    const ar = auditRows.rows ?? [];
+    expect(ar.length).toBe(1);
+    expect(ar[0].metadata.approvedBy).toBe(930011);
+    expect(ar[0].metadata.initiatedBy).toBe(930010);
     // Re-approval is a guarded CONFLICT, not a silent overwrite.
     await expectTrpcCode(
       merchantPayoutSettlementRouter

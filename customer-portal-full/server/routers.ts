@@ -3,6 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import * as db from "./db";
 import { checkKYCGate, kycOrchestratorService, kycLedgerService, kycAnalyticsService, kycStreamService } from "./api-clients";
 
@@ -224,11 +225,11 @@ export const appRouter = router({
         if (!gate.allowed) {
           return { success: false, error: 'KYC verification required to file claims', kyc_gate: gate, redirect: '/kyc-status' };
         }
-        const claimNumber = `CLM-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+        const claimNumber = db.docNumber("CLM"); // J-wave (2026-09): was ms+Math.random — predictable
         
         try {
           await kycStreamService.publishEvent({
-            id: `evt-${Date.now()}`, event_type: 'claim.filed',
+            id: db.docNumber("evt"), event_type: 'claim.filed',
             session_id: '', user_id: ctx.user.id,
             timestamp: new Date().toISOString(),
             data: { claim_number: claimNumber, amount: input.amount, kyc_level: gate.level },
@@ -335,7 +336,8 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         // Generate unique referral code
-        const referralCode = `REF-${ctx.user.id}-${Date.now().toString(36).toUpperCase()}`;
+        // J-wave (2026-09): keep the user prefix (referral attribution is the point), randomize the body.
+        const referralCode = `REF-${ctx.user.id}-${randomBytes(6).toString("hex").toUpperCase()}`;
         
         return await db.createReferral({
           referrerId: ctx.user.id,
@@ -448,7 +450,7 @@ export const appRouter = router({
         data: z.record(z.unknown()),
       }))
       .mutation(async ({ ctx, input }) => {
-        const scoreId = `FR-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        const scoreId = db.docNumber("FR"); // J-wave (2026-09): was ms+Math.random — predictable
         return await db.createFraudScore({
           userId: ctx.user.id,
           scoreId,
@@ -1004,10 +1006,10 @@ export const appRouter = router({
           const result = await kycOrchestratorService.startKYB(
             ctx.user.id, input.companyName, input.rcNumber, input.tin
           );
-          return { sessionId: result?.session_id || `kyb-${Date.now().toString(36)}`, ...input, status: 'started', createdAt: new Date() };
+          return { sessionId: result?.session_id || db.docNumber("kyb"), ...input, status: 'started', createdAt: new Date() };
         } catch (err) {
           console.error('[kyc-orchestrator] startKYB failed:', err instanceof Error ? err.message : err);
-          return { sessionId: `kyb-${Date.now().toString(36)}`, ...input, status: 'started', createdAt: new Date() };
+          return { sessionId: db.docNumber("kyb"), ...input, status: 'started', createdAt: new Date() };
         }
       }),
     verifyCAC: protectedProcedure
@@ -1028,7 +1030,7 @@ export const appRouter = router({
         try {
           await kycOrchestratorService.addDirector(input.sessionId, input.name, input.nin, '', input.position);
         } catch (err) { console.error('[kyc-orchestrator] addDirector failed:', err instanceof Error ? err.message : err); }
-        return { id: `dir-${Date.now().toString(36)}`, ...input, kycStatus: 'pending' };
+        return { id: db.docNumber("dir"), ...input, kycStatus: 'pending' };
       }),
     addUBO: protectedProcedure
       .input(z.object({ sessionId: z.string(), name: z.string(), ownershipPct: z.number(), nin: z.string() }))
@@ -1036,7 +1038,7 @@ export const appRouter = router({
         try {
           await kycOrchestratorService.addUBO(input.sessionId, input.name, input.ownershipPct, input.nin);
         } catch (err) { console.error('[kyc-orchestrator] addUBO failed:', err instanceof Error ? err.message : err); }
-        return { id: `ubo-${Date.now().toString(36)}`, ...input, kycStatus: 'pending' };
+        return { id: db.docNumber("ubo"), ...input, kycStatus: 'pending' };
       }),
     gate: protectedProcedure.query(async ({ ctx }) => {
       return await checkKYCGate(ctx.user.id, 1);

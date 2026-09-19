@@ -1,6 +1,26 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+
+// ─── J-wave (2026-09): CSPRNG document numbers ───────────────────────────────
+// Every human-facing document/policy/agreement/reference number in this tree
+// was previously docNumber("PREFIX") (decimal or base36 ms) — fully
+// predictable and enumerable. Numbers are now PREFIX + base36-ms (retained
+// ONLY for human sortability) + 16 uppercase hex chars from a CSPRNG
+// (64 bits entropy). NOTE on uniqueness: this tree's "db" layer is an
+// in-memory/mock implementation with NO persistence and NO unique
+// constraints, so a DB-enforced guard is not honestly available here;
+// 64-bit CSPRNG entropy is the only uniqueness mechanism this tree can
+// provide (collision probability ~2^-32 by birthday bound at any realistic
+// volume). When this layer is backed by a real schema, the number columns
+// MUST get unique constraints.
+import { randomBytes } from "crypto";
+export function docNumber(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${randomBytes(8)
+    .toString("hex")
+    .toUpperCase()}`;
+}
+
 import {
   InsertUser, users, policies, claims, payments, InsertPolicy, InsertClaim, InsertPayment,
   referrals, InsertReferral, reviews, InsertReview,
@@ -561,7 +581,7 @@ export async function getBancassurancePartners() {
   ];
 }
 export async function createBancassuranceOffer(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, status: 'Generated', offerCode: `BANC-${Date.now()}`, premium: Math.round((input.loanAmount || 500000) * 0.015), createdAt: new Date() };
+  return { id: Date.now(), userId, ...input, status: 'Generated', offerCode: docNumber("BANC"), premium: Math.round((input.loanAmount || 500000) * 0.015), createdAt: new Date() };
 }
 export async function getUserBancassuranceOffers(userId: number) {
   const db = await getDb();
@@ -576,7 +596,7 @@ export async function getGroupLifeSchemes(userId: number) {
   return await db.select().from(groupLifeSchemes).where(eq(groupLifeSchemes.userId, userId)).orderBy(desc(groupLifeSchemes.createdAt));
 }
 export async function createGroupLifeScheme(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, schemeNumber: `GLS-${Date.now()}`, status: 'Active', createdAt: new Date() };
+  return { id: Date.now(), userId, ...input, schemeNumber: docNumber("GLS"), status: 'Active', createdAt: new Date() };
 }
 export async function getGroupLifeMembers(schemeId: number) {
   const db = await getDb();
@@ -586,7 +606,7 @@ export async function getGroupLifeMembers(schemeId: number) {
 
 // ─── NMID Integration ─────────────────────────────────────────────────────────
 export async function createNMIDVerification(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, verificationStatus: 'Verified', nmidReference: `NMID-${Date.now()}`, vehicleDetails: { make: 'Toyota', model: 'Camry', year: 2020 }, createdAt: new Date() };
+  return { id: Date.now(), userId, ...input, verificationStatus: 'Verified', nmidReference: docNumber("NMID"), vehicleDetails: { make: 'Toyota', model: 'Camry', year: 2020 }, createdAt: new Date() };
 }
 export async function getNMIDVerifications(userId: number) {
   const db = await getDb();
@@ -605,7 +625,7 @@ export async function getPFAPartners() {
 }
 export async function createPFAAnnuityQuote(userId: number, input: any) {
   const monthlyAnnuity = Math.round(input.accumulatedFund * 0.005);
-  return { id: Date.now(), userId, ...input, monthlyAnnuity, annualAnnuity: monthlyAnnuity * 12, quoteReference: `PFA-${Date.now()}`, createdAt: new Date() };
+  return { id: Date.now(), userId, ...input, monthlyAnnuity, annualAnnuity: monthlyAnnuity * 12, quoteReference: docNumber("PFA"), createdAt: new Date() };
 }
 export async function getUserPFAQuotes(userId: number) {
   const db = await getDb();
@@ -620,7 +640,7 @@ export async function getReinsuranceTreaties(userId: number) {
   return await db.select().from(reinsuranceTreaties).where(eq(reinsuranceTreaties.userId, userId)).orderBy(desc(reinsuranceTreaties.createdAt));
 }
 export async function createReinsuranceTreaty(userId: number, data: { name: string; type: string; cessionRate: number; limit: number }) {
-  return { id: `RE-${Date.now().toString(36)}`, userId, ...data, treatyNumber: `TRT-${Date.now()}`, status: 'pending_approval', counterparty: 'African Re', effectiveDate: new Date(Date.now() + 2592000000), createdAt: new Date() };
+  return { id: docNumber("RE"), userId, ...data, treatyNumber: docNumber("TRT"), status: 'pending_approval', counterparty: 'African Re', effectiveDate: new Date(Date.now() + 2592000000), createdAt: new Date() };
 }
 export async function createReinsuranceCession(input: any) {
   return { id: Date.now(), ...input, cessionAmount: Math.round(input.sumAssured * 0.4), retentionAmount: Math.round(input.sumAssured * 0.6), createdAt: new Date() };
@@ -663,7 +683,7 @@ export async function getNAICOMFilings(userId: number) {
   ];
 }
 export async function createNAICOMFiling(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, status: 'Submitted', referenceNumber: `NAICOM-${Date.now()}`, submittedAt: new Date() };
+  return { id: Date.now(), userId, ...input, status: 'Submitted', referenceNumber: docNumber("NAICOM"), submittedAt: new Date() };
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -705,7 +725,7 @@ export async function getLoyaltyTransactions(userId: number) {
   ];
 }
 export async function redeemLoyaltyPoints(userId: number, points: number, rewardType: string) {
-  return { success: true, pointsRedeemed: points, rewardType, redemptionCode: `RDM-${Date.now()}`, remainingPoints: 2450 - points };
+  return { success: true, pointsRedeemed: points, rewardType, redemptionCode: docNumber("RDM"), remainingPoints: 2450 - points };
 }
 export async function getLoyaltyLeaderboard() {
   return [
@@ -757,7 +777,7 @@ export async function getAnalyticsDashboard(userId: number, period: string) {
   };
 }
 export async function trackAnalyticsEvent(userId: number, input: any) {
-  return { success: true, eventId: `EVT-${Date.now()}` };
+  return { success: true, eventId: docNumber("EVT") };
 }
 
 // ─── Policy Comparison ────────────────────────────────────────────────────────
@@ -798,7 +818,7 @@ export async function getReconciliationSummary(userId: number, period?: string) 
   return { period: period || 'current_month', totalTransactions: 156, matched: 148, unmatched: 8, matchRate: 0.949, totalAmount: 4250000 };
 }
 export async function runReconciliation(userId: number, period: string) {
-  return { success: true, jobId: `RECON-${Date.now()}`, period, status: 'Running', estimatedCompletion: new Date(Date.now() + 300000) };
+  return { success: true, jobId: docNumber("RECON"), period, status: 'Running', estimatedCompletion: new Date(Date.now() + 300000) };
 }
 
 // ─── Operational Reports ──────────────────────────────────────────────────────
@@ -857,7 +877,7 @@ export async function setAutoRenewal(userId: number, policyId: number, enable: b
   return { success: true, policyId, autoRenewEnabled: enable, updatedAt: new Date() };
 }
 export async function renewPolicy(userId: number, policyId: number, paymentMethod: string) {
-  return { success: true, policyId, newPolicyNumber: `POL-${Date.now()}`, renewedUntil: new Date(Date.now() + 365 * 86400000), paymentMethod, amount: 45000, renewedAt: new Date() };
+  return { success: true, policyId, newPolicyNumber: docNumber("POL"), renewedUntil: new Date(Date.now() + 365 * 86400000), paymentMethod, amount: 45000, renewedAt: new Date() };
 }
 
 // ─── Batch Processing ─────────────────────────────────────────────────────────
@@ -868,7 +888,7 @@ export async function getBatchJobs() {
   ];
 }
 export async function triggerBatchJob(jobType: string, params?: any) {
-  return { success: true, jobId: `JOB-${Date.now()}`, jobType, status: 'Queued', estimatedStart: new Date(Date.now() + 60000) };
+  return { success: true, jobId: docNumber("JOB"), jobType, status: 'Queued', estimatedStart: new Date(Date.now() + 60000) };
 }
 
 // ─── Telematics ───────────────────────────────────────────────────────────────
@@ -884,7 +904,7 @@ export async function getTelematicsScore(userId: number) {
 
 // ─── Emergency SOS ────────────────────────────────────────────────────────────
 export async function triggerEmergencySOS(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, incidentId: `SOS-${Date.now()}`, status: 'Dispatched', emergencyServices: ['Police', 'Ambulance'], estimatedArrival: '8-12 minutes', triggeredAt: new Date() };
+  return { id: Date.now(), userId, ...input, incidentId: docNumber("SOS"), status: 'Dispatched', emergencyServices: ['Police', 'Ambulance'], estimatedArrival: '8-12 minutes', triggeredAt: new Date() };
 }
 export async function getEmergencyHistory(userId: number) {
   const db = await getDb();
@@ -903,7 +923,7 @@ export async function getWalletTransactions(userId: number, limit: number = 20) 
   ].slice(0, limit);
 }
 export async function walletTopUp(userId: number, amount: number, paymentMethod: string) {
-  return { success: true, transactionId: `TXN-${Date.now()}`, amount, paymentMethod, newBalance: 25000 + amount, topUpAt: new Date() };
+  return { success: true, transactionId: docNumber("TXN"), amount, paymentMethod, newBalance: 25000 + amount, topUpAt: new Date() };
 }
 
 // ─── Health & Wellness ────────────────────────────────────────────────────────
@@ -933,7 +953,7 @@ export async function getParametricTriggers(productId: string) {
   return [{ productId, lastTriggered: null, triggerCount: 0, nextMonitoring: new Date() }];
 }
 export async function purchaseParametricPolicy(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, policyNumber: `PAR-${Date.now()}`, status: 'Active', purchasedAt: new Date() };
+  return { id: Date.now(), userId, ...input, policyNumber: docNumber("PAR"), status: 'Active', purchasedAt: new Date() };
 }
 
 // ─── P2P Insurance ────────────────────────────────────────────────────────────
@@ -944,7 +964,7 @@ export async function getP2PPools() {
   ];
 }
 export async function joinP2PPool(userId: number, poolId: string, contribution: number) {
-  return { success: true, userId, poolId, contribution, membershipId: `MBR-${Date.now()}`, joinedAt: new Date() };
+  return { success: true, userId, poolId, contribution, membershipId: docNumber("MBR"), joinedAt: new Date() };
 }
 export async function getUserP2PPools(userId: number) {
   const db = await getDb();
@@ -961,7 +981,7 @@ export async function getMicroinsuranceProducts() {
   ];
 }
 export async function purchaseMicroinsurance(userId: number, productId: string, duration: number) {
-  return { id: Date.now(), userId, productId, duration, policyNumber: `MIC-${Date.now()}`, status: 'Active', expiresAt: new Date(Date.now() + duration * 86400000), purchasedAt: new Date() };
+  return { id: Date.now(), userId, productId, duration, policyNumber: docNumber("MIC"), status: 'Active', expiresAt: new Date(Date.now() + duration * 86400000), purchasedAt: new Date() };
 }
 export async function getActiveMicroinsurance(userId: number) {
   const db = await getDb();
@@ -978,7 +998,7 @@ export async function getGigEconomyPlans() {
   ];
 }
 export async function activateGigPlan(userId: number, planId: string, platform: string) {
-  return { success: true, userId, planId, platform, policyNumber: `GIG-${Date.now()}`, status: 'Active', activatedAt: new Date() };
+  return { success: true, userId, planId, platform, policyNumber: docNumber("GIG"), status: 'Active', activatedAt: new Date() };
 }
 export async function getGigCoverage(userId: number) {
   const db = await getDb();
@@ -996,7 +1016,7 @@ export async function getSMEProducts() {
 }
 export async function getSMEQuote(userId: number, input: any) {
   const basePremium = input.employees * 5000 + (input.annualRevenue * 0.001);
-  return { userId, ...input, quotedPremium: Math.round(basePremium), quoteReference: `SME-${Date.now()}`, validUntil: new Date(Date.now() + 30 * 86400000) };
+  return { userId, ...input, quotedPremium: Math.round(basePremium), quoteReference: docNumber("SME"), validUntil: new Date(Date.now() + 30 * 86400000) };
 }
 export async function getSMEPolicies(userId: number) {
   const db = await getDb();
@@ -1015,7 +1035,7 @@ export async function getEmbeddedOffers(userId: number) {
   return [{ id: 'OFF001', partner: 'Jumia', product: 'Device Protection', item: 'Samsung Galaxy S24', premium: 5000, coverage: 350000, expiresAt: new Date(Date.now() + 7 * 86400000) }];
 }
 export async function acceptEmbeddedOffer(userId: number, offerId: string) {
-  return { success: true, userId, offerId, policyNumber: `EMB-${Date.now()}`, status: 'Active', acceptedAt: new Date() };
+  return { success: true, userId, offerId, policyNumber: docNumber("EMB"), status: 'Active', acceptedAt: new Date() };
 }
 
 // ─── Insurance Score ──────────────────────────────────────────────────────────
@@ -1037,7 +1057,7 @@ export async function applyScoreImprovement(userId: number, action: string) {
 // ─── Dynamic Pricing ──────────────────────────────────────────────────────────
 export async function getDynamicPricingQuote(userId: number, productType: string, riskFactors: any) {
   const riskMultiplier = 1 + (Object.keys(riskFactors).length * 0.05);
-  return { userId, productType, riskFactors, basePremium: 50000, adjustedPremium: Math.round(50000 * riskMultiplier), riskScore: 65, validFor: '48 hours', quoteId: `DYN-${Date.now()}` };
+  return { userId, productType, riskFactors, basePremium: 50000, adjustedPremium: Math.round(50000 * riskMultiplier), riskScore: 65, validFor: '48 hours', quoteId: docNumber("DYN") };
 }
 export async function getDynamicPricingHistory(userId: number) {
   const db = await getDb();
@@ -1070,7 +1090,7 @@ export async function getUserSavingsAccounts(userId: number) {
   return await db.select().from(savingsAccounts).where(eq(savingsAccounts.userId, userId)).orderBy(desc(savingsAccounts.createdAt));
 }
 export async function contributeSavings(userId: number, accountId: string, amount: number) {
-  return { success: true, userId, accountId, amount, transactionId: `SAV-TXN-${Date.now()}`, newBalance: amount, contributedAt: new Date() };
+  return { success: true, userId, accountId, amount, transactionId: docNumber("SAV-TXN"), newBalance: amount, contributedAt: new Date() };
 }
 
 // ─── Compliance Monitoring ────────────────────────────────────────────────────
@@ -1104,7 +1124,7 @@ export async function getModelAuditLog() {
 
 // ─── MCMC Risk Modeling ───────────────────────────────────────────────────────
 export async function runMCMCSimulation(userId: number, input: any) {
-  return { simulationId: `MCMC-${Date.now()}`, iterations: input.iterations, status: 'Completed', results: { meanLoss: 125000, stdDev: 45000, var95: 210000, var99: 285000 }, processingTime: 2.8, completedAt: new Date() };
+  return { simulationId: docNumber("MCMC"), iterations: input.iterations, status: 'Completed', results: { meanLoss: 125000, stdDev: 45000, var95: 210000, var99: 285000 }, processingTime: 2.8, completedAt: new Date() };
 }
 export async function getMCMCResults(userId: number) {
   const db = await getDb();
@@ -1139,7 +1159,7 @@ export async function getAgriculturalProducts() {
 export async function getAgriculturalQuote(userId: number, input: any) {
   const premiumRate = input.cropType === 'maize' ? 0.04 : input.cropType === 'rice' ? 0.05 : 0.035;
   const coverage = input.farmSize * 50000;
-  return { userId, ...input, coverage, annualPremium: Math.round(coverage * premiumRate), quoteReference: `AGR-${Date.now()}` };
+  return { userId, ...input, coverage, annualPremium: Math.round(coverage * premiumRate), quoteReference: docNumber("AGR") };
 }
 export async function getAgriculturalPolicies(userId: number) {
   const db = await getDb();
@@ -1160,7 +1180,7 @@ export async function getDRStatus() {
   return { rpo: '15 minutes', rto: '1 hour', lastBackup: new Date(Date.now() - 900000), lastDRTest: new Date(Date.now() - 7 * 86400000), replicationLag: 2, status: 'Healthy', primaryRegion: 'Lagos', drRegion: 'Abuja' };
 }
 export async function runDRTest(testType: string) {
-  return { success: true, testType, testId: `DRT-${Date.now()}`, status: 'Running', estimatedDuration: '30 minutes', startedAt: new Date() };
+  return { success: true, testType, testId: docNumber("DRT"), status: 'Running', estimatedDuration: '30 minutes', startedAt: new Date() };
 }
 
 // ─── A/B Testing ──────────────────────────────────────────────────────────────
@@ -1260,13 +1280,13 @@ export async function completeOnboardingStep(userId: number, step: string, data?
 
 // ─── Insurance Application ────────────────────────────────────────────────────
 export async function startInsuranceApplication(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, applicationId: `APP-${Date.now()}`, status: 'Draft', currentStep: 'personal_details', totalSteps: 5, startedAt: new Date() };
+  return { id: Date.now(), userId, ...input, applicationId: docNumber("APP"), status: 'Draft', currentStep: 'personal_details', totalSteps: 5, startedAt: new Date() };
 }
 export async function saveApplicationStep(userId: number, input: any) {
   return { success: true, ...input, savedAt: new Date() };
 }
 export async function submitApplication(userId: number, applicationId: string) {
-  return { success: true, applicationId, status: 'Submitted', submittedAt: new Date(), estimatedProcessingTime: '24-48 hours', referenceNumber: `REF-${Date.now()}` };
+  return { success: true, applicationId, status: 'Submitted', submittedAt: new Date(), estimatedProcessingTime: '24-48 hours', referenceNumber: docNumber("REF") };
 }
 export async function getUserApplications(userId: number) {
   const db = await getDb();
@@ -1276,7 +1296,7 @@ export async function getUserApplications(userId: number) {
 
 // ─── Customer Feedback ────────────────────────────────────────────────────────
 export async function submitFeedback(userId: number, input: any) {
-  return { id: Date.now(), userId, ...input, submittedAt: new Date(), ticketId: `FBK-${Date.now()}` };
+  return { id: Date.now(), userId, ...input, submittedAt: new Date(), ticketId: docNumber("FBK") };
 }
 export async function getFeedback(userId: number) {
   const db = await getDb();
@@ -1333,7 +1353,7 @@ export async function getAgriculturalNDVIReadings() {
   ];
 }
 export async function purchaseAgriculturalPolicy(userId: number, input: { productId: string; farmSize: number; location: string }) {
-  return { id: `AGRI-POL-${Date.now()}`, userId, ...input, status: 'Active', policyNumber: `AGR-${Date.now().toString(36).toUpperCase()}`, issuedAt: new Date(), expiresAt: new Date(Date.now() + 365 * 86400000) };
+  return { id: docNumber("AGRI-POL"), userId, ...input, status: 'Active', policyNumber: docNumber("AGR"), issuedAt: new Date(), expiresAt: new Date(Date.now() + 365 * 86400000) };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1359,7 +1379,7 @@ export async function getEmbeddedDistributionRevenue() {
   ];
 }
 export async function createEmbeddedPartner(userId: number, input: { name: string; channel: string; industry: string; commission: number }) {
-  return { id: `PTR-${Date.now().toString(36).toUpperCase()}`, ...input, status: 'Pending', createdBy: userId, createdAt: new Date() };
+  return { id: docNumber("PTR"), ...input, status: 'Pending', createdBy: userId, createdAt: new Date() };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1384,7 +1404,7 @@ export async function getDigitalCyberAssessment(userId: number, input: { busines
   return { userId, business: input.businessName, industry: input.industry, employees: input.employees, riskScore, vulnerabilities, recommendation: riskScore > 70 ? 'Comprehensive Plan' : 'Standard Plan', premium, assessedAt: new Date() };
 }
 export async function activateDigitalProduct(userId: number, productId: string) {
-  return { id: `DIG-POL-${Date.now()}`, userId, productId, status: 'Active', activatedAt: new Date(), policyNumber: `DIG-${Date.now().toString(36).toUpperCase()}` };
+  return { id: docNumber("DIG-POL"), userId, productId, status: 'Active', activatedAt: new Date(), policyNumber: docNumber("DIG") };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1411,7 +1431,7 @@ export async function getTakafulShariaPrinciples() {
   ];
 }
 export async function joinTakafulPool(userId: number, poolId: string, contribution: number) {
-  return { id: `TAK-MEM-${Date.now()}`, userId, poolId, contribution, status: 'Active', memberNumber: `TAK-${Date.now().toString(36).toUpperCase()}`, joinedAt: new Date() };
+  return { id: docNumber("TAK-MEM"), userId, poolId, contribution, status: 'Active', memberNumber: docNumber("TAK"), joinedAt: new Date() };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1442,7 +1462,7 @@ export async function getNIIRAComplianceCheck(userId: number, input: { businessT
   return { userId, ...match, deadline: '2026-07-30', regulator: 'NAICOM', assessedAt: new Date() };
 }
 export async function purchaseNIIRAPolicy(userId: number, classId: string) {
-  return { id: `NIIRA-POL-${Date.now()}`, userId, classId, status: 'Active', policyNumber: `NII-${Date.now().toString(36).toUpperCase()}`, issuedAt: new Date(), deadline: '2026-07-30' };
+  return { id: docNumber("NIIRA-POL"), userId, classId, status: 'Active', policyNumber: docNumber("NII"), issuedAt: new Date(), deadline: '2026-07-30' };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1484,7 +1504,7 @@ export async function activateEmbeddedPartner(userId: number, partnerId: string)
 }
 export async function createEmbeddedInsurancePartner(userId: number, input: { name: string; industry: string; contactEmail: string; productsOffered: string }) {
   return {
-    id: `ep-${Date.now().toString(36)}`,
+    id: docNumber("ep"),
     name: input.name,
     industry: input.industry,
     status: 'pending' as const,
@@ -1511,7 +1531,7 @@ export async function synthesizeVoice(userId: number, text: string, language: st
 // ── Telematics — submit data endpoint ────────────────────────────────────────
 export async function submitTelematicsData(userId: number, input: { vehicleId: string; driverId: string; speed: number; fuelLevel: number; engineStatus: string; latitude: number; longitude: number }) {
   return {
-    id: `tel-${Date.now().toString(36)}`,
+    id: docNumber("tel"),
     ...input,
     location: { lat: input.latitude, lng: input.longitude },
     timestamp: new Date().toISOString(),
@@ -1533,7 +1553,7 @@ export async function getAIAdvisorResponse(userId: number, question: string, con
 }
 
 export async function getAIChatResponse(userId: number, message: string, sessionId?: string) {
-  return { userId, sessionId: sessionId ?? `chat-${Date.now().toString(36)}`, message, response: `Thank you for your question about "${message.slice(0, 50)}". Our insurance advisors recommend reviewing your policy portfolio regularly. For specific product inquiries, please navigate to the relevant product page or contact support.`, timestamp: new Date() };
+  return { userId, sessionId: sessionId ?? docNumber("chat"), message, response: `Thank you for your question about "${message.slice(0, 50)}". Our insurance advisors recommend reviewing your policy portfolio regularly. For specific product inquiries, please navigate to the relevant product page or contact support.`, timestamp: new Date() };
 }
 
 export async function getAIChatHistory(userId: number, sessionId?: string) {
@@ -1555,17 +1575,17 @@ export async function genericActuarialCalculation(userId: number, calculationTyp
 
 // ── Audit Trail — export ──────────────────────────────────────────────────────
 export async function exportAuditTrail(userId: number, format: string, dateRange?: { from: string; to: string }) {
-  return { userId, format, dateRange, exportId: `exp-${Date.now().toString(36)}`, status: 'processing', estimatedRows: 1250, downloadUrl: `/api/audit/export/${Date.now()}.${format}`, requestedAt: new Date() };
+  return { userId, format, dateRange, exportId: docNumber("exp"), status: 'processing', estimatedRows: 1250, downloadUrl: `/api/audit/export/${Date.now()}.${format}`, requestedAt: new Date() };
 }
 
 // ── Auth — login ──────────────────────────────────────────────────────────────
 export async function loginUser(email: string, password: string, twoFactorCode?: string) {
-  return { success: true, requiresTwoFactor: !twoFactorCode, sessionToken: `sess-${Date.now().toString(36)}`, expiresAt: new Date(Date.now() + 86400000) };
+  return { success: true, requiresTwoFactor: !twoFactorCode, sessionToken: docNumber("sess"), expiresAt: new Date(Date.now() + 86400000) };
 }
 
 // ── Bancassurance — apply ─────────────────────────────────────────────────────
 export async function applyBancassurance(userId: number, productId: string, loanReference?: string) {
-  return { applicationId: `ba-${Date.now().toString(36)}`, userId, productId, loanReference, status: 'submitted', premium: Math.round(15000 + Math.random() * 85000), coverage: Math.round(500000 + Math.random() * 4500000), submittedAt: new Date() };
+  return { applicationId: docNumber("ba"), userId, productId, loanReference, status: 'submitted', premium: Math.round(15000 + Math.random() * 85000), coverage: Math.round(500000 + Math.random() * 4500000), submittedAt: new Date() };
 }
 
 // ── Broker API — revoke (alias for existing) ──────────────────────────────────
@@ -1587,17 +1607,17 @@ export async function cancelPolicy(userId: number, policyId: number, reason: str
 export async function runDRTestExecution(testType: string, targetSystem: string) {
   const rto = Math.round(30 + Math.random() * 90);
   const rpo = Math.round(5 + Math.random() * 25);
-  return { testId: `dr-${Date.now().toString(36)}`, testType, targetSystem, status: 'completed', rtoMinutes: rto, rpoMinutes: rpo, rtoTarget: 120, rpoTarget: 30, passed: rto <= 120 && rpo <= 30, completedAt: new Date() };
+  return { testId: docNumber("dr"), testType, targetSystem, status: 'completed', rtoMinutes: rto, rpoMinutes: rpo, rtoTarget: 120, rpoTarget: 30, passed: rto <= 120 && rpo <= 30, completedAt: new Date() };
 }
 
 // ── ERPNext — sync ────────────────────────────────────────────────────────────
 export async function syncERPNext(userId: number, module: string) {
-  return { syncId: `sync-${Date.now().toString(36)}`, userId, module, recordsSynced: Math.round(50 + Math.random() * 200), status: 'completed', duration: Math.round(2 + Math.random() * 8), syncedAt: new Date() };
+  return { syncId: docNumber("sync"), userId, module, recordsSynced: Math.round(50 + Math.random() * 200), status: 'completed', duration: Math.round(2 + Math.random() * 8), syncedAt: new Date() };
 }
 
 // ── Family Coverage — add/remove ──────────────────────────────────────────────
 export async function addFamilyCoverageMember(userId: number, name: string, relationship: string, dateOfBirth: string) {
-  return { id: `fm-${Date.now().toString(36)}`, userId, name, relationship, dateOfBirth, status: 'active', addedAt: new Date() };
+  return { id: docNumber("fm"), userId, name, relationship, dateOfBirth, status: 'active', addedAt: new Date() };
 }
 
 export async function removeFamilyCoverageMember(userId: number, memberId: string) {
@@ -1633,7 +1653,7 @@ export async function analyzeGeospatialRisk(latitude: number, longitude: number,
 
 // ── Insurance Radar — scan ────────────────────────────────────────────────────
 export async function scanInsuranceRadar(userId: number, scanType: string, target: string) {
-  return { scanId: `scan-${Date.now().toString(36)}`, userId, scanType, target, threatsFound: Math.round(Math.random() * 5), riskScore: Math.round(10 + Math.random() * 40), recommendations: ['Review claim patterns', 'Update fraud rules', 'Monitor agent activity'], scannedAt: new Date() };
+  return { scanId: docNumber("scan"), userId, scanType, target, threatsFound: Math.round(Math.random() * 5), riskScore: Math.round(10 + Math.random() * 40), recommendations: ['Review claim patterns', 'Update fraud rules', 'Monitor agent activity'], scannedAt: new Date() };
 }
 
 // ── Insurance Score — improve ─────────────────────────────────────────────────
@@ -1671,7 +1691,7 @@ export async function queryKnowledgeGraph(userId: number, question: string) {
 
 // ── Model Security — scan ─────────────────────────────────────────────────────
 export async function scanModelSecurity(userId: number, modelId: string) {
-  return { modelId, scanId: `ms-${Date.now().toString(36)}`, vulnerabilities: Math.round(Math.random() * 3), riskLevel: 'low', adversarialRobustness: 0.94, dataPrivacyScore: 0.97, biasDetected: false, recommendations: ['Enable input validation', 'Add rate limiting', 'Review model permissions'], scannedAt: new Date(), scannedBy: userId };
+  return { modelId, scanId: docNumber("ms"), vulnerabilities: Math.round(Math.random() * 3), riskLevel: 'low', adversarialRobustness: 0.94, dataPrivacyScore: 0.97, biasDetected: false, recommendations: ['Enable input validation', 'Add rate limiting', 'Review model permissions'], scannedAt: new Date(), scannedBy: userId };
 }
 
 // ── Parametric — triggers + claim ─────────────────────────────────────────────
@@ -1685,7 +1705,7 @@ export async function getParametricTriggersList() {
 }
 
 export async function fileParametricClaim(userId: number, policyId: string, triggerId: string, evidence: string) {
-  return { claimId: `pc-${Date.now().toString(36)}`, userId, policyId, triggerId, evidence, status: 'auto_verified', payoutAmount: Math.round(50000 + Math.random() * 450000), verificationMethod: 'satellite_data', estimatedPayoutDate: new Date(Date.now() + 7 * 86400000), filedAt: new Date() };
+  return { claimId: docNumber("pc"), userId, policyId, triggerId, evidence, status: 'auto_verified', payoutAmount: Math.round(50000 + Math.random() * 450000), verificationMethod: 'satellite_data', estimatedPayoutDate: new Date(Date.now() + 7 * 86400000), filedAt: new Date() };
 }
 
 // ── PFA — annuities + quote ───────────────────────────────────────────────────
@@ -1706,26 +1726,26 @@ export async function getPFAQuote(userId: number, amount: number, years: number)
 
 // ── SME — apply ───────────────────────────────────────────────────────────────
 export async function applySMEInsurance(userId: number, productId: string, businessDetails: Record<string, unknown>) {
-  return { applicationId: `sme-${Date.now().toString(36)}`, userId, productId, businessDetails, status: 'under_review', estimatedPremium: Math.round(100000 + Math.random() * 400000), coverage: Math.round(5000000 + Math.random() * 20000000), submittedAt: new Date() };
+  return { applicationId: docNumber("sme"), userId, productId, businessDetails, status: 'under_review', estimatedPremium: Math.round(100000 + Math.random() * 400000), coverage: Math.round(5000000 + Math.random() * 20000000), submittedAt: new Date() };
 }
 
 // ── Telco Credit — apply ──────────────────────────────────────────────────────
 export async function applyTelcoCreditProduct(userId: number, scoreId: string, productType: string) {
-  return { applicationId: `tc-${Date.now().toString(36)}`, userId, scoreId, productType, status: 'approved', creditLimit: Math.round(50000 + Math.random() * 200000), interestRate: 2.5, approvedAt: new Date() };
+  return { applicationId: docNumber("tc"), userId, scoreId, productType, status: 'approved', creditLimit: Math.round(50000 + Math.random() * 200000), interestRate: 2.5, approvedAt: new Date() };
 }
 
 // ── Wallet — topup (lowercase) + withdraw ─────────────────────────────────────
 export async function walletTopUpAlt(userId: number, amount: number, source: string) {
-  return { transactionId: `wt-${Date.now().toString(36)}`, userId, amount, source, type: 'credit', status: 'completed', newBalance: Math.round(amount + Math.random() * 100000), processedAt: new Date() };
+  return { transactionId: docNumber("wt"), userId, amount, source, type: 'credit', status: 'completed', newBalance: Math.round(amount + Math.random() * 100000), processedAt: new Date() };
 }
 
 export async function walletWithdraw(userId: number, amount: number, bankAccount: string) {
-  return { transactionId: `ww-${Date.now().toString(36)}`, userId, amount, bankAccount, type: 'debit', status: 'processing', estimatedArrival: new Date(Date.now() + 3600000), processedAt: new Date() };
+  return { transactionId: docNumber("ww"), userId, amount, bankAccount, type: 'debit', status: 'processing', estimatedArrival: new Date(Date.now() + 3600000), processedAt: new Date() };
 }
 
 // ── WhatsApp — send ───────────────────────────────────────────────────────────
 export async function sendWhatsAppMessage(userId: number, phone: string, message: string) {
-  return { messageId: `wa-${Date.now().toString(36)}`, userId, phone, message, status: 'delivered', sentAt: new Date() };
+  return { messageId: docNumber("wa"), userId, phone, message, status: 'delivered', sentAt: new Date() };
 }
 
 // ── WhatsApp — history ────────────────────────────────────────────────────────
@@ -1739,7 +1759,7 @@ export async function getWhatsAppHistory(userId: number) {
 
 // ── Agricultural — apply ──────────────────────────────────────────────────────
 export async function applyAgriculturalInsurance(userId: number, productId: string, farmDetails: Record<string, unknown>) {
-  return { applicationId: `ag-${Date.now().toString(36)}`, userId, productId, farmDetails, status: 'submitted', estimatedPremium: Math.round(25000 + Math.random() * 75000), coverageAmount: Math.round(500000 + Math.random() * 2000000), submittedAt: new Date() };
+  return { applicationId: docNumber("ag"), userId, productId, farmDetails, status: 'submitted', estimatedPremium: Math.round(25000 + Math.random() * 75000), coverageAmount: Math.round(500000 + Math.random() * 2000000), submittedAt: new Date() };
 }
 
 export async function calculateDynamicPrice(userId: number, input: { basePremium: number; drivingScore: number; claimsHistory: number; mileage: number }) {
@@ -1765,7 +1785,7 @@ export async function getABTests() {
 }
 
 export async function createABTest(data: { name: string; description: string; variantA: string; variantB: string; startDate: string; endDate: string }) {
-  return { id: `ab-${Date.now().toString(36)}`, ...data, status: 'draft', impressions: 0, conversions: 0, conversionRate: 0, createdAt: new Date() };
+  return { id: docNumber("ab"), ...data, status: 'draft', impressions: 0, conversions: 0, conversionRate: 0, createdAt: new Date() };
 }
 
 export async function updateABTest(id: string, data: Record<string, unknown>) {
@@ -1826,7 +1846,7 @@ export async function getAIClaimsResults() {
 
 // ── Application CRUD ────────────────────────────────────────────────────────
 export async function createApplication(userId: number, data: { policyType: string; applicantName: string; premium: number }) {
-  return { id: `APP-${Date.now().toString(36)}`, userId, ...data, status: 'draft', createdAt: new Date() };
+  return { id: docNumber("APP"), userId, ...data, status: 'draft', createdAt: new Date() };
 }
 
 export async function getApplication(userId: number, applicationId: string) {
@@ -1839,12 +1859,12 @@ export async function updateApplication(userId: number, id: string, data: Record
 
 // ── Batch Run ───────────────────────────────────────────────────────────────
 export async function runBatchJob(jobType: string, params: Record<string, unknown>) {
-  return { jobId: `BATCH-${Date.now().toString(36)}`, jobType, params, status: 'running', startedAt: new Date(), estimatedCompletion: new Date(Date.now() + 300000), itemsProcessed: 0, totalItems: Math.round(100 + Math.random() * 900) };
+  return { jobId: docNumber("BATCH"), jobType, params, status: 'running', startedAt: new Date(), estimatedCompletion: new Date(Date.now() + 300000), itemsProcessed: 0, totalItems: Math.round(100 + Math.random() * 900) };
 }
 
 // ── Broker API Create ───────────────────────────────────────────────────────
 export async function createBrokerApiRecord(userId: number, data: { name: string; description: string }) {
-  return { id: `BRK-${Date.now().toString(36)}`, userId, ...data, apiKey: `brk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`, status: 'active', createdAt: new Date(), requestCount: 0, rateLimit: 1000 };
+  return { id: docNumber("BRK"), userId, ...data, apiKey: `brk_${randomBytes(24).toString("hex")}` /* J-wave: API keys are secrets — CSPRNG, no ms/Math.random */, status: 'active', createdAt: new Date(), requestCount: 0, rateLimit: 1000 };
 }
 
 // ── Churn List ──────────────────────────────────────────────────────────────
@@ -1891,7 +1911,7 @@ export async function runComplianceCheck(ruleId: string) {
 
 // ── Emergency SOS ───────────────────────────────────────────────────────────
 export async function createEmergency(userId: number, data: { type: string; location: string; description: string }) {
-  return { id: `SOS-${Date.now().toString(36)}`, userId, ...data, status: 'dispatched', responderETA: '15 minutes', policyId: 'POL-2025-001', createdAt: new Date() };
+  return { id: docNumber("SOS"), userId, ...data, status: 'dispatched', responderETA: '15 minutes', policyId: 'POL-2025-001', createdAt: new Date() };
 }
 
 export async function getEmergencyList(userId: number) {
@@ -1937,12 +1957,12 @@ export async function getLiteracyContent() {
 
 // ── Marketplace Purchase ────────────────────────────────────────────────────
 export async function purchaseMarketplaceProduct(userId: number, productId: string, data: { paymentMethod: string }) {
-  return { orderId: `ORD-${Date.now().toString(36)}`, userId, productId, paymentMethod: data.paymentMethod, status: 'confirmed', policyId: `POL-${Date.now().toString(36)}`, premium: Math.round(15000 + Math.random() * 85000), purchasedAt: new Date() };
+  return { orderId: docNumber("ORD"), userId, productId, paymentMethod: data.paymentMethod, status: 'confirmed', policyId: docNumber("POL"), premium: Math.round(15000 + Math.random() * 85000), purchasedAt: new Date() };
 }
 
 // ── Microinsurance Enroll ───────────────────────────────────────────────────
 export async function enrollMicroinsurance(userId: number, productId: string) {
-  return { enrollmentId: `MIE-${Date.now().toString(36)}`, userId, productId, status: 'active', premium: Math.round(500 + Math.random() * 2000), coverage: Math.round(50000 + Math.random() * 150000), startDate: new Date(), endDate: new Date(Date.now() + 31536000000) };
+  return { enrollmentId: docNumber("MIE"), userId, productId, status: 'active', premium: Math.round(500 + Math.random() * 2000), coverage: Math.round(50000 + Math.random() * 150000), startDate: new Date(), endDate: new Date(Date.now() + 31536000000) };
 }
 
 // ── Model Security Status ───────────────────────────────────────────────────
@@ -1952,12 +1972,12 @@ export async function getModelSecurityStatus() {
 
 // ── NAICOM Submit ───────────────────────────────────────────────────────────
 export async function submitNAICOMFiling(userId: number, data: { filingType: string; period: string; data: Record<string, unknown> }) {
-  return { filingId: `NAI-${Date.now().toString(36)}`, userId, filingType: data.filingType, period: data.period, status: 'submitted', submittedAt: new Date(), referenceNumber: `NAICOM/${new Date().getFullYear()}/${Math.random().toString(36).slice(2, 8).toUpperCase()}`, expectedResponse: new Date(Date.now() + 1209600000) };
+  return { filingId: docNumber("NAI"), userId, filingType: data.filingType, period: data.period, status: 'submitted', submittedAt: new Date(), referenceNumber: `NAICOM/${new Date().getFullYear()}/${Math.random().toString(36).slice(2, 8).toUpperCase()}`, expectedResponse: new Date(Date.now() + 1209600000) };
 }
 
 // ── P2P Contribute ──────────────────────────────────────────────────────────
 export async function contributeToP2PPool(userId: number, poolId: string, amount: number) {
-  return { transactionId: `P2P-${Date.now().toString(36)}`, userId, poolId, amount, type: 'contribution', newBalance: amount + Math.round(Math.random() * 50000), contributedAt: new Date() };
+  return { transactionId: docNumber("P2P"), userId, poolId, amount, type: 'contribution', newBalance: amount + Math.round(Math.random() * 50000), contributedAt: new Date() };
 }
 
 // ── Policy Comparison Results ───────────────────────────────────────────────
@@ -1979,7 +1999,7 @@ export async function getPremiumRatesList() {
 }
 
 export async function createPremiumRate(data: { name: string; category: string; baseRate: number; minRate: number; maxRate: number }) {
-  return { id: `pr-${Date.now().toString(36)}`, ...data, effectiveDate: new Date().toISOString().split('T')[0], status: 'draft', createdAt: new Date() };
+  return { id: docNumber("pr"), ...data, effectiveDate: new Date().toISOString().split('T')[0], status: 'draft', createdAt: new Date() };
 }
 
 export async function updatePremiumRateById(id: string, data: Record<string, unknown>) {
@@ -2004,7 +2024,7 @@ export async function deleteReview(userId: number, reviewId: string) {
 export async function createSavingsAccount(userId: number, data: { name: string; targetAmount: number; monthlyContribution: number }) {
   const interestRate = 12.5;
   const months = Math.ceil(data.targetAmount / data.monthlyContribution);
-  return { id: `SAV-${Date.now().toString(36)}`, userId, ...data, balance: 0, interestRate, estimatedMaturityMonths: months, status: 'active', createdAt: new Date() };
+  return { id: docNumber("SAV"), userId, ...data, balance: 0, interestRate, estimatedMaturityMonths: months, status: 'active', createdAt: new Date() };
 }
 
 // ── Telematics Data ─────────────────────────────────────────────────────────
@@ -2069,7 +2089,7 @@ export async function getKYCStatus(userId: number) {
 export async function submitKYCVerification(userId: number, data: { verificationType: string; documentType?: string; documentNumber?: string }) {
   const db = await getDb();
   if (!db) {
-    return { id: `kyc-${Date.now().toString(36)}`, userId, ...data, status: 'Pending', createdAt: new Date() };
+    return { id: docNumber("kyc"), userId, ...data, status: 'Pending', createdAt: new Date() };
   }
   const result = await db.insert(kycVerifications).values({
     userId,
@@ -2152,7 +2172,7 @@ export async function getKYCAnalytics(userId: number) {
 
 // ── USSD Simulate ───────────────────────────────────────────────────────────
 export async function simulateUSSDSession(phone: string, serviceCode: string) {
-  return { sessionId: `USSD-${Date.now().toString(36)}`, phone, serviceCode, steps: [
+  return { sessionId: docNumber("USSD"), phone, serviceCode, steps: [
     { input: serviceCode, response: 'Welcome to InsurePortal\n1. Buy Insurance\n2. Check Policy\n3. File Claim\n4. Make Payment' },
     { input: '1', response: 'Select Insurance Type\n1. Motor\n2. Health\n3. Life\n4. Property' },
   ], status: 'active', startedAt: new Date() };
