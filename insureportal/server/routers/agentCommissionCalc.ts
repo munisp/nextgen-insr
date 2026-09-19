@@ -4,7 +4,7 @@
  * Sprint 54: Full PostgreSQL + middleware integration
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   commissionTiers,
@@ -12,7 +12,7 @@ import {
   commissionRules,
   commissionAuditTrail,
 } from "@schema";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   publishCommissionEvent,
@@ -210,31 +210,77 @@ export const agentCommissionCalcRouter = router({
       return { payouts: rows, total: totalRow?.cnt ?? 0 };
     }),
 
-  approvePayout: protectedProcedure
+  // K-wave (2026-09): brought to the merchantPayoutSettlement standard —
+  // admin-only, GUARDED pending-only transition (no last-writer-wins on an
+  // already-approved/rejected payout), approvedBy attribution, maker-checker
+  // when the batch recorded a requester, and the actor-attributed audit row
+  // written IN THE SAME transaction as the claim.
+  approvePayout: adminProcedure
     .input(z.object({ payoutId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const payoutIdNum = parseInt(input.payoutId.replace(/\D/g, "")) || 0;
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({ status: "approved" } as any)
-          .where(eq(commissionPayouts.id, payoutIdNum))
-          .returning();
-        if (!updated)
+        const updated = await db.transaction(async tx => {
+          const [row] = await tx
+            .update(commissionPayouts)
+            .set({
+              status: "approved",
+              approvedBy: ctx.user!.id,
+              updatedAt: new Date(),
+            } as any)
+            .where(
+              and(
+                eq(commissionPayouts.id, payoutIdNum),
+                eq(commissionPayouts.status, "pending"),
+                // Maker-checker: a recorded requester can never approve
+                // their own batch (NULL = system-computed batch, approvable
+                // by any admin — documented).
+                sql`(${commissionPayouts.requestedBy} IS NULL OR ${commissionPayouts.requestedBy} <> ${ctx.user!.id})`
+              )
+            )
+            .returning();
+          if (!row) return null;
+          // NOTE: commissionAuditTrail has no "details" column (the
+          // pre-existing insert wrote one via `as any` — a phantom column
+          // that would fail on a real DB). Actor attribution lives in
+          // performedBy + newValue.
+          await tx.insert(commissionAuditTrail).values({
+            action: "payout_approved",
+            entityType: "payout",
+            entityId: input.payoutId,
+            performedBy: String(ctx.user!.id),
+            newValue: {
+              approvedBy: ctx.user!.id,
+              requestedBy: row.requestedBy ?? null,
+              amount: String(row.amount),
+              approvedAt: new Date().toISOString(),
+            } as any,
+          } as any);
+          return row;
+        });
+        if (!updated) {
+          const [current] = await db
+            .select()
+            .from(commissionPayouts)
+            .where(eq(commissionPayouts.id, payoutIdNum))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Payout not found",
+            });
+          if (current.status !== "pending")
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Payout is not pending approval (current: ${current.status})`,
+            });
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Payout not found",
+            code: "FORBIDDEN",
+            message:
+              "Maker-checker violation: the payout requester cannot approve their own payout",
           });
-        await db.insert(commissionAuditTrail).values({
-          action: "payout_approved",
-          entityType: "payout",
-          entityId: input.payoutId,
-          performedBy: ctx.user?.name ?? "system",
-          details: JSON.stringify({
-            approvedAt: new Date().toISOString(),
-          } as any),
-        } as any);
+        }
         try {
           await publishCommissionEvent({
             eventType: "commission.payout.approved" as any,

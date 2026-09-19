@@ -91,7 +91,7 @@ const BatchProcessingEngine: React.FC = () => {
       toast.info(`Running batch job of type '${selectedJobType}'`);
       // Simulate adding a new job to demo data
       const newJob: BatchJob = {
-        id: `job-${Math.random().toString(36).substr(2, 9)}`,
+        id: `job-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, "0")).join("")}`, // K-wave (2026-09): Math.random removed
         jobType: selectedJobType,
         status: 'pending',
         createdAt: new Date().toISOString(),
