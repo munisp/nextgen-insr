@@ -152,7 +152,10 @@ export default function App() {
 
         {/* ── Existing screens, lazily registered (module eval deferred) ── */}
         <Stack.Screen name="PinSetup" getComponent={() => require('./screens/PinSetupScreen').default} options={{ title: 'Set PIN' }} />
-        <Stack.Screen name="BiometricSetup" getComponent={() => require('./screens/BiometricSetupScreen').default} options={{ title: 'Enable Biometrics' }} />
+        {/* 2026-09-19 (verifier fix): BiometricSetup/TransactionDetails/
+            PaymentRetry/AddBeneficiary screen modules export NAMED components
+            only — `.default` resolves to undefined and crashes on navigation. */}
+        <Stack.Screen name="BiometricSetup" getComponent={() => require('./screens/BiometricSetupScreen').BiometricSetupScreen} options={{ title: 'Enable Biometrics' }} />
         <Stack.Screen name="BiometricAuth" getComponent={() => require('./screens/BiometricAuthScreen').default} options={{ headerShown: false }} />
         <Stack.Screen name="TransactionHistory" getComponent={() => require('./screens/TransactionHistoryScreen').default} options={{ title: 'History' }} />
         <Stack.Screen name="TransactionDetails" getComponent={() => require('./screens/TransactionDetailsScreen').default} options={{ title: 'Details' }} />
@@ -162,8 +165,8 @@ export default function App() {
         <Stack.Screen name="QRCodeScanner" getComponent={() => require('./screens/QRCodeScannerScreen').default} options={{ title: 'Scan QR' }} />
         <Stack.Screen name="RateLock" getComponent={() => require('./screens/RateLockScreen').default} options={{ title: 'Lock Rate' }} />
         <Stack.Screen name="PaymentMethods" getComponent={() => require('./screens/PaymentMethodsScreen').default} options={{ title: 'Payment Methods' }} />
-        <Stack.Screen name="PaymentRetry" getComponent={() => require('./screens/PaymentRetryScreen').default} options={{ title: 'Retry Payment' }} />
-        <Stack.Screen name="AddBeneficiary" getComponent={() => require('./screens/AddBeneficiaryScreen').default} options={{ title: 'Add Beneficiary' }} />
+        <Stack.Screen name="PaymentRetry" getComponent={() => require('./screens/PaymentRetryScreen').PaymentRetryScreen} options={{ title: 'Retry Payment' }} />
+        <Stack.Screen name="AddBeneficiary" getComponent={() => require('./screens/AddBeneficiaryScreen').AddBeneficiaryScreen} options={{ title: 'Add Beneficiary' }} />
         <Stack.Screen name="VirtualCard" getComponent={() => require('./screens/VirtualCardScreen').default} options={{ title: 'Virtual Card' }} />
         <Stack.Screen name="SavingsGoals" getComponent={() => require('./screens/SavingsGoalsScreen').default} options={{ title: 'Savings Goals' }} />
         <Stack.Screen name="RecurringPayments" getComponent={() => require('./screens/RecurringPaymentsScreen').default} options={{ title: 'Recurring Payments' }} />

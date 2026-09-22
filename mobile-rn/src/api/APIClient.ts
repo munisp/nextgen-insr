@@ -16,9 +16,16 @@ export class APIClient {
   private cachedToken: string | null | undefined;
   private cachedDeviceId: string | null | undefined;
 
-  /** Invalidate the in-memory token cache (call on logout or token refresh). */
-  public invalidateTokenCache(): void {
-    this.cachedToken = undefined;
+  /**
+   * Invalidate the token cache AND remove the persisted token (logout/token
+   * refresh). 2026-09-19 (verifier fix): previously this only reset the
+   * in-memory cache to undefined, so the next request re-hydrated the SAME
+   * logged-out token from AsyncStorage and kept sending it. cachedToken is
+   * set to null (not undefined) so no re-hydration occurs after invalidation.
+   */
+  public async invalidateTokenCache(): Promise<void> {
+    this.cachedToken = null;
+    await AsyncStorage.removeItem('auth_token');
   }
 
   /** Store a new token: persists to AsyncStorage and updates the cache. */
@@ -122,7 +129,7 @@ export class POSInsurePortalAPIClient extends APIClient {
   async refreshToken() { return this.post('/auth/refresh', {}); }
   async logout() {
     const res = await this.post('/auth/logout', {});
-    this.invalidateTokenCache();
+    await this.invalidateTokenCache(); // clears AsyncStorage 'auth_token' too
     return res;
   }
 

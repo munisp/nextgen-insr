@@ -195,7 +195,11 @@ fn snapshot_sync(file: &str, ledger: &Ledger) -> std::io::Result<()> {
     // (was to_vec_pretty — ~2x bytes + CPU for zero benefit).
     let data = serde_json::to_vec(&ops)?;
     let tmp = format!("{}.tmp", file);
-    std::fs::write(&tmp, data)?;
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(&data)?;
+        f.sync_data()?; // fsync BEFORE the rename so the new snapshot is durable
+    }
     std::fs::rename(&tmp, file)?;
     Ok(())
 }
@@ -240,32 +244,107 @@ struct AppState {
     wal: String,
     node_id: String,
     ops_since_snapshot: AtomicUsize,
+    /// 2026-09-19 (verifier fix): serializes WAL-append → snapshot →
+    /// WAL-truncate so concurrent requests cannot interleave destructively.
+    persist_lock: Mutex<()>,
 }
 
 /// Persist newly-merged ops: append them to the WAL, and compact into a
-/// snapshot every SNAPSHOT_EVERY ops. Blocking file IO runs off the async
-/// worker threads (2026-09-19, P-wave).
+/// snapshot every SNAPSHOT_EVERY ops.
+///
+/// DURABILITY (2026-09-19, verifier finding): the whole
+/// append → counter → snapshot → truncate sequence runs under
+/// `persist_lock`. Without it, two concurrent requests could interleave as
+/// snapshot(A) → WAL-append(B, acked 200) → WAL-truncate(A), silently losing
+/// the acknowledged op B: it is in neither the snapshot (taken before B
+/// merged) nor the WAL (truncated after B appended). Holding the lock across
+/// the entire section makes that interleave impossible: a truncate only ever
+/// runs when every WAL-appended op is covered by the snapshot just written.
+/// Lock ordering is persist_lock → ledger (never the reverse), so no
+/// deadlock. merge() semantics are untouched.
+/// Test instrumentation for persist_sync_inner: no-ops in production, used
+/// by tests to deterministically place a concurrent request inside the
+/// snapshot→truncate crash window the verifier identified.
+struct PersistHooks<'a> {
+    /// runs inside the persistence lock after the WAL append, before the
+    /// snapshot-boundary counter check
+    post_append_pre_count: &'a mut dyn FnMut(),
+    /// runs inside the persistence lock after the snapshot is written,
+    /// before the WAL is truncated
+    post_snapshot_pre_truncate: &'a mut dyn FnMut(),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn persist_sync(
+    ledger: &Mutex<Ledger>,
+    persist_lock: &Mutex<()>,
+    file: &str,
+    wal: &str,
+    ops_since_snapshot: &AtomicUsize,
+    new_ops: &[LedgerOp],
+) -> std::io::Result<()> {
+    let mut noop_append = || {};
+    let mut noop_truncate = || {};
+    persist_sync_inner(
+        ledger,
+        persist_lock,
+        file,
+        wal,
+        ops_since_snapshot,
+        new_ops,
+        &mut PersistHooks {
+            post_append_pre_count: &mut noop_append,
+            post_snapshot_pre_truncate: &mut noop_truncate,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn persist_sync_inner(
+    ledger: &Mutex<Ledger>,
+    persist_lock: &Mutex<()>,
+    file: &str,
+    wal: &str,
+    ops_since_snapshot: &AtomicUsize,
+    new_ops: &[LedgerOp],
+    hooks: &mut PersistHooks,
+) -> std::io::Result<()> {
+    if new_ops.is_empty() {
+        return Ok(());
+    }
+    let _guard = persist_lock.lock().unwrap();
+    wal_append_sync(wal, new_ops)?;
+    (hooks.post_append_pre_count)();
+    let seen = ops_since_snapshot.fetch_add(new_ops.len(), Ordering::SeqCst) + new_ops.len();
+    if seen >= SNAPSHOT_EVERY {
+        {
+            let ledger = ledger.lock().unwrap();
+            snapshot_sync(file, &ledger)?;
+        }
+        (hooks.post_snapshot_pre_truncate)();
+        // snapshot now covers every op in the WAL; truncate it.
+        std::fs::write(wal, b"")?;
+        ops_since_snapshot.store(0, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+/// Async wrapper: blocking file IO runs off the async worker threads
+/// (2026-09-19, P-wave).
 async fn persist(state: &web::Data<AppState>, new_ops: Vec<LedgerOp>) -> std::io::Result<()> {
     if new_ops.is_empty() {
         return Ok(());
     }
     let st = state.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        wal_append_sync(&st.wal, &new_ops)?;
-        let seen = st
-            .ops_since_snapshot
-            .fetch_add(new_ops.len(), Ordering::SeqCst)
-            + new_ops.len();
-        if seen >= SNAPSHOT_EVERY {
-            {
-                let ledger = st.ledger.lock().unwrap();
-                snapshot_sync(&st.file, &ledger)?;
-            }
-            // snapshot now covers the WAL; truncate it.
-            std::fs::write(&st.wal, b"")?;
-            st.ops_since_snapshot.store(0, Ordering::SeqCst);
-        }
-        Ok(())
+        persist_sync(
+            &st.ledger,
+            &st.persist_lock,
+            &st.file,
+            &st.wal,
+            &st.ops_since_snapshot,
+            &new_ops,
+        )
     })
     .await
     .map_err(std::io::Error::other)?
@@ -391,6 +470,7 @@ async fn main() -> std::io::Result<()> {
         wal,
         node_id,
         ops_since_snapshot: AtomicUsize::new(wal_ops),
+        persist_lock: Mutex::new(()),
     });
     log::info!("offline-ledger listening on :{port}");
     HttpServer::new(move || {
@@ -620,5 +700,194 @@ mod tests {
         assert_eq!(report.merged, 1);
         assert_eq!(report.duplicates, 1);
         assert_eq!(restored.account_states()[0].1.balance_minor, 1000);
+    }
+
+    #[test]
+    fn append_during_snapshot_truncate_window_is_not_lost() {
+        // Deterministic reproduction of the verifier's falsification (WAL
+        // durability race, 2026-09-19). Request A hits the snapshot boundary;
+        // request B WAL-appends and is descheduled BEFORE its counter check;
+        // A then truncates the WAL and resets the counter; B resumes, sees a
+        // counter below SNAPSHOT_EVERY, takes no snapshot, and returns Ok —
+        // its acknowledged op is in NEITHER the snapshot (taken before B
+        // merged) NOR the WAL (truncated after B appended). Silent loss.
+        // persist_sync holds the persistence lock across the entire
+        // append → count → snapshot → truncate section, so B's whole persist
+        // is deferred until after A's truncate and B's op survives.
+        //
+        // The choreography is exact in the unlocked case (every rendezvous
+        // spins on a flag); in the fixed (locked) case B simply cannot enter
+        // the window, A's hook times out after 3s, and B persists after A's
+        // truncate.
+        use std::sync::atomic::AtomicBool;
+        let file = tmpdir_path("ledger.json");
+        let wal = format!("{}.wal", file);
+        let ledger = Mutex::new(Ledger::default());
+        let persist_lock = Mutex::new(());
+        let counter = AtomicUsize::new(SNAPSHOT_EVERY - 1); // A's op triggers the snapshot
+
+        let op_a = op("A", "acct", OpKind::Credit, 100, "n1", 1);
+        let op_b = op("B", "acct", OpKind::Credit, 50, "n1", 2);
+
+        let window_open = AtomicBool::new(false); // A is between snapshot and truncate+reset
+        let b_appended = AtomicBool::new(false); // B's WAL append done, count pending
+        let spin = |flag: &AtomicBool, want: bool, ms: u64| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+            while flag.load(Ordering::SeqCst) != want && std::time::Instant::now() < deadline {
+                std::thread::yield_now();
+            }
+            flag.load(Ordering::SeqCst) == want
+        };
+
+        std::thread::scope(|s| {
+            let (ledger_r, lock_r, file_r, wal_r, counter_r) =
+                (&ledger, &persist_lock, &file, &wal, &counter);
+            let spin_r = &spin;
+            let (window_open_r, b_appended_r) = (&window_open, &b_appended);
+            let b = s.spawn(move || {
+                assert!(
+                    spin_r(window_open_r, true, 10_000),
+                    "A must reach the snapshot/truncate window"
+                );
+                // request-path order: merge into the ledger, THEN persist.
+                // B merges AFTER A's snapshot was taken, so A's snapshot does
+                // NOT contain B's op.
+                ledger_r.lock().unwrap().merge(vec![op_b.clone()]);
+                let mut b_hooks = PersistHooks {
+                    post_append_pre_count: &mut || {
+                        // B is descheduled here: WAL append done, counter
+                        // check not yet performed. In the unlocked build A
+                        // truncates + resets while B waits; in the locked
+                        // build B never gets here until A has finished.
+                        b_appended_r.store(true, Ordering::SeqCst);
+                        spin_r(window_open_r, false, 10_000);
+                    },
+                    post_snapshot_pre_truncate: &mut || {},
+                };
+                persist_sync_inner(
+                    ledger_r,
+                    lock_r,
+                    file_r,
+                    wal_r,
+                    counter_r,
+                    &[op_b],
+                    &mut b_hooks,
+                )
+                .unwrap();
+            });
+
+            ledger.lock().unwrap().merge(vec![op_a.clone()]);
+            let mut a_hooks = PersistHooks {
+                post_append_pre_count: &mut || {},
+                post_snapshot_pre_truncate: &mut || {
+                    // A's snapshot is now written (B is NOT in it: B merges
+                    // only after this point). Open the crash window and give
+                    // B the chance to WAL-append; in the locked build B is
+                    // blocked on persist_lock, so this simply times out and
+                    // the truncate proceeds.
+                    window_open.store(true, Ordering::SeqCst);
+                    spin(&b_appended, true, 3_000);
+                },
+            };
+            persist_sync_inner(
+                &ledger,
+                &persist_lock,
+                &file,
+                &wal,
+                &counter,
+                std::slice::from_ref(&op_a),
+                &mut a_hooks,
+            )
+            .unwrap();
+            // truncate + counter reset are done; release B.
+            window_open.store(false, Ordering::SeqCst);
+            b.join().unwrap();
+        });
+
+        // Simulated crash + restart: rebuild ONLY from disk.
+        let mut restored = Ledger::default();
+        restored.merge(load_persisted(&file, &wal).unwrap());
+        assert!(
+            restored.ops.contains_key("A"),
+            "op A (snapshotted) must survive"
+        );
+        assert!(
+            restored.ops.contains_key("B"),
+            "op B (WAL-appended, acked, then descheduled across A's              truncate+counter-reset) must survive the crash — this is the              verifier's lost-op scenario"
+        );
+        assert_eq!(restored.account_states()[0].1.balance_minor, 150);
+    }
+
+    #[test]
+    fn concurrent_persist_across_snapshot_boundary_loses_no_acked_ops() {
+        // Regression test (2026-09-19, verifier finding — WAL durability
+        // race): persist() previously had no mutual exclusion, so the
+        // interleave
+        //   snapshot(A, without B) → WAL-append(B) + ack 200 → WAL-truncate(A)
+        // silently lost the acknowledged op B. persist_sync now serializes
+        // append → snapshot → truncate under a persistence mutex.
+        //
+        // This test reproduces the verifier's falsification setup: many
+        // threads merge + persist (the request path's exact call order:
+        // merge first, then persist — so the snapshot in one thread may or
+        // may not include another thread's already-merged op) while crossing
+        // the SNAPSHOT_EVERY boundary repeatedly, then a simulated crash
+        // (load_persisted only — no in-memory state) must recover EVERY op.
+        let file = tmpdir_path("ledger.json");
+        let wal = format!("{}.wal", file);
+        let ledger = Mutex::new(Ledger::default());
+        let persist_lock = Mutex::new(());
+        let counter = AtomicUsize::new(0);
+
+        const THREADS: usize = 8;
+        const PER_THREAD: usize = SNAPSHOT_EVERY / 2; // forces 4 snapshot+truncate cycles
+                                                      // padded memo so each snapshot is a multi-MB serialize+write+fsync,
+                                                      // widening the window in which an unlocked implementation would
+                                                      // interleave a concurrent append+truncate destructively
+        let pad = "x".repeat(2048);
+        std::thread::scope(|s| {
+            for t in 0..THREADS {
+                let ledger = &ledger;
+                let persist_lock = &persist_lock;
+                let counter = &counter;
+                let file = &file;
+                let wal = &wal;
+                let pad = &pad;
+                s.spawn(move || {
+                    for i in 0..PER_THREAD {
+                        let seq = (t * PER_THREAD + i + 1) as u64;
+                        let mut o =
+                            op(&format!("t{t}-op{i}"), "acct", OpKind::Credit, 1, "n1", seq);
+                        o.memo = Some(pad.clone());
+                        // request-path order: merge into the ledger, THEN persist
+                        ledger.lock().unwrap().merge(vec![o.clone()]);
+                        persist_sync(ledger, persist_lock, file, wal, counter, &[o])
+                            .expect("persist must not fail");
+                    }
+                });
+            }
+        });
+
+        // Simulated crash + restart: rebuild ONLY from snapshot + WAL on disk.
+        let persisted = load_persisted(&file, &wal).unwrap();
+        let mut restored = Ledger::default();
+        restored.merge(persisted);
+        let mem = ledger.lock().unwrap();
+        assert_eq!(mem.ops.len(), THREADS * PER_THREAD);
+        assert_eq!(
+            restored.ops.len(),
+            mem.ops.len(),
+            "every acknowledged op must survive a crash — none may be lost to \
+             a snapshot/truncate race"
+        );
+        assert_eq!(
+            restored.account_states(),
+            mem.account_states(),
+            "restored balances must equal the in-memory ledger"
+        );
+        // a second load is idempotent (snapshot/WAL overlap dedups)
+        let mut again = Ledger::default();
+        again.merge(load_persisted(&file, &wal).unwrap());
+        assert_eq!(again.account_states(), mem.account_states());
     }
 }
