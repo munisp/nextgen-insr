@@ -28,6 +28,10 @@ import {
   type InsertUser,
   type User,
 } from "../drizzle/schema";
+// 2026-09-22 (platform-fix): bust cached authz decisions on the login-path
+// role write (upsertUser). Import is acyclic: _core/permify imports only
+// logger + redisClient.
+import { invalidatePermifyDecisionsForSubject } from "./_core/permify";
 import { getRedisClient } from "./lib/redisClient";
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
@@ -277,7 +281,13 @@ export async function closeDb(): Promise<void> {
 export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db
+  // 2026-09-22 (platform-fix, authz staleness): this is the LOGIN-path role
+  // write (Keycloak claim → users.role). It previously bypassed both caches
+  // added by the P-wave: the 30s user-by-sub record cache below and the
+  // 45s Permify decision cache — a demotion synced at login could serve a
+  // stale role/ALLOW until TTL. We now RETURNING the row id and bust both
+  // caches after the write (best-effort; TTLs remain the backstop).
+  const rows = await db
     .insert(users)
     .values(user)
     .onConflictDoUpdate({
@@ -289,7 +299,12 @@ export async function upsertUser(user: InsertUser): Promise<void> {
         lastSignedIn: new Date(),
         updatedAt: new Date(),
       },
-    });
+    })
+    .returning({ id: users.id });
+  await invalidateUserBySubCache(user.keycloakSub);
+  if (user.role != null && rows[0]) {
+    await invalidatePermifyDecisionsForSubject("user", String(rows[0].id));
+  }
 }
 
 // 2026-09-19 (P-wave, perf hotspot #6): getUserByKeycloakSub ran an uncached
@@ -299,8 +314,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 //   - cache miss / Redis down / parse failure → the exact same DB query as
 //     before (fail-open to DB, never a fabricated user);
 //   - every users-table write on the role/profile paths (Keycloak role
-//     re-sync persist, adminDashboard.setUserRole, tenantAdmin updateUser)
-//     calls invalidateUserBySubCache so changes take effect immediately;
+//     re-sync persist, adminDashboard.setUserRole, tenantAdmin updateUser,
+//     and — 2026-09-22 — the login-path upsertUser role sync) calls
+//     invalidateUserBySubCache so changes take effect immediately;
 //     any other write path is bounded by the 30s TTL.
 const USER_BY_SUB_CACHE_PREFIX = "user:kcsub:";
 const USER_BY_SUB_CACHE_TTL_S = 30;

@@ -33,6 +33,10 @@
 import { ApplicationFailure } from "@temporalio/workflow";
 
 import logger from "./_core/logger";
+// 2026-09-22 (platform-fix, authz staleness): relationship writes below must
+// bust the P-wave decision cache for the affected subject, else a revoked
+// permission serves a cached ALLOW until the allow-TTL (45s) expires.
+import { invalidatePermifyDecisionsForSubject } from "./_core/permify";
 
 const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://permify:3476";
 
@@ -474,7 +478,7 @@ export async function writeResourceRelationship(
   tenantId: string
 ): Promise<void> {
   try {
-    await fetch(
+    const res = await fetch(
       `${PERMIFY_URL}/v1/tenants/${tenantId}/relationships/write`,
       {
         method: "POST",
@@ -490,6 +494,12 @@ export async function writeResourceRelationship(
         signal: AbortSignal.timeout(3_000),
       }
     );
+    // 2026-09-22 (platform-fix, authz staleness): on a successful write, bust
+    // the subject's cached authorization decisions immediately (TTL remains
+    // the backstop if Redis is unavailable).
+    if (res.ok) {
+      await invalidatePermifyDecisionsForSubject(subjectType, subjectId);
+    }
   } catch (err) {
     // Non-fatal: relationship can be re-created later
     logger.warn({ entityType, entityId, relation, err: (err as Error).message },

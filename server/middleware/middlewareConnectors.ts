@@ -10,6 +10,11 @@
  * - Graceful fallback
  */
 
+// 2026-09-22 (platform-fix, authz staleness): PermifyConnector.writeRelation
+// is a Permify-native write path — it must bust the P-wave decision cache for
+// the affected subject on success so revocations take effect immediately
+// (TTL ≤45s remains the backstop when Redis is unavailable).
+import { invalidatePermifyDecisionsForSubject } from "../_core/permify";
 import { getApisixAdminKey } from "../lib/envValidation";
 
 // ─── Circuit Breaker ─────────────────────────────────────────────────────────
@@ -461,6 +466,9 @@ export class PermifyConnector {
       );
       if (res.ok) {
         recordSuccess("permify");
+        // 2026-09-22 (platform-fix): write succeeded — bust the subject's
+        // cached decisions (best-effort; never throws).
+        await invalidatePermifyDecisionsForSubject(subject.type, subject.id);
         return true;
       }
       recordFailure("permify");

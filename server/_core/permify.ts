@@ -541,8 +541,13 @@ export async function permifyCheckCached(params: {
 
 /**
  * Bust cached decisions for one subject. Hooked on every role/permission
- * write path (Keycloak role re-sync persist, admin user-role change, tenant
- * admin update) so revocations take effect immediately instead of after TTL.
+ * write path: Keycloak role re-sync persist, admin user-role change, tenant
+ * admin update, login-path upsertUser role sync (2026-09-22), and the
+ * Permify-native relationship writes (2026-09-22: writePermifyRelationship /
+ * updatePermifyPolicy in journey-activities-extended.ts, writeResource-
+ * Relationship in journey-tenant-guard.ts, PermifyConnector.writeRelation in
+ * middlewareConnectors.ts) — so revocations take effect immediately instead
+ * of after TTL.
  * Best-effort: Redis errors only mean the TTL bound applies.
  */
 export async function invalidatePermifyDecisionsForSubject(

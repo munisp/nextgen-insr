@@ -37,7 +37,11 @@ import {
   getDb,
   getUserByKeycloakSub,
   invalidateUserBySubCache,
+  upsertUser,
 } from "../../server/db";
+// 2026-09-22 (platform-fix): Permify-native write path under test — its
+// success must bust the decision cache for the written subject.
+import { writePermifyRelationship } from "../../server/journey-activities-extended";
 import {
   policies,
   users,
@@ -61,12 +65,21 @@ const DAY = 86_400_000;
 type FetchImpl = typeof fetch;
 let realFetch: FetchImpl;
 let permifyCalls = 0;
+let permifyWrites = 0;
 let permifyBehavior: "allow" | "deny" | "down" = "allow";
 
 function installFetchStub() {
   realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: any, init?: any) => {
     const url = String(input);
+    if (url.includes("/relationships/write")) {
+      // 2026-09-22 (platform-fix): Permify-native write path stub.
+      permifyWrites++;
+      return new Response(JSON.stringify({ snapToken: "snap-test" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/permissions/check")) {
       permifyCalls++;
       if (permifyBehavior === "down") {
@@ -118,6 +131,7 @@ afterAll(() => {
 beforeEach(() => {
   installFetchStub();
   permifyCalls = 0;
+  permifyWrites = 0;
   permifyBehavior = "allow";
 });
 
@@ -221,6 +235,96 @@ describe("Permify decision cache (P-wave perf #1)", () => {
     // A healthy Permify is consulted again — the outage "deny" was not cached.
     expect(await permifyCheckCached(params)).toBe(true);
     expect(permifyCalls).toBe(2);
+  });
+});
+
+// 2026-09-22 (platform-fix, authz staleness WARNING): Permify-native
+// relationship writes bypassed the decision-cache invalidation hooks, so a
+// permission revoked via those paths kept serving a cached ALLOW for up to
+// the 45s allow-TTL. Invalidation is now structural (inside the write
+// functions). This pins the contract: cache busted IMMEDIATELY after
+// writePermifyRelationship — a revoked permission is denied on the next call.
+describe("Permify-native write paths bust the decision cache (2026-09-22 platform-fix)", () => {
+  it("writePermifyRelationship → revoked permission denied on the NEXT check (no TTL wait)", async () => {
+    const subjectId = uniqueSubject();
+    const params = {
+      subjectType: "user",
+      subjectId,
+      entityType: "policy",
+      entityId: `pol-fix-${process.pid}-${Date.now()}`,
+      permission: "view_policy",
+    };
+    // Prime a cached ALLOW.
+    expect(await permifyCheckCached(params)).toBe(true);
+    expect(permifyCalls).toBe(1);
+
+    // The permission is now revoked server-side and a Permify-native
+    // relationship write lands (e.g. journey assignment path).
+    permifyBehavior = "deny";
+    const wr = await writePermifyRelationship({
+      entityType: "policy",
+      entityId: params.entityId,
+      relation: "viewer",
+      subjectType: "user",
+      subjectId,
+    });
+    expect(wr.success).toBe(true);
+    expect(permifyWrites).toBe(1);
+
+    // Without the structural bust this assertion would fail: the cached
+    // ALLOW would be served for up to the 45s allow-TTL.
+    expect(await permifyCheckCached(params)).toBe(false);
+    expect(permifyCalls).toBe(2);
+  });
+});
+
+// 2026-09-22 (platform-fix, authz staleness WARNING): upsertUser (login path,
+// _core/oauth.ts / _core/sdk.ts) writes users.role on conflict but never
+// invalidated the 30s cached user record (getUserByKeycloakSub) or the 45s
+// Permify decision cache. Both are now busted on the write.
+describe("upsertUser cache invalidation (2026-09-22 platform-fix)", () => {
+  it("login-path role change busts the user cache AND the Permify decision cache", async () => {
+    const db = (await getDb())!;
+    const sub = `kc-upsert-fix-${process.pid}-${Date.now()}`;
+    await upsertUser({
+      keycloakSub: sub,
+      name: "Upsert Fix",
+      email: "upsert-fix@integration.local",
+      role: "user",
+    });
+
+    // Prime both caches: the user record and an ALLOW decision for the id.
+    const first = await getUserByKeycloakSub(sub);
+    expect(first?.role).toBe("user");
+    const params = {
+      subjectType: "user",
+      subjectId: String(first!.id),
+      entityType: "system",
+      entityId: "insurance-portal",
+      permission: "access",
+    };
+    expect(await permifyCheckCached(params)).toBe(true);
+    expect(permifyCalls).toBe(1);
+
+    // Login sync writes a new role (e.g. Keycloak-side change propagated).
+    permifyBehavior = "deny";
+    await upsertUser({
+      keycloakSub: sub,
+      name: "Upsert Fix",
+      email: "upsert-fix@integration.local",
+      role: "admin",
+    });
+
+    // User-record cache was busted: fresh role served immediately.
+    const fresh = await getUserByKeycloakSub(sub);
+    expect(fresh?.role).toBe("admin");
+    // Decision cache was busted: the next check re-consults Permify (deny).
+    expect(await permifyCheckCached(params)).toBe(false);
+    expect(permifyCalls).toBe(2);
+
+    // Cleanup (plus cache hygiene).
+    await db.delete(users).where(eq(users.id, first!.id));
+    await invalidateUserBySubCache(sub);
   });
 });
 
