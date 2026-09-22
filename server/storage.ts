@@ -122,5 +122,7 @@ export async function storagePresignPut(
   const { ENV } = await import("./_core/env");
   const expiry = expiresInSeconds ?? ENV.s3PresignExpiry ?? 3600;
   const signed = await getPresignedPutUrl(key, contentType, expiry);
-  return { key, ...signed };
+  // 2026-09-22 P-wave fix: spread first so the normalized key always wins (TS2783)
+  return { ...signed, key };
 }
+
