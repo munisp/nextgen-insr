@@ -9,11 +9,17 @@
 //     applied operations are UNIONED (grow-only op set), so no real money
 //     movement is ever lost; an account overdrawn by concurrent debits is
 //     flagged in `conflicts` for human review — never silently netted.
-//   - Persistence: LEDGER_FILE write-ahead JSON snapshot; load failures are
+//   - Persistence (P-wave, 2026-09-19): append-only WAL (one compact JSON
+//     line per op) with a periodic compacted snapshot, replacing the old
+//     full-ledger pretty-printed rewrite on EVERY op (O(n) serialize + O(n)
+//     bytes written per request). All file IO runs in spawn_blocking so the
+//     async worker threads are never stalled by fsync. Load failures remain
 //     loud at startup (process refuses to serve a fabricated empty ledger).
 use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 // ── CRDT core ───────────────────────────────────────────────────────────────
@@ -27,7 +33,7 @@ pub enum OpKind {
     Reversal { reverses_op_id: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LedgerOp {
     pub op_id: String,
     pub account: String,
@@ -40,7 +46,7 @@ pub struct LedgerOp {
     pub client_ts: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AccountState {
     pub account: String,
     /// applied op ids (grow-only set)
@@ -53,8 +59,11 @@ pub struct AccountState {
 /// CRDT Ledger: a grow-only set of operations with deterministic merge.
 #[derive(Default)]
 pub struct Ledger {
-    ops: HashMap<String, LedgerOp>,        // op_id -> op (grow-only)
-    reversed: HashMap<String, String>,     // reversal_op_id -> reversed op_id
+    ops: HashMap<String, LedgerOp>,    // op_id -> op (grow-only)
+    reversed: HashMap<String, String>, // reversal_op_id -> reversed op_id
+    /// 2026-09-19 (P-wave): set of op_ids that have been reversed, so
+    /// is_reversed is O(1) instead of a linear scan of `reversed` per op.
+    reversed_targets: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,7 +99,9 @@ impl Ledger {
                         op.op_id, reverses_op_id
                     ));
                 }
-                self.reversed.insert(op.op_id.clone(), reverses_op_id.clone());
+                self.reversed
+                    .insert(op.op_id.clone(), reverses_op_id.clone());
+                self.reversed_targets.insert(reverses_op_id.clone());
             }
             self.ops.insert(op.op_id.clone(), op);
             merged += 1;
@@ -104,11 +115,15 @@ impl Ledger {
                 ));
             }
         }
-        MergeReport { merged, duplicates, conflicts }
+        MergeReport {
+            merged,
+            duplicates,
+            conflicts,
+        }
     }
 
     fn is_reversed(&self, op_id: &str) -> bool {
-        self.reversed.values().any(|v| v == op_id)
+        self.reversed_targets.contains(op_id)
     }
 
     /// resolve the current account states by replaying the op set.
@@ -124,12 +139,14 @@ impl Ledger {
             if self.is_reversed(&op.op_id) {
                 continue; // reversed ops contribute nothing
             }
-            let st = by_account.entry(op.account.clone()).or_insert_with(|| AccountState {
-                account: op.account.clone(),
-                applied_ops: 0,
-                balance_minor: 0,
-                conflicts: Vec::new(),
-            });
+            let st = by_account
+                .entry(op.account.clone())
+                .or_insert_with(|| AccountState {
+                    account: op.account.clone(),
+                    applied_ops: 0,
+                    balance_minor: 0,
+                    conflicts: Vec::new(),
+                });
             st.applied_ops += 1;
             match &op.kind {
                 OpKind::Credit => st.balance_minor += op.amount_minor,
@@ -146,22 +163,112 @@ impl Ledger {
     }
 }
 
+// ── Persistence: append-only WAL + periodic compacted snapshot ──────────────
+//
+// Layout: `file` holds a compact JSON array of all ops (snapshot); `wal`
+// (`<file>.wal`) holds one compact JSON LedgerOp per line, appended on every
+// record/merge. On boot: load snapshot, then replay WAL (merge dedups any
+// overlap). Every SNAPSHOT_EVERY appended ops the snapshot is rewritten
+// (atomic tmp+rename) and the WAL truncated. Durability is unchanged from
+// the previous design: a batch fsync per request, not per op.
+
+const SNAPSHOT_EVERY: usize = 1000;
+
+fn wal_append_sync(wal_path: &str, ops: &[LedgerOp]) -> std::io::Result<()> {
+    let mut buf = Vec::with_capacity(ops.len() * 128);
+    for op in ops {
+        serde_json::to_writer(&mut buf, op)?;
+        buf.push(b'\n');
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(wal_path)?;
+    f.write_all(&buf)?;
+    f.sync_data()?; // one fsync per request batch, not per op
+    Ok(())
+}
+
+fn snapshot_sync(file: &str, ledger: &Ledger) -> std::io::Result<()> {
+    let ops: Vec<&LedgerOp> = ledger.ops.values().collect();
+    // 2026-09-19 (P-wave): compact serialization for a machine-read snapshot
+    // (was to_vec_pretty — ~2x bytes + CPU for zero benefit).
+    let data = serde_json::to_vec(&ops)?;
+    let tmp = format!("{}.tmp", file);
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, file)?;
+    Ok(())
+}
+
+/// Read snapshot + WAL into a single op vec. Corrupt snapshot or WAL line is
+/// a hard error — startup refuses to serve a fabricated empty ledger.
+fn load_persisted(file: &str, wal: &str) -> std::io::Result<Vec<LedgerOp>> {
+    let mut out: Vec<LedgerOp> = Vec::new();
+    if let Ok(data) = std::fs::read(file) {
+        if !data.is_empty() {
+            let ops: Vec<LedgerOp> = serde_json::from_slice(&data).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("ledger snapshot {file} is corrupt: {e}"),
+                )
+            })?;
+            out.extend(ops);
+        }
+    }
+    if let Ok(data) = std::fs::read(wal) {
+        for line in data.split(|&b| b == b'\n') {
+            if line.is_empty() {
+                continue;
+            }
+            let op: LedgerOp = serde_json::from_slice(line).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("ledger WAL {wal} has a corrupt entry: {e}"),
+                )
+            })?;
+            out.push(op);
+        }
+    }
+    Ok(out)
+}
+
 // ── HTTP API ────────────────────────────────────────────────────────────────
 
 struct AppState {
     ledger: Mutex<Ledger>,
     file: String,
+    wal: String,
     node_id: String,
+    ops_since_snapshot: AtomicUsize,
 }
 
-fn persist(state: &AppState) -> std::io::Result<()> {
-    let ledger = state.ledger.lock().unwrap();
-    let ops: Vec<&LedgerOp> = ledger.ops.values().collect();
-    let data = serde_json::to_vec_pretty(&ops)?;
-    let tmp = format!("{}.tmp", state.file);
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(&tmp, &state.file)?;
-    Ok(())
+/// Persist newly-merged ops: append them to the WAL, and compact into a
+/// snapshot every SNAPSHOT_EVERY ops. Blocking file IO runs off the async
+/// worker threads (2026-09-19, P-wave).
+async fn persist(state: &web::Data<AppState>, new_ops: Vec<LedgerOp>) -> std::io::Result<()> {
+    if new_ops.is_empty() {
+        return Ok(());
+    }
+    let st = state.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        wal_append_sync(&st.wal, &new_ops)?;
+        let seen = st
+            .ops_since_snapshot
+            .fetch_add(new_ops.len(), Ordering::SeqCst)
+            + new_ops.len();
+        if seen >= SNAPSHOT_EVERY {
+            {
+                let ledger = st.ledger.lock().unwrap();
+                snapshot_sync(&st.file, &ledger)?;
+            }
+            // snapshot now covers the WAL; truncate it.
+            std::fs::write(&st.wal, b"")?;
+            st.ops_since_snapshot.store(0, Ordering::SeqCst);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 async fn health(state: web::Data<AppState>) -> HttpResponse {
@@ -214,8 +321,8 @@ async fn record(state: web::Data<AppState>, req: web::Json<RecordRequest>) -> Ht
         client_ts: chrono::Utc::now().to_rfc3339(),
     };
     let op_id = op.op_id.clone();
-    let report = state.ledger.lock().unwrap().merge(vec![op]);
-    if let Err(e) = persist(&state) {
+    let report = state.ledger.lock().unwrap().merge(vec![op.clone()]);
+    if let Err(e) = persist(&state, vec![op]).await {
         return HttpResponse::ServiceUnavailable()
             .json(serde_json::json!({"error": format!("ledger persist failed: {e}")}));
     }
@@ -226,8 +333,10 @@ async fn merge_replica(state: web::Data<AppState>, ops: web::Json<Vec<LedgerOp>>
     if ops.is_empty() {
         return HttpResponse::BadRequest().json(serde_json::json!({"error": "ops[] required"}));
     }
-    let report = state.ledger.lock().unwrap().merge(ops.into_inner());
-    if let Err(e) = persist(&state) {
+    let incoming = ops.into_inner();
+    let for_wal = incoming.clone();
+    let report = state.ledger.lock().unwrap().merge(incoming);
+    if let Err(e) = persist(&state, for_wal).await {
         return HttpResponse::ServiceUnavailable()
             .json(serde_json::json!({"error": format!("ledger persist failed: {e}")}));
     }
@@ -248,29 +357,41 @@ async fn export_ops(state: web::Data<AppState>) -> HttpResponse {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8108);
-    let file = std::env::var("LEDGER_FILE")
-        .unwrap_or_else(|_| "/tmp/offline-ledger.json".to_string());
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8108);
+    let file =
+        std::env::var("LEDGER_FILE").unwrap_or_else(|_| "/tmp/offline-ledger.json".to_string());
+    let wal = format!("{}.wal", file);
     let node_id = std::env::var("NODE_ID").unwrap_or_else(|_| "node-local".to_string());
 
     let mut ledger = Ledger::default();
-    if let Ok(data) = std::fs::read(&file) {
-        match serde_json::from_slice::<Vec<LedgerOp>>(&data) {
-            Ok(ops) => {
-                let n = ops.len();
-                ledger.merge(ops);
-                log::info!("restored {n} ops from {file}");
-            }
-            Err(e) => {
-                // fail loud: serving an empty ledger when real ops exist on
-                // disk would fabricate balances
-                log::error!("FATAL: ledger file {file} is corrupt: {e} — refusing to start");
-                std::process::exit(1);
-            }
+    match load_persisted(&file, &wal) {
+        Ok(ops) => {
+            let n = ops.len();
+            ledger.merge(ops);
+            log::info!("restored {n} ops from {file} + {wal}");
+        }
+        Err(e) => {
+            // fail loud: serving an empty ledger when real ops exist on
+            // disk would fabricate balances
+            log::error!("FATAL: {e} — refusing to start");
+            std::process::exit(1);
         }
     }
+    // ops already in the WAL count toward the next snapshot trigger.
+    let wal_ops = std::fs::read(&wal)
+        .map(|d| d.split(|&b| b == b'\n').filter(|l| !l.is_empty()).count())
+        .unwrap_or(0);
 
-    let state = web::Data::new(AppState { ledger: Mutex::new(ledger), file, node_id });
+    let state = web::Data::new(AppState {
+        ledger: Mutex::new(ledger),
+        file,
+        wal,
+        node_id,
+        ops_since_snapshot: AtomicUsize::new(wal_ops),
+    });
     log::info!("offline-ledger listening on :{port}");
     HttpServer::new(move || {
         App::new()
@@ -324,7 +445,16 @@ mod tests {
     #[test]
     fn reversal_voids_original() {
         let credit = op("1", "acct", OpKind::Credit, 1000, "n1", 1);
-        let reversal = op("2", "acct", OpKind::Reversal { reverses_op_id: "1".into() }, 1000, "n1", 2);
+        let reversal = op(
+            "2",
+            "acct",
+            OpKind::Reversal {
+                reverses_op_id: "1".into(),
+            },
+            1000,
+            "n1",
+            2,
+        );
         let mut l = Ledger::default();
         let report = l.merge(vec![credit, reversal]);
         assert!(report.conflicts.is_empty());
@@ -344,9 +474,151 @@ mod tests {
 
     #[test]
     fn unknown_reversal_reference_is_conflict() {
-        let r = op("9", "acct", OpKind::Reversal { reverses_op_id: "ghost".into() }, 100, "n1", 1);
+        let r = op(
+            "9",
+            "acct",
+            OpKind::Reversal {
+                reverses_op_id: "ghost".into(),
+            },
+            100,
+            "n1",
+            1,
+        );
         let mut l = Ledger::default();
         let report = l.merge(vec![r]);
         assert!(report.conflicts.iter().any(|c| c.contains("unknown op")));
+    }
+
+    // ── P-wave (2026-09-19) persistence / is_reversed tests ─────────────────
+
+    fn tmpdir_path(name: &str) -> String {
+        let dir =
+            std::env::temp_dir().join(format!("offline-ledger-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name).to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn is_reversed_tracks_exactly_the_reversed_targets() {
+        let c1 = op("1", "acct", OpKind::Credit, 1000, "n1", 1);
+        let c2 = op("2", "acct", OpKind::Credit, 500, "n1", 2);
+        let rev = op(
+            "3",
+            "acct",
+            OpKind::Reversal {
+                reverses_op_id: "1".into(),
+            },
+            1000,
+            "n1",
+            3,
+        );
+        let mut l = Ledger::default();
+        l.merge(vec![c1, c2, rev]);
+        assert!(l.is_reversed("1"), "reversed op must be reported reversed");
+        assert!(
+            !l.is_reversed("2"),
+            "unrelated op must NOT be reported reversed"
+        );
+        assert!(
+            !l.is_reversed("3"),
+            "the reversal op itself is not reversed"
+        );
+        assert!(!l.is_reversed("nope"), "unknown id is not reversed");
+        // balance: only op 2 counts
+        assert_eq!(l.account_states()[0].1.balance_minor, 500);
+    }
+
+    #[test]
+    fn wal_round_trip() {
+        let wal = tmpdir_path("ledger.wal");
+        let ops = vec![
+            op("1", "a", OpKind::Credit, 1000, "n1", 1),
+            op("2", "a", OpKind::Debit, 250, "n1", 2),
+            op(
+                "3",
+                "b",
+                OpKind::Reversal {
+                    reverses_op_id: "1".into(),
+                },
+                1000,
+                "n2",
+                1,
+            ),
+        ];
+        wal_append_sync(&wal, &ops[..2]).unwrap();
+        wal_append_sync(&wal, &ops[2..]).unwrap(); // appends, not overwrite
+        let loaded = load_persisted(&tmpdir_path("absent-snapshot.json"), &wal).unwrap();
+        assert_eq!(
+            loaded, ops,
+            "WAL replay must reproduce every appended op exactly"
+        );
+    }
+
+    #[test]
+    fn corrupt_wal_fails_loud() {
+        let wal = tmpdir_path("ledger.wal");
+        std::fs::write(&wal, b"{not json}\n").unwrap();
+        assert!(load_persisted(&tmpdir_path("absent.json"), &wal).is_err());
+    }
+
+    #[test]
+    fn snapshot_plus_wal_replay_equals_original_merge() {
+        // Build a ledger, snapshot it, then WAL-append more ops; a fresh
+        // ledger loaded from disk must reach identical account states —
+        // merge() semantics are unchanged by the persistence format.
+        let file = tmpdir_path("ledger.json");
+        let wal = format!("{}.wal", file);
+        let batch1 = vec![
+            op("1", "acct", OpKind::Credit, 1000, "n1", 1),
+            op("2", "acct", OpKind::Debit, 400, "n2", 1),
+        ];
+        let batch2 = vec![
+            op("3", "acct", OpKind::Credit, 700, "n1", 2),
+            op(
+                "4",
+                "acct",
+                OpKind::Reversal {
+                    reverses_op_id: "2".into(),
+                },
+                400,
+                "n2",
+                2,
+            ),
+            op("5", "other", OpKind::Debit, 50, "n3", 1),
+        ];
+        let mut original = Ledger::default();
+        original.merge(batch1.clone());
+        original.merge(batch2.clone());
+
+        {
+            let mut snap_ledger = Ledger::default();
+            snap_ledger.merge(batch1);
+            snapshot_sync(&file, &snap_ledger).unwrap();
+        }
+        wal_append_sync(&wal, &batch2).unwrap();
+
+        let mut restored = Ledger::default();
+        restored.merge(load_persisted(&file, &wal).unwrap());
+        let a = original.account_states();
+        let b = restored.account_states();
+        assert_eq!(a, b, "snapshot+WAL replay must equal the in-memory merge");
+    }
+
+    #[test]
+    fn wal_overlap_with_snapshot_is_idempotent_on_load() {
+        // Crash between snapshot write and WAL truncate leaves ops in both;
+        // merge dedups them on load.
+        let file = tmpdir_path("ledger.json");
+        let wal = format!("{}.wal", file);
+        let ops = vec![op("1", "acct", OpKind::Credit, 1000, "n1", 1)];
+        let mut l = Ledger::default();
+        l.merge(ops.clone());
+        snapshot_sync(&file, &l).unwrap();
+        wal_append_sync(&wal, &ops).unwrap();
+        let mut restored = Ledger::default();
+        let report = restored.merge(load_persisted(&file, &wal).unwrap());
+        assert_eq!(report.merged, 1);
+        assert_eq!(report.duplicates, 1);
+        assert_eq!(restored.account_states()[0].1.balance_minor, 1000);
     }
 }
