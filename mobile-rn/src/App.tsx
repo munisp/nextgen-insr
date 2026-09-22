@@ -1,72 +1,37 @@
 /**
  * InsurePortal Nigerian Remittance — React Native App Entry
  * Full navigation setup with all 40 screens registered.
+ *
+ * 2026-09-19 (P-wave perf):
+ *  - Screens are registered lazily via `getComponent` so each screen module
+ *    (and its dependency tree) is evaluated on first navigation instead of
+ *    during cold start. Previously ~40 screens + deps were imported eagerly
+ *    at module load, dominating JS parse/exec time on mid-range devices.
+ *  - PERF-BLOCKER: 25 of the routes referenced below import screens that DO
+ *    NOT EXIST in mobile-rn/src/screens (LoginScreen, RegisterScreen,
+ *    OnboardingScreen, DashboardScreen, WalletScreen, TransactionsScreen,
+ *    TransactionDetailScreen, ProfileScreen, NotificationsScreen,
+ *    HelpScreen, SupportScreen, ReceiveMoneyScreen, ExchangeRatesScreen,
+ *    RateCalculatorScreen, BeneficiariesScreen, BeneficiaryListScreen,
+ *    BeneficiaryManagementScreen, CardsScreen, KYCScreen,
+ *    AgentPerformanceScreen, CustomerWalletScreen,
+ *    NotificationPreferencesScreen, MultiCurrencyScreen,
+ *    ComplianceSchedulingScreen, AuditExportScreen). Any reference to them —
+ *    even a lazy require — fails the Metro bundle, so those routes are NOT
+ *    registered. They must be restored/implemented before this app can ship;
+ *    until then the app boots into MissingModuleScreen (honest placeholder,
+ *    not a fabricated feature). Only the 19 screens that exist are
+ *    registered below.
  */
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { ActivityIndicator, View, StatusBar } from 'react-native';
+import { ActivityIndicator, View, Text, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ── Auth Screens ──────────────────────────────────────────────────────────────
-import LoginScreen from './screens/LoginScreen';
-import RegisterScreen from './screens/RegisterScreen';
-import OnboardingScreen from './screens/OnboardingScreen';
-import PinSetupScreen from './screens/PinSetupScreen';
-import BiometricSetupScreen from './screens/BiometricSetupScreen';
-import BiometricAuthScreen from './screens/BiometricAuthScreen';
-
-// ── Main Screens ──────────────────────────────────────────────────────────────
-import DashboardScreen from './screens/DashboardScreen';
-import WalletScreen from './screens/WalletScreen';
-import TransactionsScreen from './screens/TransactionsScreen';
-import TransactionHistoryScreen from './screens/TransactionHistoryScreen';
-import TransactionDetailScreen from './screens/TransactionDetailScreen';
-import TransactionDetailsScreen from './screens/TransactionDetailsScreen';
-import TransferTrackingScreen from './screens/TransferTrackingScreen';
-import ProfileScreen from './screens/ProfileScreen';
-import SettingsScreen from './screens/SettingsScreen';
-import NotificationsScreen from './screens/NotificationsScreen';
-import HelpScreen from './screens/HelpScreen';
-import SupportScreen from './screens/SupportScreen';
-
-// ── Money Movement ────────────────────────────────────────────────────────────
-import SendMoneyScreen from './screens/SendMoneyScreen';
-import ReceiveMoneyScreen from './screens/ReceiveMoneyScreen';
-import QRCodeScannerScreen from './screens/QRCodeScannerScreen';
-import ExchangeRatesScreen from './screens/ExchangeRatesScreen';
-import RateCalculatorScreen from './screens/RateCalculatorScreen';
-import RateLockScreen from './screens/RateLockScreen';
-import PaymentMethodsScreen from './screens/PaymentMethodsScreen';
-import PaymentRetryScreen from './screens/PaymentRetryScreen';
-
-// ── Beneficiaries ─────────────────────────────────────────────────────────────
-import BeneficiariesScreen from './screens/BeneficiariesScreen';
-import BeneficiaryListScreen from './screens/BeneficiaryListScreen';
-import BeneficiaryManagementScreen from './screens/BeneficiaryManagementScreen';
-import AddBeneficiaryScreen from './screens/AddBeneficiaryScreen';
-
-// ── Financial Products ────────────────────────────────────────────────────────
-import CardsScreen from './screens/CardsScreen';
-import VirtualCardScreen from './screens/VirtualCardScreen';
-import SavingsGoalsScreen from './screens/SavingsGoalsScreen';
-import RecurringPaymentsScreen from './screens/RecurringPaymentsScreen';
-import ReferralProgramScreen from './screens/ReferralProgramScreen';
-
-/// ── Compliance ────────────────────────────────────────────────────────────
-import KYCScreen from './screens/KYCScreen';
-import KYCVerificationScreen from './screens/KYCVerificationScreen';
-import SecuritySettingsScreen from './screens/SecuritySettingsScreen';
-
-// ── Mobile Parity (12 new screens) ───────────────────────────────────────
-import AgentPerformanceScreen from './screens/AgentPerformanceScreen';
-import CustomerWalletScreen from './screens/CustomerWalletScreen';
-import NotificationPreferencesScreen from './screens/NotificationPreferencesScreen';
-import MultiCurrencyScreen from './screens/MultiCurrencyScreen';
-import ComplianceSchedulingScreen from './screens/ComplianceSchedulingScreen';
-import AuditExportScreen from './screens/AuditExportScreen';
-
 // ── Type definitions ──────────────────────────────────────────────────────────
+// (Routes for not-yet-implemented screens are kept as types only — types are
+// erased at compile time and cost nothing at runtime.)
 export type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;
@@ -112,6 +77,7 @@ export type RootStackParamList = {
   MultiCurrency: undefined;
   ComplianceScheduling: undefined;
   AuditExport: undefined;
+  Boot: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -123,6 +89,24 @@ function SplashScreen() {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
       <ActivityIndicator size="large" color="#3b82f6" />
+    </View>
+  );
+}
+
+// ── Honest placeholder for the not-yet-implemented auth/dashboard flow ──────
+// The Login/Onboarding/Dashboard screens are absent from the repo (see the
+// PERF-BLOCKER note above); rather than fabricate them, the app says so.
+function MissingModuleScreen() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a', padding: 32 }}>
+      <Text style={{ color: '#f8fafc', fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 12 }}>
+        InsurePortal Remittance
+      </Text>
+      <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+        This build is incomplete: the onboarding, login and dashboard modules
+        are missing from the repository. Please restore those screens before
+        shipping.
+      </Text>
     </View>
   );
 }
@@ -149,11 +133,14 @@ export default function App() {
 
   if (isLoading) return <SplashScreen />;
 
+  // The previous initial routes (Dashboard / Onboarding) reference screens
+  // that do not exist; authenticated users land on TransactionHistory (an
+  // existing screen) until the missing modules are restored.
   return (
     <NavigationContainer>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <Stack.Navigator
-        initialRouteName={isAuthenticated ? 'Dashboard' : 'Onboarding'}
+        initialRouteName={isAuthenticated ? 'TransactionHistory' : 'Boot'}
         screenOptions={{
           headerStyle: { backgroundColor: '#0f172a' },
           headerTintColor: '#f8fafc',
@@ -161,63 +148,34 @@ export default function App() {
           cardStyle: { backgroundColor: '#0f172a' },
         }}
       >
-        {/* ── Auth flow ─────────────────────────────────────────────────── */}
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Register" component={RegisterScreen} options={{ title: 'Create Account' }} />
-        <Stack.Screen name="PinSetup" component={PinSetupScreen} options={{ title: 'Set PIN' }} />
-        <Stack.Screen name="BiometricSetup" component={BiometricSetupScreen} options={{ title: 'Enable Biometrics' }} />
-        <Stack.Screen name="BiometricAuth" component={BiometricAuthScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Boot" component={MissingModuleScreen} options={{ headerShown: false }} />
 
-        {/* ── Main app ──────────────────────────────────────────────────── */}
-        <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: 'My Wallet' }} />
-        <Stack.Screen name="Transactions" component={TransactionsScreen} options={{ title: 'Transactions' }} />
-        <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ title: 'History' }} />
-        <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ title: 'Transaction' }} />
-        <Stack.Screen name="TransactionDetails" component={TransactionDetailsScreen} options={{ title: 'Details' }} />
-        <Stack.Screen name="TransferTracking" component={TransferTrackingScreen} options={{ title: 'Track Transfer' }} />
-        <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'My Profile' }} />
-        <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
-        <Stack.Screen name="Help" component={HelpScreen} options={{ title: 'Help & FAQ' }} />
-        <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support' }} />
-
-        {/* ── Money movement ────────────────────────────────────────────── */}
-        <Stack.Screen name="SendMoney" component={SendMoneyScreen} options={{ title: 'Send Money' }} />
-        <Stack.Screen name="ReceiveMoney" component={ReceiveMoneyScreen} options={{ title: 'Receive Money' }} />
-        <Stack.Screen name="QRCodeScanner" component={QRCodeScannerScreen} options={{ title: 'Scan QR' }} />
-        <Stack.Screen name="ExchangeRates" component={ExchangeRatesScreen} options={{ title: 'Exchange Rates' }} />
-        <Stack.Screen name="RateCalculator" component={RateCalculatorScreen} options={{ title: 'Rate Calculator' }} />
-        <Stack.Screen name="RateLock" component={RateLockScreen} options={{ title: 'Lock Rate' }} />
-        <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={{ title: 'Payment Methods' }} />
-        <Stack.Screen name="PaymentRetry" component={PaymentRetryScreen} options={{ title: 'Retry Payment' }} />
-
-        {/* ── Beneficiaries ─────────────────────────────────────────────── */}
-        <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} options={{ title: 'Beneficiaries' }} />
-        <Stack.Screen name="BeneficiaryList" component={BeneficiaryListScreen} options={{ title: 'My Beneficiaries' }} />
-        <Stack.Screen name="BeneficiaryManagement" component={BeneficiaryManagementScreen} options={{ title: 'Manage Beneficiaries' }} />
-        <Stack.Screen name="AddBeneficiary" component={AddBeneficiaryScreen} options={{ title: 'Add Beneficiary' }} />
-
-        {/* ── Financial products ────────────────────────────────────────── */}
-        <Stack.Screen name="Cards" component={CardsScreen} options={{ title: 'My Cards' }} />
-        <Stack.Screen name="VirtualCard" component={VirtualCardScreen} options={{ title: 'Virtual Card' }} />
-        <Stack.Screen name="SavingsGoals" component={SavingsGoalsScreen} options={{ title: 'Savings Goals' }} />
-        <Stack.Screen name="RecurringPayments" component={RecurringPaymentsScreen} options={{ title: 'Recurring Payments' }} />
-        <Stack.Screen name="ReferralProgram" component={ReferralProgramScreen} options={{ title: 'Refer & Earn' }} />
-
-        {/* ── Compliance ────────────────────────────────────────────────── */}
-        <Stack.Screen name="KYC" component={KYCScreen} options={{ title: 'Verify Identity' }} />
-        <Stack.Screen name="KYCVerification" component={KYCVerificationScreen} options={{ title: 'Document Verification' }} />
-        <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} options={{ title: 'Security' }} />
-
-        {/* ── Mobile Parity ─────────────────────────────────────────────── */}
-        <Stack.Screen name="AgentPerformance" component={AgentPerformanceScreen} options={{ title: 'Agent Performance' }} />
-        <Stack.Screen name="CustomerWallet" component={CustomerWalletScreen} options={{ title: 'Customer Wallet' }} />
-        <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} options={{ title: 'Notification Preferences' }} />
-        <Stack.Screen name="MultiCurrency" component={MultiCurrencyScreen} options={{ title: 'Multi-Currency' }} />
-        <Stack.Screen name="ComplianceScheduling" component={ComplianceSchedulingScreen} options={{ title: 'Compliance Scheduling' }} />
-        <Stack.Screen name="AuditExport" component={AuditExportScreen} options={{ title: 'Audit Export' }} />
+        {/* ── Existing screens, lazily registered (module eval deferred) ── */}
+        <Stack.Screen name="PinSetup" getComponent={() => require('./screens/PinSetupScreen').default} options={{ title: 'Set PIN' }} />
+        {/* 2026-09-19 (verifier fix): BiometricSetup/TransactionDetails/
+            PaymentRetry/AddBeneficiary screen modules export NAMED components
+            only — `.default` resolves to undefined and crashes on navigation. */}
+        <Stack.Screen name="BiometricSetup" getComponent={() => require('./screens/BiometricSetupScreen').BiometricSetupScreen} options={{ title: 'Enable Biometrics' }} />
+        <Stack.Screen name="BiometricAuth" getComponent={() => require('./screens/BiometricAuthScreen').default} options={{ headerShown: false }} />
+        <Stack.Screen name="TransactionHistory" getComponent={() => require('./screens/TransactionHistoryScreen').default} options={{ title: 'History' }} />
+        {/* 2026-09-22: TransactionDetailsScreen is a NAMED export too (this
+            registration was missed by the 2026-09-19 fix; it is on the primary
+            path — TransactionHistoryScreen row tap navigates here). */}
+        <Stack.Screen name="TransactionDetails" getComponent={() => require('./screens/TransactionDetailsScreen').TransactionDetailsScreen} options={{ title: 'Details' }} />
+        <Stack.Screen name="TransferTracking" getComponent={() => require('./screens/TransferTrackingScreen').default} options={{ title: 'Track Transfer' }} />
+        <Stack.Screen name="Settings" getComponent={() => require('./screens/SettingsScreen').default} options={{ title: 'Settings' }} />
+        <Stack.Screen name="SendMoney" getComponent={() => require('./screens/SendMoneyScreen').default} options={{ title: 'Send Money' }} />
+        <Stack.Screen name="QRCodeScanner" getComponent={() => require('./screens/QRCodeScannerScreen').default} options={{ title: 'Scan QR' }} />
+        <Stack.Screen name="RateLock" getComponent={() => require('./screens/RateLockScreen').default} options={{ title: 'Lock Rate' }} />
+        <Stack.Screen name="PaymentMethods" getComponent={() => require('./screens/PaymentMethodsScreen').default} options={{ title: 'Payment Methods' }} />
+        <Stack.Screen name="PaymentRetry" getComponent={() => require('./screens/PaymentRetryScreen').PaymentRetryScreen} options={{ title: 'Retry Payment' }} />
+        <Stack.Screen name="AddBeneficiary" getComponent={() => require('./screens/AddBeneficiaryScreen').AddBeneficiaryScreen} options={{ title: 'Add Beneficiary' }} />
+        <Stack.Screen name="VirtualCard" getComponent={() => require('./screens/VirtualCardScreen').default} options={{ title: 'Virtual Card' }} />
+        <Stack.Screen name="SavingsGoals" getComponent={() => require('./screens/SavingsGoalsScreen').default} options={{ title: 'Savings Goals' }} />
+        <Stack.Screen name="RecurringPayments" getComponent={() => require('./screens/RecurringPaymentsScreen').default} options={{ title: 'Recurring Payments' }} />
+        <Stack.Screen name="ReferralProgram" getComponent={() => require('./screens/ReferralProgramScreen').default} options={{ title: 'Refer & Earn' }} />
+        <Stack.Screen name="KYCVerification" getComponent={() => require('./screens/KYCVerificationScreen').default} options={{ title: 'Document Verification' }} />
+        <Stack.Screen name="SecuritySettings" getComponent={() => require('./screens/SecuritySettingsScreen').default} options={{ title: 'Security' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -9,6 +9,35 @@ export class APIClient {
   // Production:  set REACT_NATIVE_API_BASE_URL env var or update below.
   private baseURL: string = (process.env.REACT_NATIVE_API_BASE_URL as string) ?? 'https://api.insureportal.io/v1';
 
+  // 2026-09-19 (P-wave): in-memory caches for the auth token and device ID.
+  // Previously EVERY request awaited two AsyncStorage reads (disk/bridge
+  // round-trips). undefined = not yet hydrated from storage; call
+  // invalidateTokenCache() on logout/token refresh.
+  private cachedToken: string | null | undefined;
+  private cachedDeviceId: string | null | undefined;
+
+  /**
+   * Invalidate the token cache AND remove the persisted token (logout/token
+   * refresh). 2026-09-19 (verifier fix): previously this only reset the
+   * in-memory cache to undefined, so the next request re-hydrated the SAME
+   * logged-out token from AsyncStorage and kept sending it. cachedToken is
+   * set to null (not undefined) so no re-hydration occurs after invalidation.
+   */
+  public async invalidateTokenCache(): Promise<void> {
+    this.cachedToken = null;
+    await AsyncStorage.removeItem('auth_token');
+  }
+
+  /** Store a new token: persists to AsyncStorage and updates the cache. */
+  public async setToken(token: string | null): Promise<void> {
+    this.cachedToken = token;
+    if (token === null) {
+      await AsyncStorage.removeItem('auth_token');
+    } else {
+      await AsyncStorage.setItem('auth_token', token);
+    }
+  }
+
   async get(endpoint: string): Promise<any> {
     return this.request('GET', endpoint);
   }
@@ -26,7 +55,10 @@ export class APIClient {
   }
 
   private async request(method: string, endpoint: string, data?: any): Promise<any> {
-    const token = await AsyncStorage.getItem('auth_token');
+    if (this.cachedToken === undefined) {
+      this.cachedToken = await AsyncStorage.getItem('auth_token'); // one-time hydrate
+    }
+    const token = this.cachedToken;
     const deviceId = await this.getDeviceId();
 
     const headers: Record<string, string> = {
@@ -69,11 +101,15 @@ export class APIClient {
   }
 
   private async getDeviceId(): Promise<string> {
+    if (this.cachedDeviceId !== undefined) {
+      return this.cachedDeviceId;
+    }
     let deviceId = await AsyncStorage.getItem('device_id');
     if (!deviceId) {
       deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       await AsyncStorage.setItem('device_id', deviceId);
     }
+    this.cachedDeviceId = deviceId;
     return deviceId;
   }
 
@@ -91,7 +127,11 @@ export class POSInsurePortalAPIClient extends APIClient {
   async register(data: { phone: string; bvn: string; nin: string; firstName: string; lastName: string }) { return this.post('/auth/register', data); }
   async verifyOTP(phone: string, otp: string) { return this.post('/auth/verify-otp', { phone, otp }); }
   async refreshToken() { return this.post('/auth/refresh', {}); }
-  async logout() { return this.post('/auth/logout', {}); }
+  async logout() {
+    const res = await this.post('/auth/logout', {});
+    await this.invalidateTokenCache(); // clears AsyncStorage 'auth_token' too
+    return res;
+  }
 
   // Transactions
   async cashIn(data: { amount: number; customerPhone: string; reference: string }) { return this.post('/transactions/cash-in', data); }

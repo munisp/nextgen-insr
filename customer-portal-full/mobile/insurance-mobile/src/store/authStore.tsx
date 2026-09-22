@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ReactNativeBiometrics from 'react-native-biometrics';
-import { authApi } from '../services/api';
+import { authApi, setCachedTokens, clearCachedTokens } from '../services/api';
 
 interface User {
   id: string;
@@ -52,29 +52,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     checkAuth();
+    // Biometric sensor check deferred: it must not gate first paint.
+    // (P-wave, 2026-09-19)
     checkBiometricCapability();
   }, []);
 
   async function checkAuth() {
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      // 2026-09-19 (P-wave): parallel storage reads instead of a sequential
+      // waterfall, and first paint is gated ONLY on local storage — the
+      // profile refresh runs in the background and never holds up isLoading.
+      const [token, cachedUser] = await Promise.all([
+        AsyncStorage.getItem(TOKEN_KEY),
+        AsyncStorage.getItem(USER_KEY),
+      ]);
+      setCachedTokens(token);
       if (token) {
-        const cachedUser = await AsyncStorage.getItem(USER_KEY);
-        if (cachedUser) {
-          setState((prev) => ({
-            ...prev,
-            user: JSON.parse(cachedUser),
-            isAuthenticated: true,
-            isLoading: false,
-          }));
-        }
-        try {
-          const { data } = await authApi.getProfile();
-          await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
-          setState((prev) => ({ ...prev, user: data.user, isAuthenticated: true, isLoading: false }));
-        } catch {
-          setState((prev) => ({ ...prev, isLoading: false }));
-        }
+        const user = cachedUser ? JSON.parse(cachedUser) : null;
+        // Render the cached user immediately; refresh in background.
+        setState((prev) => ({
+          ...prev,
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+        }));
+        authApi.getProfile()
+          .then(async ({ data }) => {
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
+            setState((prev) => ({ ...prev, user: data.user, isAuthenticated: true }));
+          })
+          .catch(() => { /* offline/stale profile: cached user stays */ });
       } else {
         setState((prev) => ({ ...prev, isLoading: false }));
       }
@@ -99,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TOKEN_KEY, data.accessToken);
     await AsyncStorage.setItem(REFRESH_KEY, data.refreshToken);
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    setCachedTokens(data.accessToken, data.refreshToken);
     setState((prev) => ({ ...prev, user: data.user, isAuthenticated: true }));
   }, []);
 
@@ -114,11 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TOKEN_KEY, data.accessToken);
     await AsyncStorage.setItem(REFRESH_KEY, data.refreshToken);
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    setCachedTokens(data.accessToken, data.refreshToken);
     setState((prev) => ({ ...prev, user: data.user, isAuthenticated: true }));
   }, []);
 
   const logout = useCallback(async () => {
     await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY, USER_KEY]);
+    clearCachedTokens();
     setState((prev) => ({ ...prev, user: null, isAuthenticated: false }));
   }, []);
 
@@ -143,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.error) throw new Error(data.error);
     await AsyncStorage.setItem(TOKEN_KEY, data.token || data.accessToken);
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(data));
+    setCachedTokens(data.token || data.accessToken);
     setState((prev) => ({ ...prev, user: data, isAuthenticated: true }));
   }, []);
 
@@ -161,8 +172,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const kycPassed = state.user?.kycVerified ?? (state.user as any)?.kycPassed ?? true;
 
+  // 2026-09-19 (P-wave): memoize the context value. Previously a fresh
+  // object every render re-rendered every consumer (the whole app tree) on
+  // any auth-state tick.
+  const value = useMemo<AuthContextType>(() => ({
+    ...state,
+    login,
+    signup,
+    verify2FA,
+    loginWithBiometric,
+    logout,
+    enableBiometric,
+    disableBiometric,
+    refreshProfile,
+    kycPassed,
+  }), [state, login, signup, verify2FA, loginWithBiometric, logout, enableBiometric, disableBiometric, refreshProfile, kycPassed]);
+
   return (
-    <AuthContext.Provider value={{ ...state, login, signup, verify2FA, loginWithBiometric, logout, enableBiometric, disableBiometric, refreshProfile, kycPassed }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

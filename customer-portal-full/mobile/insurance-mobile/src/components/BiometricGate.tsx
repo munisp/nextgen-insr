@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useAuth } from '../store/authStore';
 
 export function BiometricGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, biometricEnabled, biometricType, loginWithBiometric, isLoading } = useAuth();
+  const { isAuthenticated, biometricEnabled, biometricType, loginWithBiometric } = useAuth();
   const [biometricFailed, setBiometricFailed] = useState(false);
 
   useEffect(() => {
@@ -20,15 +20,11 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (isLoading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading InsurePortal...</Text>
-      </View>
-    );
-  }
-
+  // 2026-09-19 (P-wave): no loading spinner here — first paint must not block
+  // on auth boot or the biometric sensor check. Children render immediately;
+  // while unauthenticated the navigator shows the auth stack anyway. The
+  // biometric prompt is only a gate once it has actually been attempted and
+  // failed (a protected action), not a blanket paint blocker.
   if (biometricFailed && biometricEnabled) {
     return (
       <View style={styles.container}>
