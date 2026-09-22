@@ -26,6 +26,8 @@ import {
   tbGetAgentBalance as getAgentBalance,
   tbGetSyncStatus as getSyncStatus,
   TBLedgerUnavailableError,
+  __tbEnsuredAccountsForTests,
+  __tbRegistryCacheForTests,
 } from "./tbClient";
 
 // ── Helper: mock a successful fetch ──────────────────────────────────────────
@@ -53,6 +55,13 @@ function mockFetchNotOk(status = 500) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // 2026-09-22 P-wave: the perf caches (ensured-account 5min, committed-registry
+  // 60s) leak across tests otherwise — a prior test's successful ensure made the
+  // fail-closed "sidecar unreachable" case resolve from cache instead of hitting
+  // fetch. Clearing keeps each test's fetch mock authoritative; production
+  // fail-closed semantics are unchanged (failures are never cached).
+  __tbEnsuredAccountsForTests.cache.clear();
+  __tbRegistryCacheForTests.cache.clear();
 });
 
 // ── 1-4. tbIsHealthy ─────────────────────────────────────────────────────────
@@ -197,3 +206,4 @@ describe("getSyncStatus", () => {
     expect(result).toBeNull();
   });
 });
+
