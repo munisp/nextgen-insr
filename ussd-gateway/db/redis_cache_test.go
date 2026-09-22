@@ -40,7 +40,10 @@ func TestIsRateLimitedAlwaysSetsTTL(t *testing.T) {
 
 	// Simulate a key that somehow lost its TTL (e.g. restored from an old
 	// RDB snapshot): the next increment must re-arm the TTL.
-	mr.Set(key, "5") // SET clears any existing TTL
+	// 2026-09-22 P-wave fix: check miniredis Set error (errcheck gate)
+	if err := mr.Set(key, "5"); err != nil { // SET clears any existing TTL
+		t.Fatalf("miniredis Set: %v", err)
+	}
 	if rc.IsRateLimited(ctx, phone) {
 		t.Fatal("count 6 unexpectedly throttled")
 	}
@@ -77,3 +80,4 @@ func TestIsRateLimitedThrottleLimitUnchanged(t *testing.T) {
 		}
 	}
 }
+
