@@ -5,6 +5,25 @@ const API_BASE = process.env.API_URL || 'https://api.insureportal.ng';
 const TOKEN_KEY = '@insureportal/auth_token';
 const REFRESH_KEY = '@insureportal/refresh_token';
 
+// ── In-memory token cache (P-wave, 2026-09-19) ──────────────────────────────
+// Previously every request awaited AsyncStorage.getItem(TOKEN_KEY) in the
+// request interceptor — a disk/bridge round-trip on EVERY API call. Tokens
+// are now cached in memory (undefined = not yet loaded from storage) and
+// synchronously invalidated on logout / refresh / 401-recovery.
+// AsyncStorage remains the persistent source of truth across restarts.
+let cachedToken: string | null | undefined;
+let cachedRefreshToken: string | null | undefined;
+
+export function setCachedTokens(accessToken: string | null, refreshToken?: string | null) {
+  cachedToken = accessToken;
+  if (refreshToken !== undefined) cachedRefreshToken = refreshToken;
+}
+
+export function clearCachedTokens() {
+  cachedToken = null;
+  cachedRefreshToken = null;
+}
+
 export const api = axios.create({
   baseURL: API_BASE,
   timeout: 30_000,
@@ -12,9 +31,11 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (cachedToken === undefined) {
+    cachedToken = await AsyncStorage.getItem(TOKEN_KEY); // one-time hydrate
+  }
+  if (cachedToken && config.headers) {
+    config.headers.Authorization = `Bearer ${cachedToken}`;
   }
   return config;
 });
@@ -26,14 +47,18 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && original && !('_retry' in original)) {
       (original as Record<string, unknown>)._retry = true;
       try {
-        const refreshToken = await AsyncStorage.getItem(REFRESH_KEY);
-        const { data } = await axios.post(`${API_BASE}/api/v1/auth/refresh`, { refreshToken });
+        if (cachedRefreshToken === undefined) {
+          cachedRefreshToken = await AsyncStorage.getItem(REFRESH_KEY);
+        }
+        const { data } = await axios.post(`${API_BASE}/api/v1/auth/refresh`, { refreshToken: cachedRefreshToken });
         await AsyncStorage.setItem(TOKEN_KEY, data.accessToken);
         await AsyncStorage.setItem(REFRESH_KEY, data.refreshToken);
+        setCachedTokens(data.accessToken, data.refreshToken);
         if (original.headers) original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch {
         await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
+        clearCachedTokens();
       }
     }
     return Promise.reject(error);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { policyApi } from '../services/api';
@@ -15,6 +15,33 @@ interface Policy {
   endDate: string;
   coverageAmount: number;
 }
+
+// 2026-09-19 (P-wave): hoisted — was recreated on every render.
+const STATUS_COLOR: Record<string, string> = { active: '#16a34a', expired: '#dc2626', pending: '#eab308', cancelled: '#64748b' };
+
+// Memoized row: a keystroke in search no longer re-renders every card.
+const PolicyCard = React.memo(function PolicyCard({ item, onPress }: { item: Policy; onPress: (id: string) => void }) {
+  const handlePress = useCallback(() => onPress(item.id), [onPress, item.id]);
+  return (
+    <TouchableOpacity style={styles.policyCard} onPress={handlePress}>
+      <View style={styles.policyHeader}>
+        <Text style={styles.policyType}>{item.type}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[item.status] + '20' }]}>
+          <Text style={[styles.statusText, { color: STATUS_COLOR[item.status] }]}>{item.status}</Text>
+        </View>
+      </View>
+      <Text style={styles.policyNumber}>{item.policyNumber}</Text>
+      <Text style={styles.provider}>{item.provider}</Text>
+      <View style={styles.policyFooter}>
+        <Text style={styles.premium}>₦{item.premiumAmount?.toLocaleString()}/yr</Text>
+        <Text style={styles.coverage}>Coverage: ₦{(item.coverageAmount / 1_000_000).toFixed(1)}M</Text>
+      </View>
+      <Text style={styles.dates}>{new Date(item.startDate).toLocaleDateString()} — {new Date(item.endDate).toLocaleDateString()}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const keyExtractor = (item: Policy) => item.id;
 
 export function PoliciesScreen({ navigation }: { navigation: any }) {
   const [search, setSearch] = useState('');
@@ -34,14 +61,25 @@ export function PoliciesScreen({ navigation }: { navigation: any }) {
     },
   });
 
-  const policies: Policy[] = data?.policies || [];
-  const filtered = policies.filter((p) => {
-    if (filter !== 'all' && p.status !== filter) return false;
-    if (search && !p.policyNumber.toLowerCase().includes(search.toLowerCase()) && !p.type.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const policies: Policy[] = useMemo(() => data?.policies || [], [data]);
 
-  const statusColor: Record<string, string> = { active: '#16a34a', expired: '#dc2626', pending: '#eab308', cancelled: '#64748b' };
+  // 2026-09-19 (P-wave): filter memoized — was recomputed on every render.
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return policies.filter((p) => {
+      if (filter !== 'all' && p.status !== filter) return false;
+      if (q && !p.policyNumber.toLowerCase().includes(q) && !p.type.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [policies, filter, search]);
+
+  const handleCardPress = useCallback((id: string) => {
+    navigation.navigate('PolicyDetail', { policyId: id });
+  }, [navigation]);
+
+  const renderItem = useCallback(({ item }: { item: Policy }) => (
+    <PolicyCard item={item} onPress={handleCardPress} />
+  ), [handleCardPress]);
 
   return (
     <View style={styles.container}>
@@ -62,24 +100,12 @@ export function PoliciesScreen({ navigation }: { navigation: any }) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.policyCard} onPress={() => navigation.navigate('PolicyDetail', { policyId: item.id })}>
-            <View style={styles.policyHeader}>
-              <Text style={styles.policyType}>{item.type}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusColor[item.status] + '20' }]}>
-                <Text style={[styles.statusText, { color: statusColor[item.status] }]}>{item.status}</Text>
-              </View>
-            </View>
-            <Text style={styles.policyNumber}>{item.policyNumber}</Text>
-            <Text style={styles.provider}>{item.provider}</Text>
-            <View style={styles.policyFooter}>
-              <Text style={styles.premium}>₦{item.premiumAmount?.toLocaleString()}/yr</Text>
-              <Text style={styles.coverage}>Coverage: ₦{(item.coverageAmount / 1_000_000).toFixed(1)}M</Text>
-            </View>
-            <Text style={styles.dates}>{new Date(item.startDate).toLocaleDateString()} — {new Date(item.endDate).toLocaleDateString()}</Text>
-          </TouchableOpacity>
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
         ListEmptyComponent={<Text style={styles.empty}>{isLoading ? 'Loading...' : 'No policies found'}</Text>}
         contentContainerStyle={{ paddingBottom: 20 }}
       />
