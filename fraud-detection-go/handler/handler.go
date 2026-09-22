@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -80,19 +81,45 @@ func velocityDimensions(input models.TransactionInput) map[string]string {
 // zero — while the remaining dimensions still decide.
 func EvaluateVelocity(ctx context.Context, store VelocityStorer, input models.TransactionInput, window time.Duration, threshold int, log *zap.Logger) VelocityResult {
 	res := VelocityResult{Dimensions: map[string]int{}}
-	for dim, id := range velocityDimensions(input) {
-		count, err := store.CheckVelocityDimension(ctx, dim, id, window)
-		if err != nil {
+	dims := velocityDimensions(input)
+
+	// 2026-09-22, perf wave P: dimension checks are independent ZCOUNTs and
+	// were executed sequentially (up to 3 serialized Redis RTTs on the
+	// fraud-score critical path, p95 budget 50 ms). They now run
+	// CONCURRENTLY — one in-flight RTT instead of three. Semantics are
+	// unchanged: a dimension whose check errors is logged loudly and
+	// skipped, remaining dimensions still decide; the breached-dimension
+	// order was already nondeterministic (Go map iteration), so concurrent
+	// aggregation does not change observable behavior.
+	type dimResult struct {
+		dim   string
+		count int
+		err   error
+	}
+	results := make(chan dimResult, len(dims))
+	var wg sync.WaitGroup
+	for dim, id := range dims {
+		wg.Add(1)
+		go func(dim, id string) {
+			defer wg.Done()
+			count, err := store.CheckVelocityDimension(ctx, dim, id, window)
+			results <- dimResult{dim: dim, count: count, err: err}
+		}(dim, id)
+	}
+	wg.Wait()
+	close(results)
+	for r := range results {
+		if r.err != nil {
 			log.Warn("velocity dimension check failed — skipping dimension (fail-loud)",
-				zap.String("dimension", dim), zap.Error(err))
+				zap.String("dimension", r.dim), zap.Error(r.err))
 			continue
 		}
-		res.Dimensions[dim] = count
-		if count > res.MaxCount {
-			res.MaxCount = count
+		res.Dimensions[r.dim] = r.count
+		if r.count > res.MaxCount {
+			res.MaxCount = r.count
 		}
-		if count+1 >= threshold {
-			res.Breached = append(res.Breached, dim)
+		if r.count+1 >= threshold {
+			res.Breached = append(res.Breached, r.dim)
 		}
 	}
 	return res
@@ -102,17 +129,29 @@ func EvaluateVelocity(ctx context.Context, store VelocityStorer, input models.Tr
 // dimension (account, IP, device) so account-switching cannot reset the
 // window.
 func TrackVelocityDimensions(ctx context.Context, store VelocityStorer, input models.TransactionInput, log *zap.Logger) error {
-	var firstErr error
-	for dim, id := range velocityDimensions(input) {
-		if err := store.TrackVelocityDimension(ctx, dim, id); err != nil {
-			log.Warn("velocity dimension track failed",
-				zap.String("dimension", dim), zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
+	// 2026-09-22, perf wave P: per-dimension tracks were sequential (up to
+	// 3 serialized RTTs); they are independent, so they now run
+	// concurrently. Same fail-loud posture and same first-error return.
+	dims := velocityDimensions(input)
+	errs := make(chan error, len(dims))
+	var wg sync.WaitGroup
+	for dim, id := range dims {
+		wg.Add(1)
+		go func(dim, id string) {
+			defer wg.Done()
+			if err := store.TrackVelocityDimension(ctx, dim, id); err != nil {
+				log.Warn("velocity dimension track failed",
+					zap.String("dimension", dim), zap.Error(err))
+				errs <- err
 			}
-		}
+		}(dim, id)
 	}
-	return firstErr
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		return err // first arrived error; all were already logged
+	}
+	return nil
 }
 
 func (s *Service) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -171,14 +210,34 @@ func (s *Service) ScoreHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Check if account is blocked
-	blocked, err := s.cache.IsBlocked(ctx, body.AccountID)
-	if err != nil {
-		s.logger.Error("check block list", zap.Error(err))
+	// Check if account is blocked — run CONCURRENTLY with the velocity
+	// evaluation below (2026-09-22, perf wave P): the two Redis reads are
+	// independent, and overlapping them removes one serialized RTT from the
+	// score path. The block check still gates the response (fail-closed on
+	// error: 503, unchanged).
+	blockedCh := make(chan struct {
+		blocked bool
+		err     error
+	}, 1)
+	go func() {
+		b, err := s.cache.IsBlocked(ctx, body.AccountID)
+		blockedCh <- struct {
+			blocked bool
+			err     error
+		}{b, err}
+	}()
+	velocityCh := make(chan VelocityResult, 1)
+	go func() {
+		velocityCh <- EvaluateVelocity(ctx, s.cache, body, s.cfg.Fraud.VelocityWindow, s.cfg.Fraud.VelocityThreshold, s.logger)
+	}()
+
+	br := <-blockedCh
+	if br.err != nil {
+		s.logger.Error("check block list", zap.Error(br.err))
 		writeError(w, http.StatusServiceUnavailable, "unable to check account status")
 		return
 	}
-	if blocked {
+	if br.blocked {
 		writeJSON(w, http.StatusForbidden, models.APIResponse{
 			Success: false,
 			Data:    models.FraudScore{Decision: "block", Details: "account is blocked"},
@@ -202,7 +261,7 @@ func (s *Service) ScoreHandler(w http.ResponseWriter, r *http.Request) {
 	// account-only windows were bypassed by switching accounts behind one
 	// IP/device. Posture unchanged: a dimension whose check fails is logged
 	// loudly and skipped; the remaining dimensions still decide.
-	velocity := EvaluateVelocity(ctx, s.cache, body, s.cfg.Fraud.VelocityWindow, s.cfg.Fraud.VelocityThreshold, s.logger)
+	velocity := <-velocityCh               // started concurrently with the block check above
 	velocityCount := velocity.MaxCount + 1 // include this transaction
 
 	if velocityCount >= s.cfg.Fraud.VelocityThreshold {
@@ -241,12 +300,22 @@ func (s *Service) ScoreHandler(w http.ResponseWriter, r *http.Request) {
 		Amount:        body.Amount,
 	}
 
-	// Persist to database
-	if err := s.store.StoreScore(ctx, fraudScore); err != nil {
-		s.logger.Error("persist score", zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "unable to persist scoring result")
-		return
-	}
+	// Persist to database — ASYNC (2026-09-22, perf wave P): the Postgres
+	// insert ran inline on the response path, adding a full PG write RTT to
+	// every score call (p95 budget 50 ms). The DECISION path is unchanged
+	// and still fail-closed (block/review/allow computed before the write);
+	// only persistence moved off-path, with a detached context (request ctx
+	// dies with the response) and loud error logging on failure.
+	// NOTE: a StoreScore failure previously produced HTTP 500; it now
+	// returns the decision and logs the persistence failure. Disclosed.
+	go func(score models.FraudScore) {
+		pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.store.StoreScore(pctx, score); err != nil {
+			s.logger.Error("persist score (async)", zap.Error(err),
+				zap.String("transaction_id", score.TransactionID))
+		}
+	}(fraudScore)
 
 	// Cache the score
 	if err := s.cache.CacheScore(ctx, fraudScore, 10*time.Minute); err != nil {

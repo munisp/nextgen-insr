@@ -7,6 +7,7 @@ package handler
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +17,11 @@ import (
 
 // memVelocityStore implements VelocityStorer with real sliding-window
 // semantics (timestamps per dimension key).
+// 2026-09-22 (perf wave P): the store gained a mutex because
+// EvaluateVelocity/TrackVelocityDimensions now call the contract
+// CONCURRENTLY (parallel dimension RTTs). Semantics unchanged.
 type memVelocityStore struct {
+	mu      sync.Mutex
 	entries map[string][]time.Time
 }
 
@@ -26,6 +31,8 @@ func newMemVelocityStore() *memVelocityStore {
 
 func (m *memVelocityStore) TrackVelocityDimension(_ context.Context, dimension, id string) error {
 	key := dimension + ":" + id
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.entries[key] = append(m.entries[key], time.Now())
 	return nil
 }
@@ -33,6 +40,8 @@ func (m *memVelocityStore) TrackVelocityDimension(_ context.Context, dimension, 
 func (m *memVelocityStore) CheckVelocityDimension(_ context.Context, dimension, id string, window time.Duration) (int, error) {
 	key := dimension + ":" + id
 	cutoff := time.Now().Add(-window)
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	n := 0
 	for _, t := range m.entries[key] {
 		if t.After(cutoff) {

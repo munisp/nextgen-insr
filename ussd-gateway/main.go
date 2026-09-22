@@ -56,6 +56,11 @@ type Config struct {
 	// self-declared strings.
 	EnhancedKYCURL string
 	EnhancedKYCKey string
+	// KYCVerifyTimeout caps the ussd→enhanced-kyc-kyb verification call.
+	// USSD end-to-end budget is 1.5 s, so this must fail FAST with an honest
+	// error instead of blocking a session step for 10 s+ (2026-09-22, perf
+	// wave P — was a 10 s timeout with a fresh http.Client per call).
+	KYCVerifyTimeout time.Duration
 }
 
 func loadConfig() Config {
@@ -103,6 +108,10 @@ func loadConfig() Config {
 	cfg.APIKey = os.Getenv("USSD_API_KEY")
 	cfg.EnhancedKYCURL = os.Getenv("ENHANCED_KYC_URL")
 	cfg.EnhancedKYCKey = os.Getenv("ENHANCED_KYC_API_KEY")
+	cfg.KYCVerifyTimeout = 800 * time.Millisecond
+	if v, err := time.ParseDuration(os.Getenv("KYC_VERIFY_TIMEOUT")); err == nil && v > 0 {
+		cfg.KYCVerifyTimeout = v
+	}
 
 	return cfg
 }
@@ -145,6 +154,13 @@ type Application struct {
 	redis *db.RedisCache
 	pg    *db.PostgresStore
 	quit  chan struct{}
+	// kycClient is a shared keep-alive HTTP client for the
+	// ussd→enhanced-kyc-kyb verification call (2026-09-22, perf wave P —
+	// was a fresh &http.Client{} per verification, paying a full TCP
+	// handshake per call on a latency-critical path).
+	kycClient *http.Client
+	// pgWriteSem bounds async write-behind Postgres session saves.
+	pgWriteSem chan struct{}
 }
 
 func newApp(cfg Config, log *zap.Logger) *Application {
@@ -152,6 +168,15 @@ func newApp(cfg Config, log *zap.Logger) *Application {
 		cfg:  cfg,
 		log:  log,
 		quit: make(chan struct{}),
+		kycClient: &http.Client{
+			Timeout: cfg.KYCVerifyTimeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        50,
+				MaxIdleConnsPerHost: 16,
+				IdleConnTimeout:     60 * time.Second,
+			},
+		},
+		pgWriteSem: make(chan struct{}, 64),
 	}
 }
 
@@ -241,8 +266,10 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 		}, nil
 	}
 
-	// Refresh TTL
-	_ = app.redis.TouchSession(ctx, sess.SessionID)
+	// TTL refresh: StoreSession in saveSession re-SETs the key with the full
+	// sessionTTL at the end of every processed step, so the separate
+	// TouchSession EXPIRE round-trip here was redundant (2026-09-22, perf
+	// wave P — removed to save one Redis RTT per step).
 	sess.ExpiresAt = time.Now().Add(180 * time.Second)
 
 	switch sess.State {
@@ -549,6 +576,7 @@ func (app *Application) renderAgentFloatConfirm(sess *models.SessionData) models
 	sb.WriteString("FLOAT CLAIM SUMMARY\n\n")
 	sb.WriteString(fmt.Sprintf("Current balance: ₦%s\n", formatCurrency(balanceBefore)))
 	sb.WriteString(fmt.Sprintf("Claim amount:  ₦%s\n", formatCurrency(amount)))
+
 	sb.WriteString(fmt.Sprintf("New balance:   ₦%s\n\n", formatCurrency(balanceBefore-amount)))
 	sb.WriteString("1. Confirm\n0. Cancel")
 
@@ -758,10 +786,13 @@ func (app *Application) verifyNationalID(idNumber, fullName string) (bool, error
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+app.cfg.EnhancedKYCKey)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	// Shared keep-alive client, fail-fast timeout (default 800 ms) aligned to
+	// the 1.5 s USSD end-to-end budget. A timeout returns an honest error
+	// (fail-closed: verification does NOT pass) rather than hanging the
+	// session step until the MNO drops it.
+	resp, err := app.kycClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("identity verification request failed: %w", err)
+		return false, fmt.Errorf("identity verification request failed (timeout budget %s): %w", app.cfg.KYCVerifyTimeout, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusBadRequest {
@@ -1399,13 +1430,37 @@ func (app *Application) getOrCreateSession(ctx context.Context, req *models.USSD
 	return sess, nil
 }
 
-// saveSession persists a session to both Redis and Postgres.
+// saveSession persists a session to Redis synchronously and to Postgres
+// write-behind (2026-09-22, perf wave P). Session-integrity rationale:
+// Redis is the authoritative session store — getOrCreateSession reads
+// Redis first and only falls back to the Postgres copy when Redis has no
+// record (crash recovery / telco SessionID rotation, NG-2/NG-3). The PG
+// copy is therefore allowed to lag by one step without violating session
+// integrity, so the PG upsert no longer blocks the USSD response path. The
+// write is detached from the request context (which dies with the
+// response), bounded by pgWriteSem, and failures are logged loudly.
 func (app *Application) saveSession(ctx context.Context, sess *models.SessionData) error {
 	if err := app.redis.StoreSession(ctx, sess); err != nil {
 		return err
 	}
 	if app.pg != nil {
-		_ = app.pg.SaveSessionState(ctx, sess.SessionID, sess.PhoneNumber, sess.State, sess.Data, 180*time.Second)
+		select {
+		case app.pgWriteSem <- struct{}{}:
+		default:
+			app.log.Warn("pg session write-behind queue full — dropping (redis is authoritative)",
+				zap.String("session_id", sess.SessionID))
+			return nil
+		}
+		data := sess.Data // capture; SessionData is not mutated after save
+		go func(sessionID, phone, state string, data map[string]interface{}) {
+			defer func() { <-app.pgWriteSem }()
+			wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := app.pg.SaveSessionState(wctx, sessionID, phone, state, data, 180*time.Second); err != nil {
+				app.log.Warn("pg session write-behind failed (redis is authoritative)",
+					zap.String("session_id", sessionID), zap.Error(err))
+			}
+		}(sess.SessionID, sess.PhoneNumber, sess.State, data)
 	}
 	return nil
 }

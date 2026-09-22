@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,17 +21,18 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
+	"github.com/segmentio/kafka-go"
 )
 
 // context keys (SA1029: typed keys to avoid collisions)
 type ctxKey string
 
 const (
-	ctxKeyRoles ctxKey = "roles"
+	ctxKeyRoles    ctxKey = "roles"
 	ctxKeyTenantId ctxKey = "tenant_id"
-	ctxKeyUserId ctxKey = "user_id"
+	ctxKeyUserId   ctxKey = "user_id"
 )
-
 
 var db *sql.DB
 
@@ -273,12 +273,18 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
+	// 2026-09-19 perf: the previous SELECT COUNT(*) scanned the whole table
+	// on every list request. Use the planner estimate (pg_class.reltuples,
+	// maintained by ANALYZE/autovacuum) and fall back to an exact count only
+	// when no estimate exists yet (fresh table before first ANALYZE).
 	var total int
-	err := db.QueryRow("SELECT COUNT(*) FROM instant_payouts").Scan(&total)
-	if err != nil {
-		atomic.AddInt64(&errCount, 1)
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
-		return
+	err := db.QueryRow("SELECT GREATEST(reltuples::bigint, 0) FROM pg_class WHERE relname = 'instant_payouts' AND relnamespace = current_schema()::regnamespace").Scan(&total)
+	if err != nil || total == 0 {
+		if err2 := db.QueryRow("SELECT COUNT(*) FROM instant_payouts").Scan(&total); err2 != nil {
+			atomic.AddInt64(&errCount, 1)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err2.Error()), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	rows, err := db.Query("SELECT id, claim_id, customer_id, amount, currency, channel, status, created_at FROM instant_payouts ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
@@ -726,146 +732,100 @@ func verifyClaimForPayout(ctx context.Context, claimRef string) (*verifiedClaim,
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient *redisPool
+	redisClient *redisCache
 	kafkaWriter *kafkaProducer
 	osClient    *opensearchClient
 )
 
-type redisPool struct {
-	addr     string
-	password string
-	conn     net.Conn
-	mu       sync.Mutex
-	cbOpen   bool
-	cbUntil  time.Time
+// redisCache wraps a pooled go-redis client. 2026-09-19 perf: replaces the
+// previous hand-rolled "pool" (a single net.Conn guarded by one sync.Mutex
+// with a 4 KB read buffer) which serialized every cache operation in the
+// service through one TCP connection and corrupted values >4 KB. go-redis
+// gives a real connection pool, pipelining support and correct RESP parsing.
+// Cache semantics are unchanged: a Redis error degrades to a cache miss /
+// dropped write, never a request failure.
+type redisCache struct {
+	client *redis.Client
 }
 
-func newRedisPool(addr, password string) *redisPool {
-	r := &redisPool{addr: addr, password: password}
-	go r.connect()
-	return r
+func newRedisCache(addr, password string) *redisCache {
+	client := redis.NewClient(&redis.Options{
+		Addr:         addr,
+		Password:     password,
+		PoolSize:     20,
+		MinIdleConns: 4,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", addr)
+	} else {
+		jsonLog("info", "redis_connected", "addr", addr)
+	}
+	return &redisCache{client: client}
 }
-func (r *redisPool) connect() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.conn != nil {
-		return
-	}
-	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
-	if err != nil {
-		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
-		r.cbOpen = true
-		r.cbUntil = time.Now().Add(30 * time.Second)
-		return
-	}
-	if r.password != "" {
-		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
-		buf := make([]byte, 128)
-		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		_, _ = conn.Read(buf)
-	}
-	r.conn = conn
-	r.cbOpen = false
-	jsonLog("info", "redis_connected", "addr", r.addr)
-}
-func (r *redisPool) respCmd(args ...string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) {
-		return "", fmt.Errorf("circuit open")
-	}
-	if r.conn == nil {
-		r.mu.Unlock()
-		r.connect()
-		r.mu.Lock()
-		if r.conn == nil {
-			return "", fmt.Errorf("not connected")
-		}
-	}
-	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args {
-		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
-	}
-	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-	_, err := fmt.Fprint(r.conn, cmd)
-	if err != nil {
-		_ = r.conn.Close()
-		r.conn = nil
-		r.cbOpen = true
-		r.cbUntil = time.Now().Add(30 * time.Second)
-		return "", err
-	}
-	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	buf := make([]byte, 4096)
-	n, err := r.conn.Read(buf)
-	if err != nil {
-		_ = r.conn.Close()
-		r.conn = nil
-		r.cbOpen = true
-		r.cbUntil = time.Now().Add(30 * time.Second)
-		return "", err
-	}
-	return string(buf[:n]), nil
-}
-func (r *redisPool) CacheGet(key string) (string, bool) {
-	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") {
+func (r *redisCache) CacheGet(key string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	val, err := r.client.Get(ctx, key).Result()
+	if err != nil { // includes redis.Nil (miss) and connectivity failures
 		return "", false
 	}
-	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 {
-		return parts[1], true
-	}
-	return "", false
+	return val, true
 }
-func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
-	if ttl > 0 {
-		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
-	} else {
-		_, _ = r.respCmd("SET", key, value)
-	}
+func (r *redisCache) CacheSet(key string, value string, ttl time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = r.client.Set(ctx, key, value, ttl).Err()
 }
-func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys {
-		_, _ = r.respCmd("DEL", k)
+func (r *redisCache) CacheInvalidate(keys ...string) {
+	if len(keys) == 0 {
+		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = r.client.Del(ctx, keys...).Err()
 }
 
+// kafkaProducer wraps a segmentio/kafka-go Writer (async, batched).
+// 2026-09-19 perf: replaces the previous fake "producer" that wrote raw
+// length-prefixed JSON over a mutex-locked TCP connection — that is NOT the
+// Kafka protocol, so events almost certainly never landed, and the publish
+// blocked the request path. The repo's shared client (shared/messaging/
+// kafka.go) uses the same library and writer settings; it is not imported
+// directly because the `shared` module is outside this service's Docker
+// build context. Async: true means WriteMessages returns after enqueueing;
+// delivery failures are logged via the completion callback.
 type kafkaProducer struct {
-	brokers string
-	topic   string
-	conn    net.Conn
-	mu      sync.Mutex
-	cbOpen  bool
-	cbUntil time.Time
+	topic  string
+	writer *kafka.Writer
 }
 
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
-	p := &kafkaProducer{brokers: brokers, topic: topic}
-	go p.connect()
+	p := &kafkaProducer{topic: topic}
+	p.writer = &kafka.Writer{
+		Addr:         kafka.TCP(strings.Split(brokers, ",")...),
+		Topic:        topic,
+		Balancer:     &kafka.LeastBytes{},
+		BatchSize:    100,
+		BatchTimeout: 10 * time.Millisecond,
+		RequiredAcks: kafka.RequireOne,
+		Async:        true,
+		Completion: func(messages []kafka.Message, err error) {
+			if err != nil {
+				jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", topic, "dropped", fmt.Sprintf("%d", len(messages)))
+			}
+		},
+	}
+	jsonLog("info", "kafka_producer_initialized", "brokers", brokers, "topic", topic)
 	return p
 }
-func (k *kafkaProducer) connect() {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.conn != nil {
-		return
-	}
-	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 {
-		addr = addr[:idx]
-	}
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
-		k.cbOpen = true
-		k.cbUntil = time.Now().Add(30 * time.Second)
-		return
-	}
-	k.conn = conn
-	k.cbOpen = false
-	jsonLog("info", "kafka_connected", "brokers", k.brokers, "topic", k.topic)
-}
+
+// PublishEvent enqueues an event; with the async writer this does not block
+// the request path on broker I/O.
 func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
 	data, _ := json.Marshal(map[string]interface{}{
 		"event_type": eventType,
@@ -874,30 +834,9 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 		"payload":    payload,
 		"timestamp":  time.Now().Format(time.RFC3339),
 	})
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.cbOpen && time.Now().Before(k.cbUntil) {
-		jsonLog("debug", "kafka_circuit_open", "topic", k.topic, "event_type", eventType)
+	if err := k.writer.WriteMessages(ctx, kafka.Message{Key: []byte(key), Value: data, Time: time.Now()}); err != nil {
+		jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
 		return
-	}
-	if k.conn == nil {
-		k.mu.Unlock()
-		k.connect()
-		k.mu.Lock()
-	}
-	if k.conn != nil {
-		msg := append([]byte{0, 0, 0, 0}, data...)
-		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		_, err := k.conn.Write(msg)
-		if err != nil {
-			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			_ = k.conn.Close()
-			k.conn = nil
-			k.cbOpen = true
-			k.cbUntil = time.Now().Add(30 * time.Second)
-			return
-		}
 	}
 	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
 }
@@ -910,15 +849,23 @@ type opensearchClient struct {
 	cbOpen   bool
 	cbUntil  time.Time
 	mu       sync.Mutex
+	// 2026-09-19 perf: IndexLog was a synchronous HTTP POST on the request
+	// path. Entries now go through a bounded buffered channel drained by one
+	// background worker; a full queue drops the entry (logged) rather than
+	// slowing payout requests.
+	queue chan []byte
 }
 
 func newOpenSearchClient(url, user string) *opensearchClient {
-	return &opensearchClient{
+	o := &opensearchClient{
 		url:      url,
 		user:     user,
 		password: os.Getenv("OPENSEARCH_PASSWORD"),
-		client:   &http.Client{Timeout: 5 * time.Second},
+		client:   newSharedHTTPClient(5 * time.Second),
+		queue:    make(chan []byte, 512),
 	}
+	go o.indexWorker()
+	return o
 }
 func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
 	entry := map[string]interface{}{
@@ -929,33 +876,42 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		"fields":     fields,
 	}
 	data, _ := json.Marshal(entry)
-	o.mu.Lock()
-	if o.cbOpen && time.Now().Before(o.cbUntil) {
-		o.mu.Unlock()
-		return
+	select {
+	case o.queue <- data:
+	default:
+		jsonLog("debug", "opensearch_index_dropped", "reason", "queue full")
 	}
-	o.mu.Unlock()
-	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
-	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
-	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" {
-		req.SetBasicAuth(o.user, o.password)
-	}
-	resp, err := o.client.Do(req)
-	if err != nil {
+}
+func (o *opensearchClient) indexWorker() {
+	for data := range o.queue {
 		o.mu.Lock()
-		o.cbOpen = true
-		o.cbUntil = time.Now().Add(60 * time.Second)
+		open := o.cbOpen && time.Now().Before(o.cbUntil)
 		o.mu.Unlock()
-		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
-		return
+		if open {
+			continue
+		}
+		idx := fmt.Sprintf("logs-instant-payout-service-%s", time.Now().Format("2006.01.02"))
+		reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
+		req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if o.user != "" {
+			req.SetBasicAuth(o.user, o.password)
+		}
+		resp, err := o.client.Do(req)
+		if err != nil {
+			o.mu.Lock()
+			o.cbOpen = true
+			o.cbUntil = time.Now().Add(60 * time.Second)
+			o.mu.Unlock()
+			jsonLog("debug", "opensearch_index_failed", "error", err.Error())
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 	}
-	_ = resp.Body.Close()
-	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
 // Keycloak JWT authentication middleware
@@ -1016,6 +972,28 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// Shared outbound HTTP transport + client singletons. 2026-09-19 perf:
+// Permify/Temporal/Mojaloop previously built a fresh &http.Client{} per
+// call, paying a full TCP handshake per request on the payout-critical path.
+// One pooled transport with keepalive is shared; only the timeout differs.
+var sharedHTTPTransport = &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 32,
+	IdleConnTimeout:     90 * time.Second,
+	DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+}
+
+func newSharedHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: sharedHTTPTransport}
+}
+
+var (
+	permifyHTTPClient        = newSharedHTTPClient(5 * time.Second)
+	temporalHTTPClient       = newSharedHTTPClient(10 * time.Second)
+	temporalSignalHTTPClient = newSharedHTTPClient(5 * time.Second)
+	mojaloopHTTPClient       = newSharedHTTPClient(10 * time.Second)
+)
+
 // Permify authorization check
 func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
 	permifyAddr := os.Getenv("PERMIFY_ADDR")
@@ -1044,8 +1022,7 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		return true
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req) // #nosec G704 -- safe-by-construction: scheme+host come from operator-controlled PERMIFY_ADDR env (not attacker-influenced); the only request-derived component (tenantID) is url-escaped via neturl.PathEscape before path interpolation, so host/port/scheme cannot be manipulated
+	resp, err := permifyHTTPClient.Do(req) // #nosec G704 -- safe-by-construction: scheme+host come from operator-controlled PERMIFY_ADDR env (not attacker-influenced); the only request-derived component (tenantID) is url-escaped via neturl.PathEscape before path interpolation, so host/port/scheme cannot be manipulated
 	if err != nil {
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		// Fail-closed in production: an unreachable authz service denies.
@@ -1068,7 +1045,7 @@ func initMiddleware() {
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
-	redisClient = newRedisPool(redisAddr, os.Getenv("REDIS_PASSWORD"))
+	redisClient = newRedisCache(redisAddr, os.Getenv("REDIS_PASSWORD"))
 	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
 
 	// Kafka
@@ -1077,7 +1054,6 @@ func initMiddleware() {
 		kafkaBrokers = "localhost:9092"
 	}
 	kafkaWriter = newKafkaProducer(kafkaBrokers, "instant-payout-service-events")
-	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "instant-payout-service-events")
 
 	// OpenSearch
 	osURL := os.Getenv("OPENSEARCH_URL")
@@ -1119,8 +1095,7 @@ func (tc *temporalClient) StartWorkflow(ctx context.Context, workflowID, workflo
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := temporalHTTPClient.Do(req)
 	if err != nil {
 		jsonLog("warn", "temporal_workflow_start_failed", "error", err.Error(), "workflow_id", workflowID)
 		return workflowID, nil // Continue without Temporal in dev
@@ -1135,8 +1110,7 @@ func (tc *temporalClient) SignalWorkflow(ctx context.Context, workflowID, signal
 	url := fmt.Sprintf("http://%s/api/v1/namespaces/default/workflows/%s/signal/%s", tc.hostPort, workflowID, signalName)
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := temporalSignalHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -1220,8 +1194,7 @@ func (mc *mojaloopClient) PartyLookup(ctx context.Context, partyType, partyID st
 	req.Header.Set("Accept", "application/vnd.interoperability.parties+json;version=1.1")
 	req.Header.Set("FSPIOP-Source", mc.dfspID)
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := mojaloopHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1266,9 +1239,17 @@ func initDapr() {
 		daprPort = "3500"
 	}
 	daprBaseURL = "http://localhost:" + daprPort
-	daprClient = &http.Client{Timeout: 5 * time.Second}
+	daprClient = newSharedHTTPClient(5 * time.Second)
 	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
 }
+
+// daprPublishSem bounds in-flight fire-and-forget publishes. 2026-09-19
+// perf: the previous implementation spawned an unbounded goroutine per
+// publish and NEVER closed the response body, leaking sockets and
+// goroutines under load. Publishes are now bounded (drops are logged, not
+// queued forever) and every response body is drained and closed so
+// keep-alive connections return to the pool.
+var daprPublishSem = make(chan struct{}, 64)
 
 func daprPublish(topic string, data interface{}) {
 	if daprClient == nil {
@@ -1276,10 +1257,26 @@ func daprPublish(topic string, data interface{}) {
 	}
 	body, _ := json.Marshal(data)
 	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
-	if req != nil {
-		req.Header.Set("Content-Type", "application/json")
-		go func() { _, _ = daprClient.Do(req) }()
+	if req == nil {
+		return
 	}
+	req.Header.Set("Content-Type", "application/json")
+	select {
+	case daprPublishSem <- struct{}{}:
+	default:
+		jsonLog("warn", "dapr_publish_dropped", "topic", topic, "reason", "too many in-flight publishes")
+		return
+	}
+	go func() {
+		defer func() { <-daprPublishSem }()
+		resp, err := daprClient.Do(req)
+		if err != nil {
+			jsonLog("warn", "dapr_publish_failed", "topic", topic, "error", err.Error())
+			return
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 }
 
 func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
