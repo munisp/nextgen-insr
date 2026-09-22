@@ -448,6 +448,11 @@ export const transactions = pgTable(
     deletedAtIdx: index("tx_deletedAt_idx").on(t.deletedAt),
     tenantIdIdx: index("tx_tenantId_idx").on(t.tenantId),
     typeCreatedAtIdx: index("tx_type_createdAt_idx").on(t.type, t.createdAt),
+    // P-wave perf (2026-09-19, migration 0085): reporting filters on
+    // metadata->>'category' were seq scans over the JSON column.
+    metadataCategoryIdx: index("tx_metadata_category_idx").on(
+      sql`(metadata->>'category')`
+    ),
   })
 );
 
@@ -594,6 +599,16 @@ export const auditLog = pgTable(
     actionIdx: index("audit_action_idx").on(t.action),
     tenantIdIdx: index("audit_tenantId_idx").on(t.tenantId),
     entryHashIdx: index("audit_entryHash_idx").on(t.entryHash),
+    // P-wave perf (2026-09-19, migration 0085): audit lookups by resource and
+    // time-ranged action queries seq scanned this append-only table.
+    resourceIdCreatedAtIdx: index("audit_resourceId_createdAt_idx").on(
+      t.resourceId,
+      t.createdAt
+    ),
+    actionCreatedAtIdx: index("audit_action_createdAt_idx").on(
+      t.action,
+      t.createdAt
+    ),
   })
 );
 
@@ -4933,6 +4948,12 @@ export const policies = pgTable(
     statusIdx: index("pol_status_idx").on(t.status),
     renewalIdx: index("pol_renewal_idx").on(t.renewalDate),
     tenantIdx: index("pol_tenant_idx").on(t.tenantId),
+    // P-wave perf (2026-09-19, migration 0085): customer portal hot path
+    // filters policies by (customerId, status).
+    customerStatusIdx: index("pol_customer_status_idx").on(
+      t.customerId,
+      t.status
+    ),
   })
 );
 export type Policy = typeof policies.$inferSelect;
@@ -5000,6 +5021,13 @@ export const claims = pgTable(
     statusIdx: index("cl_status_idx").on(t.status),
     adjusterIdx: index("cl_adjuster_idx").on(t.assignedAdjusterId),
     tenantIdx: index("cl_tenant_idx").on(t.tenantId),
+    // P-wave perf (2026-09-19, migration 0085): adjuster queues and
+    // status+policy / status+time rollups were seq scans.
+    statusPolicyIdx: index("cl_status_policy_idx").on(t.status, t.policyId),
+    statusCreatedAtIdx: index("cl_status_createdAt_idx").on(
+      t.status,
+      t.createdAt
+    ),
   })
 );
 export type Claim = typeof claims.$inferSelect;
@@ -5964,3 +5992,18 @@ export const phoneVerificationOtps = pgTable(
   })
 );
 export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;
+
+// ─── P-wave performance indexes (2026-09-19, migration 0085) ────────────────
+// Append-only index tail. The matching CREATE INDEX statements live in
+// drizzle/0085_perf_indexes.sql; the drizzle model entries were added
+// additively to the existing table configs above so `drizzle-kit push`
+// creates the same indexes:
+//   audit_log:  audit_resourceId_createdAt_idx ("resourceId", "createdAt")
+//               audit_action_createdAt_idx     ("action", "createdAt")
+//   policies:   pol_customer_status_idx        ("customerId", "status")
+//   claims:     cl_status_policy_idx           ("status", "policyId")
+//               cl_status_createdAt_idx        ("status", "createdAt")
+//   transactions: tx_metadata_category_idx     ((metadata->>'category'))
+// agents(phone) intentionally has NO new index here: migration 0079 already
+// created the unique index "agents_phone_unique" (G3 wave, audit #26).
+// Indexes do not change the platform table count (sprint46=250).

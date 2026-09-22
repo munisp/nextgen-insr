@@ -158,21 +158,61 @@ async function deleteSessionTokens(jti: string): Promise<void> {
 // cached for 60s per access token to bound the per-request cost; a demotion
 // propagates within at most one cache window instead of "until next login".
 const ROLE_RESYNC_CACHE_MS = 60_000;
+// P-wave perf (2026-09-19): the cache was an UNBOUNDED Map keyed by
+// sha256(accessToken) — a memory leak in the auth hot path. Now a bounded
+// LRU: max 10k entries, least-recently-used evicted first, expired entries
+// swept opportunistically on write. TTL semantics unchanged (60s window).
+const ROLE_RESYNC_CACHE_MAX = 10_000;
 const roleResyncCache = new Map<
   string,
   { role: SessionPayload["role"]; expiresAt: number }
 >();
+
+function roleResyncCacheSet(
+  key: string,
+  value: { role: SessionPayload["role"]; expiresAt: number }
+): void {
+  // Refresh LRU position (Map preserves insertion order).
+  roleResyncCache.delete(key);
+  roleResyncCache.set(key, value);
+  if (roleResyncCache.size > ROLE_RESYNC_CACHE_MAX) {
+    const now = Date.now();
+    // First pass: drop expired entries (oldest-first iteration).
+    for (const [k, v] of roleResyncCache) {
+      if (roleResyncCache.size <= ROLE_RESYNC_CACHE_MAX) break;
+      if (v.expiresAt <= now) roleResyncCache.delete(k);
+    }
+    // Second pass: evict least-recently-used until within bound.
+    while (roleResyncCache.size > ROLE_RESYNC_CACHE_MAX) {
+      const oldest = roleResyncCache.keys().next().value;
+      if (oldest === undefined) break;
+      roleResyncCache.delete(oldest);
+    }
+  }
+}
+
+/** Test-only handle for the bounded role-resync cache (P-wave perf). */
+export const __roleResyncCacheForTests = {
+  cache: roleResyncCache,
+  set: roleResyncCacheSet,
+  MAX: ROLE_RESYNC_CACHE_MAX,
+  TTL_MS: ROLE_RESYNC_CACHE_MS,
+};
 
 async function resyncRoleFromAccessToken(
   accessToken: string
 ): Promise<SessionPayload["role"] | null> {
   const key = createHash("sha256").update(accessToken).digest("hex");
   const cached = roleResyncCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.role;
+  if (cached && cached.expiresAt > Date.now()) {
+    // LRU touch: refresh recency without changing the 60s TTL window.
+    roleResyncCacheSet(key, cached);
+    return cached.role;
+  }
   try {
     const kcPayload = await verifyKeycloakToken(accessToken);
     const role = mapKeycloakRoleToPlatformRole(kcPayload);
-    roleResyncCache.set(key, {
+    roleResyncCacheSet(key, {
       role,
       expiresAt: Date.now() + ROLE_RESYNC_CACHE_MS,
     });
