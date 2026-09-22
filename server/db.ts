@@ -26,7 +26,9 @@ import {
   type InsertTransaction,
   type InsertFraudAlert,
   type InsertUser,
+  type User,
 } from "../drizzle/schema";
+import { getRedisClient } from "./lib/redisClient";
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -290,7 +292,55 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     });
 }
 
+// 2026-09-19 (P-wave, perf hotspot #6): getUserByKeycloakSub ran an uncached
+// `SELECT users` on EVERY tRPC call (context.ts createContext). The record is
+// now cached in Redis for 30s (same shared client the auth path already uses
+// for revocation checks, so no extra connection). Auth semantics preserved:
+//   - cache miss / Redis down / parse failure → the exact same DB query as
+//     before (fail-open to DB, never a fabricated user);
+//   - every users-table write on the role/profile paths (Keycloak role
+//     re-sync persist, adminDashboard.setUserRole, tenantAdmin updateUser)
+//     calls invalidateUserBySubCache so changes take effect immediately;
+//     any other write path is bounded by the 30s TTL.
+const USER_BY_SUB_CACHE_PREFIX = "user:kcsub:";
+const USER_BY_SUB_CACHE_TTL_S = 30;
+
+/** Serialize a user row for the cache; revive Date columns on read. */
+function deserializeCachedUser(raw: string): User | undefined {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    for (const k of ["createdAt", "updatedAt", "lastSignedIn"] as const) {
+      const v = parsed[k];
+      if (typeof v === "string") parsed[k] = new Date(v);
+    }
+    return parsed as unknown as User;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Drop the cached user record for a keycloakSub (call after user writes). */
+export async function invalidateUserBySubCache(
+  keycloakSub: string
+): Promise<void> {
+  try {
+    await getRedisClient().del(USER_BY_SUB_CACHE_PREFIX + keycloakSub);
+  } catch {
+    // TTL bounds staleness when the delete cannot run.
+  }
+}
+
 export async function getUserByKeycloakSub(keycloakSub: string) {
+  const cacheKey = USER_BY_SUB_CACHE_PREFIX + keycloakSub;
+  try {
+    const hit = await getRedisClient().get(cacheKey);
+    if (hit) {
+      const cached = deserializeCachedUser(hit);
+      if (cached) return cached;
+    }
+  } catch {
+    // Redis unavailable → fall through to the DB query (unchanged behavior).
+  }
   const db = await getDb();
   if (!db) return undefined;
   const result = await db
@@ -298,7 +348,20 @@ export async function getUserByKeycloakSub(keycloakSub: string) {
     .from(users)
     .where(eq(users.keycloakSub, keycloakSub))
     .limit(1);
-  return result[0];
+  const user = result[0];
+  if (user) {
+    try {
+      await getRedisClient().set(
+        cacheKey,
+        JSON.stringify(user),
+        "EX",
+        USER_BY_SUB_CACHE_TTL_S
+      );
+    } catch {
+      // Cache write failure is harmless — next call re-reads the DB.
+    }
+  }
+  return user;
 }
 
 /** @deprecated Use getUserByKeycloakSub instead */
@@ -654,11 +717,29 @@ export async function writeAuditLog(data: {
   const db = await getDb();
   if (!db) return;
   try {
+    // 2026-09-19 (P-wave, perf hotspot #3): MEASURED + DOCUMENTED, NOT
+    // RESTRUCTURED. The advisory lock + tip SELECT + insert serializes all
+    // audit writers process-wide; that IS the integrity mechanism (a fork in
+    // the hash chain is undetectable afterwards), so batching/partitioning
+    // was evaluated and rejected: a per-tenant chain would silently break
+    // verifyChain's single-chain assumption, and an async batched writer
+    // would queue hash computation outside the request transaction and lose
+    // the write-time ordering guarantee. What we add instead is lock-wait
+    // telemetry: warn when a writer waited >100ms for the chain lock, which
+    // is the exact p95-write signal from the audit, with zero behavior change.
+    const lockWaitStart = Date.now();
     await db.transaction(async tx => {
       // Serialize chain writers for the duration of this transaction.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_KEY})`
       );
+      const lockWaitMs = Date.now() - lockWaitStart;
+      if (lockWaitMs > 100) {
+        logger.warn(
+          { lockWaitMs },
+          "[AuditLog] chain lock contention — write waited >100ms (perf #3 signal)"
+        );
+      }
       const [last] = await tx
         .select({ entryHash: auditLog.entryHash })
         .from(auditLog)

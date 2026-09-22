@@ -5,7 +5,7 @@
  * KYB enforcement: advancement past account_setup requires approved KYB verification (if business customer).
  */
 import { TRPCError } from "@trpc/server";
-import { sql, desc, eq, and } from "drizzle-orm";
+import { sql, desc, eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { users, kycSessions, customerOnboardingProgress } from "../../drizzle/schema";
@@ -255,7 +255,9 @@ export const customerOnboardingPipelineRouter = router({
     .input(
       z.object({
         page: z.number().default(1),
-        limit: z.number().default(20),
+        // 2026-09-19 (P-wave, perf hotspot #13): bound the page size
+        // (default 20 preserved, hard max 500).
+        limit: z.number().min(1).max(500).default(20),
         stage: z.string().optional(),
       })
     )
@@ -273,7 +275,16 @@ export const customerOnboardingPipelineRouter = router({
           .from(users)
           .limit(100);
         // G2 #10: read the durable stage — never fabricate "live".
-        const progressRows = await db.select().from(customerOnboardingProgress);
+        // 2026-09-19 (P-wave, perf hotspot #13): was an UNBOUNDED full-table
+        // select of customerOnboardingProgress on every call; now scoped to
+        // exactly the user ids on this page (response shape unchanged).
+        const pageUserIds = items.map(u => u.id);
+        const progressRows = pageUserIds.length
+          ? await db
+              .select()
+              .from(customerOnboardingProgress)
+              .where(inArray(customerOnboardingProgress.userId, pageUserIds))
+          : [];
         const stageByUser = new Map(progressRows.map((p: any) => [p.userId, p.currentStage]));
         return {
           items: items.map((u: any) => {

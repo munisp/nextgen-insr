@@ -487,14 +487,12 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     logger.warn("[Middleware] API versioning failed:: " + (e as any).message);
   }
 
-  try {
-    const compMod = await import("../middleware/responseCompression.js");
-    app.use(compMod.responseCompressionMiddleware);
-    logger.info("[Middleware] Response compression enabled");
-  } catch (e) {
-    logger.warn("[Middleware] Response compression failed:: " + (e as any).message
-    );
-  }
+  // 2026-09-19 (P-wave, perf hotspot #5): the dedicated response-compression
+  // middleware (formerly middleware/responseCompression.ts) was REMOVED. It
+  // re-gzipped every JSON >1KB with synchronous zlib.gzipSync on the event
+  // loop ON TOP of compression() already mounted above (line ~267) — double
+  // compression, double JSON.stringify, blocked event loop. compression()
+  // (streaming, async) remains the single compression layer.
 
   // ── Sprint 71: Multi-Language Security Orchestrator (Rust DDoS + Go PBAC + Python Fraud ML) ──
   // SECURITY middleware — fatal in production, warn-only in development.

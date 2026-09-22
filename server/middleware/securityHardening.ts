@@ -281,6 +281,11 @@ export const authRateLimiter = createRateLimiter({
   windowMs: 900000,
   maxRequests: 10,
 }); // 10 per 15min
+// 2026-09-19 (P-wave, perf hotspot #10): apiRateLimiter is no longer mounted
+// on /api/trpc (see applySecurityMiddleware). The Redis-backed globalLimiter
+// in server/_core/index.ts is the ONE global limiter; this in-memory
+// duplicate added a second limiter evaluation per request. Export retained
+// for any external importer; do not re-mount without removing the global one.
 export const apiRateLimiter = createRateLimiter({
   windowMs: 60000,
   maxRequests: 100,
@@ -505,8 +510,12 @@ export function applySecurityMiddleware(app: any) {
   app.use("/api/oauth", authRateLimiter);
   app.use("/api/auth", authRateLimiter);
 
-  // Rate limit API endpoints
-  app.use("/api/trpc", apiRateLimiter);
+  // 2026-09-19 (P-wave, perf hotspot #10): the duplicate apiRateLimiter on
+  // /api/trpc is REMOVED from the chain. Exactly ONE global limiter remains:
+  // the Redis-backed globalLimiter mounted in server/_core/index.ts (shared
+  // across replicas, which this in-memory limiter never was). The strict
+  // pinAuthLimiter in index.ts stays — it guards a 4–8 digit PIN space and
+  // serves a different purpose (credential brute-force, not request volume).
 
   // Rate limit webhook endpoints
   app.use("/api/stripe/webhook", webhookRateLimiter);

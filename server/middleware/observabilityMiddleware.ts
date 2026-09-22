@@ -1,8 +1,22 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
  * observabilityMiddleware.ts — tRPC middleware that automatically instruments
- * ALL procedures with Kafka event publishing, Redis caching, Fluvio streaming,
- * TigerBeetle audit ledger, and Permify authorization checks.
+ * ALL procedures with Kafka event publishing, Redis caching, and Fluvio
+ * streaming.
+ *
+ * 2026-09-19 (P-wave, perf hotspot #4):
+ *  - The per-request TigerBeetle ZERO-AMOUNT "audit transfer" is REMOVED.
+ *    Disclosure: it was never a real ledger entry (amount=0 between two fixed
+ *    system accounts, id discarded) — it carried no financial information and
+ *    existed only as a heartbeat. It cost one blocking ledger commit per
+ *    procedure call and could saturate the TB connection pool under load.
+ *    Real financial ledger writes (tbCreateTransfer with real amounts in the
+ *    money paths) are untouched.
+ *  - The remaining Kafka + Redis + Fluvio writes now run CONCURRENTLY
+ *    (Promise.allSettled) inside the already fire-and-forget post-response
+ *    promise, instead of four sequential awaits that held sockets and
+ *    event-loop callbacks. Still non-blocking w.r.t. the response; still
+ *    fail-open per sink.
  *
  * This is applied at the procedure level via tRPC's middleware chain, so
  * individual routers do NOT need to import or call any middleware functions.
@@ -20,18 +34,19 @@ import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { recordErrorEvent, recordRequestMetric } from "../lib/telemetryStore";
 import { cacheSet, cacheGet } from "../redisClient";
-import { tbCreateTransfer } from "../tbClient";
 
 
 // ── Observability Middleware ──────────────────────────────────────────────────
-// Wraps every procedure call with:
-// 1. Kafka event publish (fire-and-forget)
+// Wraps every procedure call with (all post-response, fire-and-forget):
+// 1. Kafka event publish
 // 2. Redis cache of last-call timestamp
 // 3. Fluvio real-time stream event
-// 4. TigerBeetle audit transfer (zero-amount for tracking)
 //
-// All calls are wrapped in try/catch so failures are silent (fail-open).
-// This ensures middleware never blocks or breaks business logic.
+// (The per-call TigerBeetle zero-amount transfer was removed 2026-09-19 —
+// see the module header. It was an audit-shaped heartbeat, not a ledger
+// entry.)
+//
+// All calls fail open so middleware never blocks or breaks business logic.
 
 export interface ObservabilityContext {
   /** The router path, e.g. "agent.login" */
@@ -89,17 +104,21 @@ export async function emitObservabilityEvent(
     );
   }
 
-  // 1. Kafka — event bus for downstream consumers (analytics, audit, alerting)
-  try {
-    await publishEvent(topic, ctx.userId, {
+  // 2026-09-19 (P-wave, perf #4): Kafka + Redis + Fluvio run CONCURRENTLY in
+  // one fire-and-forget pipeline (this whole function is invoked detached,
+  // after the procedure result is already decided). Each sink fails open
+  // independently; none can block the response or starve the others.
+  await Promise.allSettled([
+    // 1. Kafka — event bus for downstream consumers (analytics, audit, alerting)
+    publishEvent(topic, ctx.userId, {
       event: `${ctx.path}.${ctx.success ? "success" : "failure"}`,
       ...payload,
-    });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
+    }).catch(err => {
+      logger.error("[observabilityMiddleware] kafka publish failed:: " + err);
+    }),
 
-  // 2. Redis — cache last-call timestamp for rate limiting and monitoring
-  try {
-    await cacheSet(
+    // 2. Redis — cache last-call timestamp for rate limiting and monitoring
+    cacheSet(
       `obs:${ctx.path}:${ctx.userId}:last`,
       JSON.stringify({
         ts: Date.now(),
@@ -107,24 +126,17 @@ export async function emitObservabilityEvent(
         success: ctx.success,
       }),
       600 // 10 min TTL
-    );
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
+    ).catch(err => {
+      logger.error("[observabilityMiddleware] redis cacheSet failed:: " + err);
+    }),
 
-  // 3. Fluvio — real-time streaming for dashboards and alerting
-  try {
-    await fluvioProduce(topic, {
+    // 3. Fluvio — real-time streaming for dashboards and alerting
+    fluvioProduce(topic, {
       value: JSON.stringify(payload),
-    });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
-
-  // 4. TigerBeetle — immutable audit ledger entry (zero-amount transfer for tracking)
-  try {
-    await tbCreateTransfer({
-      debitAccountId: "1", // system observability account
-      creditAccountId: "2", // audit sink account
-      amount: 0, // zero-amount = audit-only entry
-    });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
+    }).catch(err => {
+      logger.error("[observabilityMiddleware] fluvio produce failed:: " + err);
+    }),
+  ]);
 }
 
 /**

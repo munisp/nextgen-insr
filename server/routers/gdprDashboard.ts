@@ -446,15 +446,19 @@ export const gdprDashboardRouter = router({
           )
         );
 
-      for (const purpose of input.consentPurposes) {
-        await db.insert(dataConsentRecords).values({
-          entityType: "customer",
-          entityId: input.customerId,
-          consentType: purpose,
-          granted: input.consentGiven,
-          grantedAt: now,
-          ipAddress: ctx.req.ip ?? null,
-        });
+      // 2026-09-19 (P-wave, perf hotspot #9): was a per-purpose INSERT loop
+      // (N+1); now ONE multi-row insert with identical rows.
+      if (input.consentPurposes.length > 0) {
+        await db.insert(dataConsentRecords).values(
+          input.consentPurposes.map(purpose => ({
+            entityType: "customer",
+            entityId: input.customerId,
+            consentType: purpose,
+            granted: input.consentGiven,
+            grantedAt: now,
+            ipAddress: ctx.req.ip ?? null,
+          }))
+        );
       }
 
       await writeAuditLog({

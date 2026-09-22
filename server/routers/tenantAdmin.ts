@@ -16,8 +16,9 @@ import {
 import { z } from "zod";
 
 import { tenants, auditLog, users } from "../../drizzle/schema";
+import { invalidatePermifyDecisionsForSubject } from "../_core/permify";
 import { router, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, invalidateUserBySubCache } from "../db";
 
 
 // MOCKWARE FIX: inviteUser/removeUser were no-op successes, toggleLive never
@@ -399,10 +400,17 @@ export const tenantAdminRouter = router({
         .update(users)
         .set(setObj)
         .where(eq(users.id, userPk))
-        .returning({ id: users.id });
+        .returning({ id: users.id, keycloakSub: users.keycloakSub });
       if (!updated) {
         throw new TRPCError({ code: "NOT_FOUND", message: `User ${input.userId} not found` });
       }
+      // 2026-09-19 (P-wave, perf #1/#6): bust cached Permify decisions and
+      // the cached user record after a role/profile write (immediate effect;
+      // TTL is the backstop).
+      if (input.role) {
+        void invalidatePermifyDecisionsForSubject("user", String(userPk));
+      }
+      if (updated.keycloakSub) void invalidateUserBySubCache(updated.keycloakSub);
       await db.insert(auditLog).values({
         action: "tenant_user_updated",
         resource: "users",

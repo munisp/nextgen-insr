@@ -43,7 +43,8 @@ import {
 } from "./keycloak";
 import { logger } from './logger';
 import { users } from "../../drizzle/schema";
-import { getDb } from "../db";
+import { getDb, invalidateUserBySubCache } from "../db";
+import { invalidatePermifyDecisionsForSubject } from "./permify";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 import {
   blacklistToken,
@@ -188,10 +189,18 @@ async function persistRoleChange(sub: string, role: SessionPayload["role"]) {
   try {
     const db = await getDb();
     if (!db) return;
-    await db
+    const updated = await db
       .update(users)
       .set({ role, updatedAt: new Date() })
-      .where(eq(users.keycloakSub, sub));
+      .where(eq(users.keycloakSub, sub))
+      .returning({ id: users.id });
+    // 2026-09-19 (P-wave, perf #1/#6): bust the cached Permify decisions and
+    // the cached user record so a role change takes effect immediately
+    // instead of after the cache TTL. Best-effort (TTL is the backstop).
+    void invalidateUserBySubCache(sub);
+    for (const row of updated) {
+      void invalidatePermifyDecisionsForSubject("user", String(row.id));
+    }
   } catch (err) {
     logger.warn("[Keycloak] Role re-sync DB persist failed:: " + String(err));
   }

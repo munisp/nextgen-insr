@@ -29,7 +29,7 @@
 import { TRPCError } from "@trpc/server";
 
 import logger from "./logger";
-import { permifyCheck } from "./permify";
+import { permifyCheckCached } from "./permify";
 import { adminProcedure, protectedProcedure } from "./trpc";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 
@@ -230,7 +230,11 @@ async function checkFinancialPermission(
   const entityType = entityTypeMap[operation];
   const permission = permissionMap[operation];
 
-  const allowed = await permifyCheck({
+  // 2026-09-19 (P-wave, perf #1): Redis decision cache (45s allow / 10s deny
+  // TTL, invalidated on role writes). Fail-closed preserved: a cache miss or
+  // Redis outage performs the real Permify check; outage/fail-open answers
+  // are never cached.
+  const allowed = await permifyCheckCached({
     subjectType: "user",
     subjectId: userId,
     entityType,
@@ -343,11 +347,12 @@ export const adminFinancialProcedure = adminProcedure.use(
     }
 
     // Permify check for admin operations (fail-closed)
+    // 2026-09-19 (P-wave, perf #1): cached decision, same fail-closed semantics.
     const tenantId =
       user.tenantId != null
         ? String(user.tenantId)
         : (process.env.PERMIFY_TENANT_ID ?? "insureportal");
-    const allowed = await permifyCheck({
+    const allowed = await permifyCheckCached({
       subjectType: "user",
       subjectId: String(user.id),
       entityType: "billing_ledger",

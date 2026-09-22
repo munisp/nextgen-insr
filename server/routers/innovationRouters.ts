@@ -268,9 +268,11 @@ export const cvClaimsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       return db.select().from(cvDamageAssessments)
         .where(eq(cvDamageAssessments.claimId, input.claimId))
-        .orderBy(desc(cvDamageAssessments.assessedAt));
+        .orderBy(desc(cvDamageAssessments.assessedAt))
+        .limit(500);
     }),
 });
 
@@ -484,12 +486,16 @@ export const healthWearablesRouter = router({
       const since = new Date();
       since.setDate(since.getDate() - 30);
 
+      // 2026-09-19 (P-wave, perf #13): bounded scan (was unbounded). With
+      // >500 readings in the window the aggregates use the 500 most recent —
+      // disclosed; bounds payload + serialize cost on this read path.
       const readings = await db.select().from(wearableReadings)
         .where(and(
           eq(wearableReadings.customerId, ctx.user.id),
           gte(wearableReadings.createdAt, since)
         ))
-        .orderBy(desc(wearableReadings.createdAt));
+        .orderBy(desc(wearableReadings.createdAt))
+        .limit(500);
 
       if (!readings.length) return { score: 0, readings: 0, totalRewardPoints: 0 };
 
@@ -1067,8 +1073,11 @@ export const parametricRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // 2026-09-19 (P-wave, perf #13): bounded batch (was unbounded).
+      // >500 active triggers are processed on the next scheduled run.
       const activeTriggers = await db.select().from(parametricTriggers)
-        .where(eq(parametricTriggers.status, "active"));
+        .where(eq(parametricTriggers.status, "active"))
+        .limit(500);
 
       const processed = [];
 
@@ -1143,8 +1152,10 @@ export const parametricRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       return db.select().from(parametricTriggers)
-        .where(eq(parametricTriggers.policyId, input.policyId));
+        .where(eq(parametricTriggers.policyId, input.policyId))
+        .limit(500);
     }),
 });
 
@@ -1256,9 +1267,11 @@ export const groupInsuranceRouter = router({
   listGroupPolicies: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
     return db.select().from(groupPolicies)
       .where(eq(groupPolicies.organiserId, ctx.user.id))
-      .orderBy(desc(groupPolicies.createdAt));
+      .orderBy(desc(groupPolicies.createdAt))
+      .limit(500);
   }),
 });
 
@@ -1348,8 +1361,12 @@ export const bancassuranceRouter = router({
       const db = await getDb();
       if (!db) return null;
 
+      // 2026-09-19 (P-wave, perf #13): bounded scan (was unbounded). With
+      // >500 referrals the aggregates cover the first 500 rows — disclosed;
+      // bounds memory/serialize cost on this admin read.
       const referrals = await db.select().from(bancassuranceReferrals)
-        .where(eq(bancassuranceReferrals.partnerId, input.partnerId));
+        .where(eq(bancassuranceReferrals.partnerId, input.partnerId))
+        .limit(500);
 
       const total = referrals.length;
       const converted = referrals.filter(r => r.status === "bound").length;
