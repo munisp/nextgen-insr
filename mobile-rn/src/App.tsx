@@ -158,7 +158,10 @@ export default function App() {
         <Stack.Screen name="BiometricSetup" getComponent={() => require('./screens/BiometricSetupScreen').BiometricSetupScreen} options={{ title: 'Enable Biometrics' }} />
         <Stack.Screen name="BiometricAuth" getComponent={() => require('./screens/BiometricAuthScreen').default} options={{ headerShown: false }} />
         <Stack.Screen name="TransactionHistory" getComponent={() => require('./screens/TransactionHistoryScreen').default} options={{ title: 'History' }} />
-        <Stack.Screen name="TransactionDetails" getComponent={() => require('./screens/TransactionDetailsScreen').default} options={{ title: 'Details' }} />
+        {/* 2026-09-22: TransactionDetailsScreen is a NAMED export too (this
+            registration was missed by the 2026-09-19 fix; it is on the primary
+            path — TransactionHistoryScreen row tap navigates here). */}
+        <Stack.Screen name="TransactionDetails" getComponent={() => require('./screens/TransactionDetailsScreen').TransactionDetailsScreen} options={{ title: 'Details' }} />
         <Stack.Screen name="TransferTracking" getComponent={() => require('./screens/TransferTrackingScreen').default} options={{ title: 'Track Transfer' }} />
         <Stack.Screen name="Settings" getComponent={() => require('./screens/SettingsScreen').default} options={{ title: 'Settings' }} />
         <Stack.Screen name="SendMoney" getComponent={() => require('./screens/SendMoneyScreen').default} options={{ title: 'Send Money' }} />
