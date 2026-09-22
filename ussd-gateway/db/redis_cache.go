@@ -93,11 +93,15 @@ func (rc *RedisCache) GetSession(ctx context.Context, sessionID string) (*models
 func (rc *RedisCache) IsRateLimited(ctx context.Context, phone string) bool {
 	key := rateLimitPrefix + phone
 
-	// Increment the counter; EXAT sets expiry to exactly 60 s from now.
+	// 2026-09-22, perf wave P: the old code issued EXPIRE on EVERY increment
+	// (the comment claimed "only on first hit" — false), costing a second
+	// sequential Redis RTT per USSD request. Now: one INCR, and EXPIRE only
+	// when the counter is new (count == 1). The window semantics are
+	// unchanged: fixed 60 s window anchored at the first hit.
 	count := rc.client.Incr(ctx, key)
-	// Only set the TTL on the first hit so we get a sliding-window effect
-	// without extra round-trips for subsequent calls in the same window.
-	rc.client.Expire(ctx, key, rateLimitTTL)
+	if count.Val() == 1 {
+		rc.client.Expire(ctx, key, rateLimitTTL)
+	}
 
 	return count.Val() > maxMessagesPerMinute
 }
