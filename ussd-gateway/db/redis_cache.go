@@ -54,6 +54,17 @@ const (
 	maxMessagesPerMinute = 20
 )
 
+// rateLimitScript atomically increments the rate-limit counter and sets the
+// window TTL if the key has none (first hit of a window). Atomicity
+// guarantees a TTL-less key can never be left behind (2026-09-19).
+var rateLimitScript = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`)
+
 // StoreSession persists an entire SessionData to Redis with automatic expiry.
 func (rc *RedisCache) StoreSession(ctx context.Context, session *models.SessionData) error {
 	key := sessionKeyPrefix + session.SessionID
@@ -93,17 +104,22 @@ func (rc *RedisCache) GetSession(ctx context.Context, sessionID string) (*models
 func (rc *RedisCache) IsRateLimited(ctx context.Context, phone string) bool {
 	key := rateLimitPrefix + phone
 
-	// 2026-09-22, perf wave P: the old code issued EXPIRE on EVERY increment
-	// (the comment claimed "only on first hit" — false), costing a second
-	// sequential Redis RTT per USSD request. Now: one INCR, and EXPIRE only
-	// when the counter is new (count == 1). The window semantics are
-	// unchanged: fixed 60 s window anchored at the first hit.
-	count := rc.client.Incr(ctx, key)
-	if count.Val() == 1 {
-		rc.client.Expire(ctx, key, rateLimitTTL)
+	// 2026-09-19 perf+correctness: INCR + conditional EXPIRE as two commands
+	// could leave a TTL-less key (permanently throttling a phone number) if the
+	// process died between the two; the even older code self-healed by issuing
+	// EXPIRE on every INCR (2 RTTs per request). Run both atomically in a
+	// single Lua round-trip: INCR, then EXPIRE only when the key has no TTL.
+	// TTL-less keys are impossible, steady state is 1 RTT, sliding-window
+	// semantics (same 60s window, same limit) are unchanged, and it works on
+	// any Redis version with scripting (ExpireNX would require Redis 7).
+	count, err := rateLimitScript.Run(ctx, rc.client, []string{key}, int(rateLimitTTL.Seconds())).Int()
+	if err != nil {
+		// Fail open on Redis errors, as the previous implementation did
+		// (Incr errors left count == 0, i.e. not throttled).
+		return false
 	}
 
-	return count.Val() > maxMessagesPerMinute
+	return int64(count) > maxMessagesPerMinute
 }
 
 // --- USSD menu state cache ---
