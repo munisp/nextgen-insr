@@ -576,7 +576,7 @@ func (app *Application) renderAgentFloatConfirm(sess *models.SessionData) models
 	sb.WriteString("FLOAT CLAIM SUMMARY\n\n")
 	sb.WriteString(fmt.Sprintf("Current balance: ₦%s\n", formatCurrency(balanceBefore)))
 	sb.WriteString(fmt.Sprintf("Claim amount:  ₦%s\n", formatCurrency(amount)))
-	
+
 	sb.WriteString(fmt.Sprintf("New balance:   ₦%s\n\n", formatCurrency(balanceBefore-amount)))
 	sb.WriteString("1. Confirm\n0. Cancel")
 
