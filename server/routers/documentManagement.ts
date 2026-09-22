@@ -101,6 +101,69 @@ export const documentManagementRouter = router({
         });
       }
     }),
+  // ── Presigned direct-upload (P-wave perf, 2026-09-19) ────────────────────
+  // Client uploads previously proxied raw bytes through the Node process.
+  // This endpoint only AUTHORIZES and signs: it returns a presigned MinIO
+  // PUT URL; the client uploads bytes directly to object storage. Auth-gated
+  // (protectedProcedure), type allowlist, 10MB declared-size cap, key scoped
+  // to the authenticated user. The proxied kyc.ts base64 path remains for
+  // backward compatibility.
+  requestUploadUrl: protectedProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1).max(256),
+        mimeType: z.enum([
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "application/pdf",
+        ]),
+        fileSize: z
+          .number()
+          .int()
+          .positive()
+          .max(10 * 1024 * 1024, "File exceeds the 10MB upload limit"),
+        purpose: z
+          .enum(["kyc", "claim_document", "policy_document"])
+          .default("kyc"),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const { storagePresignPut } = await import("../storage");
+        const safeName = input.fileName.replace(/[^A-Za-z0-9._-]/g, "_");
+        const relKey = `uploads/${input.purpose}/${ctx.user.id}/${Date.now()}-${safeName}`;
+        const signed = await storagePresignPut(relKey, input.mimeType);
+        const db = (await getDb())!;
+        await db.insert(auditLog).values({
+          action: "upload_url_issued",
+          resource: "storage",
+          resourceId: signed.key,
+          status: "success",
+          metadata: {
+            userId: ctx.user.id,
+            mimeType: input.mimeType,
+            fileSize: input.fileSize,
+            purpose: input.purpose,
+          },
+        } as any);
+        return {
+          uploadUrl: signed.uploadUrl,
+          fileKey: signed.key,
+          bucket: signed.bucket,
+          expiresIn: signed.expiresIn,
+          instructions: `HTTP PUT the file bytes to uploadUrl with Content-Type: ${input.mimeType} (the signed Content-Type is enforced)`,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   verifyDocument: protectedProcedure
     .input(
       z.object({

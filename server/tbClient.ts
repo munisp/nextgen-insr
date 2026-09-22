@@ -161,6 +161,65 @@ function registryEnabled(): boolean {
   return true;
 }
 
+// ── P-wave perf (2026-09-19): registry lookup caches ─────────────────────────
+// tbCreateTransfer spent up to 3 sequential Postgres RTTs per transfer on
+// registry get/reserve/mark-committed. Two lookups are safely cacheable:
+//
+//   1. COMMITTED registry rows are immutable (terminal state) — a replay
+//      returns the recorded response verbatim. Caching them (60s TTL, bounded
+//      10k FIFO) removes the registryGet RTT for idempotent replays.
+//      'indeterminate' rows are NEVER cached: they must be re-read so a
+//      concurrent commit/retry is observed exactly (fail-closed unchanged).
+//      Negative (miss) results are NEVER cached either: a first-time ref must
+//      always hit the durable registry before posting.
+//   2. tbEnsureAgentAccount successes (below) — account creation is
+//      idempotent and durable, so a confirmed account stays confirmed.
+//
+// Multi-replica note: the cache is a read-through accelerator only; the
+// durable registry remains the source of truth for every mutation path.
+const REGISTRY_CACHE_TTL_MS = 60_000;
+const REGISTRY_CACHE_MAX = 10_000;
+interface CommittedCacheEntry {
+  row: RegistryRow;
+  expiresAt: number;
+}
+const committedRegistryCache = new Map<string, CommittedCacheEntry>();
+
+function committedCacheGet(ref: string): RegistryRow | null {
+  const hit = committedRegistryCache.get(ref);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    committedRegistryCache.delete(ref);
+    return null;
+  }
+  // Refresh recency (Map insertion order doubles as LRU order).
+  committedRegistryCache.delete(ref);
+  committedRegistryCache.set(ref, hit);
+  return hit.row;
+}
+
+function committedCachePut(ref: string, row: RegistryRow): void {
+  committedRegistryCache.delete(ref);
+  committedRegistryCache.set(ref, {
+    row,
+    expiresAt: Date.now() + REGISTRY_CACHE_TTL_MS,
+  });
+  while (committedRegistryCache.size > REGISTRY_CACHE_MAX) {
+    const oldest = committedRegistryCache.keys().next().value;
+    if (oldest === undefined) break;
+    committedRegistryCache.delete(oldest);
+  }
+}
+
+/** Test-only handle for the committed-registry cache (P-wave perf). */
+export const __tbRegistryCacheForTests = {
+  cache: committedRegistryCache,
+  get: committedCacheGet,
+  put: committedCachePut,
+  TTL_MS: REGISTRY_CACHE_TTL_MS,
+  MAX: REGISTRY_CACHE_MAX,
+};
+
 async function registryGet(ref: string): Promise<RegistryRow | null> {
   try {
     const { getDb } = await import("./db");
@@ -229,7 +288,15 @@ export async function tbCreateTransfer(
     const payloadHash = tbPayloadHash(req);
     if (!req.id) req.id = tbDeterministicTransferId(req);
 
-    const prior = registryEnabled() ? await registryGet(req.ref) : null;
+    // P-wave perf: committed rows are immutable — serve replays from the
+    // in-process cache (skips the Postgres RTT). Misses/indeterminate rows
+    // always go to the durable registry (fail-closed unchanged).
+    const cachedCommitted = registryEnabled()
+      ? committedCacheGet(req.ref)
+      : null;
+    const prior =
+      cachedCommitted ??
+      (registryEnabled() ? await registryGet(req.ref) : null);
     if (prior) {
       if (prior.payloadHash !== payloadHash) {
         logger.error(`[tbClient] IDEMPOTENCY CONFLICT: ref=${req.ref} reused with a different payload`);
@@ -239,6 +306,7 @@ export async function tbCreateTransfer(
       }
       if (prior.status === "committed" && prior.response) {
         // Idempotent replay — the original outcome, no second posting.
+        if (!cachedCommitted) committedCachePut(req.ref, prior);
         return JSON.parse(prior.response) as TBTransferResponse;
       }
       // status 'indeterminate': a previous attempt timed out. Repost with the
@@ -298,7 +366,16 @@ export async function tbCreateTransfer(
   }
 
   const out = (await res.json()) as TBTransferResponse;
-  if (req.ref && registryEnabled()) await registryMarkCommitted(req.ref, out);
+  if (req.ref && registryEnabled()) {
+    await registryMarkCommitted(req.ref, out);
+    committedCachePut(req.ref, {
+      ref: req.ref,
+      payloadHash: tbPayloadHash(req),
+      transferId: req.id ?? null,
+      status: "committed",
+      response: JSON.stringify(out),
+    });
+  }
   return out;
 }
 
@@ -382,9 +459,35 @@ export async function withTbCompensation<T>(
  * unreachable or times out. Returns false only when the sidecar answered
  * with a non-OK status (an honest ledger answer the caller may inspect).
  */
+// P-wave perf (2026-09-19): tbEnsureAgentAccount is called on agent login /
+// first transaction and previously cost a sidecar RTT every time. Account
+// creation is idempotent and durable — a CONFIRMED provisioning stays valid —
+// so successes are cached (5min TTL, bounded). Failures are NEVER cached:
+// fail-closed behavior (throw on unreachable, honest false on non-OK) is
+// unchanged for any uncached agent.
+const ENSURED_ACCOUNT_TTL_MS = 300_000;
+const ENSURED_ACCOUNT_MAX = 10_000;
+const ensuredAccounts = new Map<string, number>(); // agentId → expiresAt
+
+/** Test-only handle for the ensured-account cache (P-wave perf). */
+export const __tbEnsuredAccountsForTests = {
+  cache: ensuredAccounts,
+  TTL_MS: ENSURED_ACCOUNT_TTL_MS,
+  MAX: ENSURED_ACCOUNT_MAX,
+};
+
 export async function tbEnsureAgentAccount(
   agentId: string
 ): Promise<boolean> {
+  const cachedAt = ensuredAccounts.get(agentId);
+  if (cachedAt !== undefined) {
+    if (cachedAt > Date.now()) {
+      ensuredAccounts.delete(agentId);
+      ensuredAccounts.set(agentId, cachedAt); // LRU touch
+      return true;
+    }
+    ensuredAccounts.delete(agentId);
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
 
@@ -413,6 +516,15 @@ export async function tbEnsureAgentAccount(
     );
   }
   clearTimeout(timer);
+  if (res.ok) {
+    ensuredAccounts.delete(agentId);
+    ensuredAccounts.set(agentId, Date.now() + ENSURED_ACCOUNT_TTL_MS);
+    while (ensuredAccounts.size > ENSURED_ACCOUNT_MAX) {
+      const oldest = ensuredAccounts.keys().next().value;
+      if (oldest === undefined) break;
+      ensuredAccounts.delete(oldest);
+    }
+  }
   return res.ok;
 }
 

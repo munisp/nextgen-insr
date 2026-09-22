@@ -103,3 +103,24 @@ export async function storageGet(
     url: await buildDownloadUrl(baseUrl, key, apiKey),
   };
 }
+
+/**
+ * P-wave perf (2026-09-19): presigned PUT for DIRECT client uploads.
+ * The proxied storagePut path above remains for backward compatibility and
+ * server-side uploads; new client upload flows should call this to obtain a
+ * presigned MinIO PUT URL so raw bytes never transit the Node process.
+ * The caller (router) is responsible for auth, key scoping, and size/type
+ * constraints BEFORE signing.
+ */
+export async function storagePresignPut(
+  relKey: string,
+  contentType: string,
+  expiresInSeconds?: number
+): Promise<{ key: string; uploadUrl: string; bucket: string; expiresIn: number }> {
+  const key = normalizeKey(relKey);
+  const { getPresignedPutUrl } = await import("./_core/s3");
+  const { ENV } = await import("./_core/env");
+  const expiry = expiresInSeconds ?? ENV.s3PresignExpiry ?? 3600;
+  const signed = await getPresignedPutUrl(key, contentType, expiry);
+  return { key, ...signed };
+}

@@ -161,7 +161,18 @@ async function publishViaProxy(event: FluvioEvent): Promise<boolean> {
 function bufferEvent(event: FluvioEvent): void {
   if (eventBuffer.length >= MAX_BUFFER_SIZE) {
     // Drop oldest event to make room (FIFO eviction)
-    eventBuffer.shift();
+    const dropped = eventBuffer.shift();
+    // P-wave perf (2026-09-19): eviction is a data-loss event — log + metric.
+    logger.warn(
+      `[Fluvio] Buffer full (${MAX_BUFFER_SIZE}); dropped oldest event topic=${dropped?.topic}`
+    );
+    import("./analyticsMetrics")
+      .then(({ recordMetric }) =>
+        recordMetric("mqtt.messages.dropped", 1, {
+          topic: dropped?.topic ?? "unknown",
+        }).catch(() => {})
+      )
+      .catch(() => {});
   }
   eventBuffer.push({
     ...event,
@@ -172,29 +183,77 @@ function bufferEvent(event: FluvioEvent): void {
   _mode = "fallback";
 }
 
+// P-wave perf (2026-09-19): flushBuffer is the ONLY publisher. It runs
+// single-flight (see scheduleFlush) and drains the buffer in FIFO order, so
+// per-topic ordering is preserved trivially (global FIFO, one flush at a
+// time). Publish failures are logged + metered and NEVER thrown to callers.
+let _flushing = false;
+
 async function flushBuffer(): Promise<void> {
+  if (_flushing) return; // single-flight: a flush is already draining
   if (eventBuffer.length === 0) return;
-  const toFlush = eventBuffer.splice(0, 50); // flush up to 50 at a time
-  let flushed = 0;
-  let failed = 0;
-  for (const buffered of toFlush) {
-    const ok =
-      (await publishViaDirect(buffered)) || (await publishViaProxy(buffered));
-    if (ok) {
-      flushed++;
-    } else {
-      // Re-buffer with incremented retry count
-      if (buffered.retries < 5) {
-        eventBuffer.unshift({ ...buffered, retries: buffered.retries + 1 });
+  _flushing = true;
+  try {
+    const toFlush = eventBuffer.splice(0, 50); // flush up to 50 at a time
+    let flushed = 0;
+    let failed = 0;
+    let dropped = 0;
+    for (const buffered of toFlush) {
+      const ok =
+        (await publishViaDirect(buffered)) || (await publishViaProxy(buffered));
+      if (ok) {
+        flushed++;
+      } else {
+        // Re-buffer with incremented retry count
+        if (buffered.retries < 5) {
+          eventBuffer.unshift({ ...buffered, retries: buffered.retries + 1 });
+        } else {
+          dropped++;
+          logger.error(
+            `[Fluvio] Publish permanently failed after 5 retries; dropping topic=${buffered.topic} id=${buffered.id}`
+          );
+        }
+        failed++;
       }
-      failed++;
     }
+    if (flushed > 0) {
+      logger.info(
+        `[Fluvio] Flushed ${flushed} buffered events (${failed} re-buffered)`
+      );
+      import("./analyticsMetrics")
+        .then(({ recordMetric }) =>
+          recordMetric("mqtt.messages.sent", flushed).catch(() => {})
+        )
+        .catch(() => {});
+    }
+    if (failed > 0) {
+      logger.warn(
+        `[Fluvio] ${failed} events failed to publish this flush cycle (${dropped} dropped after max retries)`
+      );
+      import("./analyticsMetrics")
+        .then(({ recordMetric }) => {
+          recordMetric("mqtt.messages.failed", failed).catch(() => {});
+          if (dropped > 0)
+            recordMetric("mqtt.messages.dropped", dropped).catch(() => {});
+        })
+        .catch(() => {});
+    }
+    // Drain fully: if backlog remains, schedule the next cycle immediately.
+    if (eventBuffer.length > 0) scheduleFlush();
+  } finally {
+    _flushing = false;
   }
-  if (flushed > 0) {
-    logger.info(
-      `[Fluvio] Flushed ${flushed} buffered events (${failed} re-buffered)`
-    );
-  }
+}
+
+/** Schedule an asynchronous single-flight flush (never blocks the caller). */
+let _flushScheduled = false;
+function scheduleFlush(): void {
+  if (_flushScheduled) return;
+  _flushScheduled = true;
+  setImmediate(() => {
+    _flushScheduled = false;
+    flushBuffer().catch(e => logger.error("[Fluvio] Flush error:: " + e));
+  });
 }
 
 // Start background flush timer (every 30 seconds)
@@ -216,16 +275,22 @@ function startFlushTimer(): void {
 
 /**
  * Produce an event to a Fluvio topic.
- * Tries direct → proxy → in-memory buffer in order.
+ *
+ * P-wave perf (2026-09-19): ENQUEUE-AND-RETURN. Previously every produce
+ * performed up to TWO sequential awaited HTTP POSTs (direct 3s timeout →
+ * proxy 5s timeout) inside the calling mutation — an ~8s tail-latency blowup
+ * during Fluvio degradation. Now the event is buffered synchronously and the
+ * background flush worker owns all HTTP I/O (single-flight, FIFO → per-topic
+ * ordering preserved); publish failures are logged + metered and never block
+ * or fail the mutation response. This function resolves as soon as the event
+ * is queued (and the SSE fan-out/metrics are dispatched); delivery is
+ * at-least-once, best-effort, bounded by MAX_BUFFER_SIZE.
  */
 export async function fluvioProduce(event: FluvioEvent): Promise<void> {
   startFlushTimer();
-  // Flush any buffered events first (best-effort)
-  if (eventBuffer.length > 0 && (FLUVIO_ENDPOINT || PLATFORM_BASE_URL)) {
-    setImmediate(() => flushBuffer().catch(() => {}));
-  }
-  const sent =
-    (await publishViaDirect(event)) || (await publishViaProxy(event));
+  bufferEvent(event);
+  // Kick the background flush worker immediately (async, non-blocking).
+  if (FLUVIO_ENDPOINT || PLATFORM_BASE_URL) scheduleFlush();
   // Build enriched event for SSE fan-out (always, regardless of upstream status)
   const enriched = {
     ...event,
@@ -239,25 +304,11 @@ export async function fluvioProduce(event: FluvioEvent): Promise<void> {
       recordMetric("mqtt.messages.total", 1, { topic: event.topic }).catch(
         () => {}
       );
-      if (sent) {
-        recordMetric("mqtt.messages.sent", 1, { topic: event.topic }).catch(
-          () => {}
-        );
-      } else {
-        recordMetric("mqtt.messages.buffered", 1, { topic: event.topic }).catch(
-          () => {}
-        );
-      }
+      recordMetric("mqtt.messages.buffered", 1, { topic: event.topic }).catch(
+        () => {}
+      );
     })
     .catch(() => {});
-  if (!sent) {
-    bufferEvent(event);
-    logger.warn(
-      `[Fluvio] Topic=${event.topic} buffered (direct+proxy unavailable). Buffer size: ${eventBuffer.length}`
-    );
-  } else {
-    logger.info(`[Fluvio] Produced → ${event.topic} (mode=${_mode})`);
-  }
 }
 
 /**

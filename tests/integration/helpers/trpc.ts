@@ -76,6 +76,9 @@ import { agentOnboardingRouter } from "../../../server/routers/agentOnboarding";
 import { terminalLeasingRouter } from "../../../server/routers/terminalLeasing";
 import { agentSuspensionWorkflowRouter } from "../../../server/routers/agentSuspensionWorkflow";
 import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboardingWizard";
+// P-wave perf (2026-09-19): presigned-upload endpoint under the real
+// middleware chain — production mount path (server/routers.ts:832).
+import { documentManagementRouter } from "../../../server/routers/documentManagement";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -157,6 +160,8 @@ export const integrationRouter = router({
   agentSuspensionWorkflow: agentSuspensionWorkflowRouter,
   // H-wave: same mount path as production (routers.ts:845).
   agentOnboardingWizard: agentOnboardingWizardRouter,
+  // P-wave perf (2026-09-19): production mount path (routers.ts:832).
+  documentManagement: documentManagementRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

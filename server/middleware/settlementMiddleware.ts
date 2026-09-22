@@ -57,7 +57,10 @@ export async function publishSettlementEvent(params: {
         amount: params.amount,
         ...params.metadata,
       },
-      { agentId: params.agentId != null ? String(params.agentId) : undefined }
+      { agentId: params.agentId != null ? String(params.agentId) : undefined },
+      // P-wave perf (2026-09-19): payment-critical — this caller throws on
+      // false, so it keeps the awaited broker-ack path.
+      { requireAck: true }
     );
     if (!published) {
       throw new Error("Kafka publishEvent returned false");

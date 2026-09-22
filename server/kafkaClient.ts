@@ -47,9 +47,18 @@ async function getProducer(): Promise<Producer | null> {
       brokers: KAFKA_BROKERS.split(",").map(b => b.trim()),
       retry: { retries: 3 },
     });
-    _producer = _kafka.producer({ allowAutoTopicCreation: false });
+    // P-wave perf (2026-09-19): idempotent producer (per-partition
+    // exactly-once at the broker, preserves at-least-once semantics for the
+    // app) with bounded in-flight requests. KafkaJS has no linger.ms knob —
+    // the enqueue batcher below implements the 8ms linger + batch sizing.
+    _producer = _kafka.producer({
+      allowAutoTopicCreation: false,
+      idempotent: true,
+      maxInFlightRequests: 5,
+      retry: { retries: 5 },
+    });
     await _producer.connect();
-    logger.info({ brokers: KAFKA_BROKERS }, "[Kafka] Producer connected");
+    logger.info({ brokers: KAFKA_BROKERS }, "[Kafka] Producer connected (idempotent)");
     return _producer;
   } catch (err) {
     logger.warn({ err: (err as Error).message }, "[Kafka] Could not connect producer");
@@ -102,15 +111,103 @@ export interface KafkaEvent<T = unknown> {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// P-wave perf (2026-09-19): publishEvent was awaited INLINE inside tRPC
+// mutations — a full broker RTT (or 3s proxy-timeout tail) on every
+// transaction mutation. Call-site audit: every router/middleware caller
+// either ignores the boolean result (fail-open notification semantics — the
+// transaction is already committed to PostgreSQL) or is already
+// fire-and-forget (.then without await, e.g. routers/transactions.ts:901).
+// The ONLY ack-dependent callers are commissionMiddleware.ts and
+// settlementMiddleware.ts, which throw on `false` — they pass
+// { requireAck: true } and keep the old awaited-send behavior.
+//
+// Default path is now enqueue-and-return: events go to a bounded in-process
+// batch queue flushed by a background worker every KAFKA_LINGER_MS (8ms
+// linger, batches of up to KAFKA_BATCH_SIZE=100 per topic via sendBatch).
+// Flush failures are logged + metered and never thrown to the caller —
+// identical fail-open loss window as before (the old code also dropped the
+// event on error, returning false which callers ignored).
+interface QueuedEvent {
+  topic: KafkaTopic;
+  key: string;
+  event: KafkaEvent<unknown>;
+}
+const publishQueue: QueuedEvent[] = [];
+const KAFKA_LINGER_MS = 8;
+const KAFKA_BATCH_SIZE = 100;
+const KAFKA_MAX_QUEUE = 5000;
+let _flushTimerActive = false;
+
+async function flushPublishQueue(): Promise<void> {
+  _flushTimerActive = false;
+  if (publishQueue.length === 0) return;
+  const batch = publishQueue.splice(0, KAFKA_BATCH_SIZE);
+  try {
+    const producer = await getProducer();
+    if (producer) {
+      // Group by topic → one produce request per topic (batch sizing).
+      const byTopic = new Map<string, QueuedEvent[]>();
+      for (const q of batch) {
+        const arr = byTopic.get(q.topic) ?? [];
+        arr.push(q);
+        byTopic.set(q.topic, arr);
+      }
+      await producer.sendBatch({
+        topicMessages: [...byTopic.entries()].map(([topic, items]) => ({
+          topic,
+          messages: items.map(i => ({
+            key: i.key,
+            value: JSON.stringify(i.event),
+          })),
+        })),
+      });
+      return;
+    }
+    // Proxy mode: no batch endpoint — publish sequentially off-request-path.
+    for (const q of batch) {
+      await proxyPublish(q.topic, q.key, q.event);
+    }
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message, dropped: batch.length },
+      "[Kafka] Batch flush failed; events dropped (fail-open, transaction already committed)"
+    );
+    import("./lib/analyticsMetrics")
+      .then(({ recordMetric }) =>
+        recordMetric("kafka.publish.failed", batch.length).catch(() => {})
+      )
+      .catch(() => {});
+  } finally {
+    if (publishQueue.length > 0) scheduleFlush();
+  }
+}
+
+function scheduleFlush(): void {
+  if (_flushTimerActive) return;
+  _flushTimerActive = true;
+  setTimeout(() => {
+    flushPublishQueue().catch(e =>
+      logger.error("[Kafka] Flush error:: " + String(e))
+    );
+  }, KAFKA_LINGER_MS).unref();
+}
+
 /**
  * Publish a domain event to a Kafka topic.
  * Returns true on success, false if Kafka is unavailable (fail-open).
+ *
+ * Default (requireAck omitted/false): enqueue-and-return — the event is
+ * queued synchronously and flushed by the background batch worker; the
+ * returned promise resolves true once queued. Pass { requireAck: true } for
+ * payment-critical publishes that must await the broker/proxy ack
+ * (commissionMiddleware, settlementMiddleware).
  */
 export async function publishEvent<T>(
   topic: KafkaTopic,
   key: string,
   payload: T,
-  metadata?: { agentId?: string; tenantId?: string }
+  metadata?: { agentId?: string; tenantId?: string },
+  opts?: { requireAck?: boolean }
 ): Promise<boolean> {
   const event: KafkaEvent<T> = {
     eventId: crypto.randomUUID(),
@@ -120,6 +217,25 @@ export async function publishEvent<T>(
     tenantId: metadata?.tenantId,
     payload,
   };
+
+  if (!opts?.requireAck) {
+    // Enqueue-and-return: never blocks the request path on broker I/O.
+    if (publishQueue.length >= KAFKA_MAX_QUEUE) {
+      logger.error(
+        { topic },
+        "[Kafka] Publish queue full; event dropped (fail-open)"
+      );
+      import("./lib/analyticsMetrics")
+        .then(({ recordMetric }) =>
+          recordMetric("kafka.publish.dropped", 1, { topic }).catch(() => {})
+        )
+        .catch(() => {});
+      return false;
+    }
+    publishQueue.push({ topic, key, event: event as KafkaEvent<unknown> });
+    scheduleFlush();
+    return true;
+  }
 
   try {
     const producer = await getProducer();
