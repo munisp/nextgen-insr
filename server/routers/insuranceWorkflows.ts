@@ -707,12 +707,15 @@ export const insuranceWorkflowsRouter = router({
       const docHashes = (input.documents ?? []).map(d =>
         crypto.createHash("sha256").update(String(d)).digest("hex")
       );
-      for (const h of docHashes) {
-        const dupe = await db.select({ id: claimDocumentHashes.id })
+      // 2026-09-19 (P-wave, perf hotspot #9): was a per-hash SELECT loop
+      // (N+1 — one round-trip per document); now ONE batched inArray query.
+      // Behavior identical: any previously-seen hash rejects the claim.
+      if (docHashes.length > 0) {
+        const dupes = await db.select({ id: claimDocumentHashes.id })
           .from(claimDocumentHashes)
-          .where(eq(claimDocumentHashes.docHash, h))
+          .where(inArray(claimDocumentHashes.docHash, docHashes))
           .limit(1);
-        if (dupe.length) {
+        if (dupes.length) {
           throw new TRPCError({ code: "CONFLICT", message: "A submitted document was already used in another claim" });
         }
       }
@@ -744,9 +747,11 @@ export const insuranceWorkflowsRouter = router({
       });
 
       // AB-7: record document hashes so reused documents are rejected globally.
-      for (const h of docHashes) {
+      // 2026-09-19 (P-wave, perf hotspot #9): was a per-hash INSERT loop
+      // (N+1); now ONE multi-row insert. onConflictDoNothing preserved.
+      if (docHashes.length > 0) {
         await db.insert(claimDocumentHashes)
-          .values({ claimId: claim.id, docHash: h })
+          .values(docHashes.map(h => ({ claimId: claim.id, docHash: h })))
           .onConflictDoNothing();
       }
 
@@ -2126,9 +2131,11 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) return { reports: [] };
 
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       const reports = await db.select().from(naicomReports)
         .where(eq(naicomReports.status, "pending"))
-        .orderBy(asc(naicomReports.dueDate));
+        .orderBy(asc(naicomReports.dueDate))
+        .limit(500);
 
       return { reports };
     }),
@@ -2475,9 +2482,11 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) return { reserves: [] };
 
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       const reserves = await db.select().from(actuarialReserves)
         .where(input.reportingPeriod ? eq(actuarialReserves.reportingPeriod, input.reportingPeriod) : undefined)
-        .orderBy(desc(actuarialReserves.calculationDate));
+        .orderBy(desc(actuarialReserves.calculationDate))
+        .limit(500);
 
       return { reserves };
     }),
@@ -2486,9 +2495,11 @@ export const insuranceWorkflowsRouter = router({
     .query(async () => {
       const db = await getDb();
       if (!db) return { treaties: [] };
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       const treaties = await db.select().from(reinsuranceTreaties)
         .where(eq(reinsuranceTreaties.isActive, true))
-        .orderBy(asc(reinsuranceTreaties.treatyNumber));
+        .orderBy(asc(reinsuranceTreaties.treatyNumber))
+        .limit(500);
       return { treaties };
     }),
 
@@ -2497,9 +2508,11 @@ export const insuranceWorkflowsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { events: [] };
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       const events = await db.select().from(policyWorkflowEvents)
         .where(eq(policyWorkflowEvents.policyId, input.policyId))
-        .orderBy(asc(policyWorkflowEvents.createdAt));
+        .orderBy(asc(policyWorkflowEvents.createdAt))
+        .limit(500);
       return { events };
     }),
 
@@ -2508,9 +2521,11 @@ export const insuranceWorkflowsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { events: [] };
+      // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
       const events = await db.select().from(claimWorkflowEvents)
         .where(eq(claimWorkflowEvents.claimId, input.claimId))
-        .orderBy(asc(claimWorkflowEvents.createdAt));
+        .orderBy(asc(claimWorkflowEvents.createdAt))
+        .limit(500);
       return { events };
     }),
 });

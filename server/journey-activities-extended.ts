@@ -19,15 +19,22 @@
  *   - Ollama risk narrative generation
  */
 import { and, desc, eq, ne, sql } from "drizzle-orm";
-import { lagosDateString } from "./lib/lagosDate";
 
+// 2026-09-22 (platform-fix, authz staleness): Permify-native relationship
+// writes must bust the Redis decision cache (P-wave perf #1) for the affected
+// subject — otherwise a revoked permission keeps serving a cached ALLOW for
+// up to the allow-TTL (45s). Invalidation is structural: it lives INSIDE
+// writePermifyRelationship, so every call site (insurance-journeys-v2 ×9,
+// updatePermifyPolicy) is covered without per-call-site hooks.
+import { ENV } from "./_core/env";
+import { logger } from "./_core/logger";
+import { invalidatePermifyDecisionsForSubject } from "./_core/permify";
 import { getDb } from "./db";
 import { fluvioProduce } from "./fluvio";
+import { lagosDateString } from "./lib/lagosDate";
 import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import { agents, customers, transactions, auditLog } from "../drizzle/schema";
 import { journeyExecutions, journeyStepEvents } from "../drizzle/schema.journeys";
-import { ENV } from "./_core/env";
-import { logger } from "./_core/logger";
 import { getApisixAdminKey } from "./lib/envValidation";
 import { acquireLock, releaseLock } from "./lib/redisClient";
 
@@ -263,6 +270,13 @@ export async function writePermifyRelationship(input: {
   }
 
   await audit("PERMIFY_RELATIONSHIP_WRITE", input.entityType, input.entityId, input);
+
+  // 2026-09-22 (platform-fix, authz staleness): the relationship write
+  // succeeded — bust the subject's cached decisions so a revocation (or
+  // grant) takes effect on the NEXT check instead of after the 45s allow
+  // TTL. Best-effort: a Redis error degrades to the TTL backstop.
+  await invalidatePermifyDecisionsForSubject(input.subjectType, input.subjectId);
+
   return { success: true };
 }
 

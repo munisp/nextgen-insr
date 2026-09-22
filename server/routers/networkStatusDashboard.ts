@@ -355,7 +355,10 @@ export const networkStatusDashboardRouter = router({
       .where(gte(simProbeLog.probedAt, since))
       .groupBy(simProbeLog.carrier, simProbeLog.terminalId)
       .having(sql`COUNT(*) >= 3 AND (AVG(${simProbeLog.packetLossX10}) > 50 OR AVG(${simProbeLog.score}) < 40)`);
-    const resolutions = await db.select().from(networkAlertResolutions);
+    // 2026-09-19 (P-wave, perf #13): bounded lookup (was unbounded).
+    // >500 historical resolutions: older ones are not joined into the alert
+    // view on this call — disclosed; bounds the per-request payload.
+    const resolutions = await db.select().from(networkAlertResolutions).limit(500);
     const resolvedByKey = new Map(resolutions.map(r => [r.alertKey, r]));
     const alerts: {
       alertKey: string;

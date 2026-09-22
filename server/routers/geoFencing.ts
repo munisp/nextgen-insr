@@ -171,7 +171,8 @@ export const geoFencingRouter = router({
   listZones: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { zones: [], total: 0 };
-    const zones = await db.select().from(geofenceZones);
+    // 2026-09-19 (P-wave, perf #13): bounded result set (was unbounded).
+    const zones = await db.select().from(geofenceZones).limit(500);
     return {
       zones: zones.map((z: any) => ({
         id: String(z.id),

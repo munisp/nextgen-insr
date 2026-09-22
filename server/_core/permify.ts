@@ -22,6 +22,17 @@
  *   - fraud alert status update requires admin
  */
 import logger from "./logger";
+import { getRedisClient } from "../lib/redisClient";
+
+// 2026-09-19 (P-wave, perf hotspot #1): pin schemaVersion/snapToken from env.
+// Both were hard-coded "" below, which forces Permify to evaluate every check
+// against the latest schema snapshot and defeats Permify-side caching.
+// Pinning is opt-in (default "" = previous behavior); when the deployment
+// sets PERMIFY_SCHEMA_VERSION (and optionally PERMIFY_SNAP_TOKEN), checks
+// become cacheable server-side and the pinned version joins the local
+// decision-cache key so a schema bump never serves stale verdicts.
+const PERMIFY_SCHEMA_VERSION = process.env.PERMIFY_SCHEMA_VERSION ?? "";
+const PERMIFY_SNAP_TOKEN = process.env.PERMIFY_SNAP_TOKEN ?? "";
 
 // ── Circuit Breaker ─────────────────────────────────────────────────────────
 // Prevents cascading timeouts when Permify is down by short-circuiting
@@ -65,7 +76,23 @@ const PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? "t1";
 // authorization check is denied and an alert-level (error) log is emitted.
 // PERMIFY_FAIL_OPEN=true allows requests during a Permify outage and is
 // intended ONLY for short-lived disaster-recovery scenarios.
-const PERMIFY_FAIL_OPEN = process.env.PERMIFY_FAIL_OPEN === "true";
+// 2026-09-19 (P-wave): `let` (not const) so the test-only hook below can
+// exercise the fail-closed cache path in the integration suite (which boots
+// with PERMIFY_FAIL_OPEN=true). Production value is fixed at module load.
+let PERMIFY_FAIL_OPEN = process.env.PERMIFY_FAIL_OPEN === "true";
+
+/**
+ * TEST-ONLY hook (2026-09-19, P-wave): the integration suite boots with
+ * PERMIFY_FAIL_OPEN=true (no Permify service), which makes the decision cache
+ * unreachable code. This lets the cache tests exercise the real fail-closed
+ * posture. Throws outside NODE_ENV=test so it can never be (mis)used live.
+ */
+export function __setPermifyFailOpenForTests(value: boolean): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("[Permify] __setPermifyFailOpenForTests is test-only");
+  }
+  PERMIFY_FAIL_OPEN = value;
+}
 
 // MED-18 (G1 fix-wave, 2026-06): deployment guard. Fail-open authorization
 // is an incident-only posture; in production the process REFUSES TO BOOT
@@ -125,8 +152,8 @@ export async function permifyCheck(params: {
   const body: PermifyCheckRequest = {
     tenantId: PERMIFY_TENANT_ID,
     metadata: {
-      schemaVersion: "",
-      snapToken: "",
+      schemaVersion: PERMIFY_SCHEMA_VERSION,
+      snapToken: PERMIFY_SNAP_TOKEN,
       depth: 20,
     },
     entity: { type: params.entityType, id: params.entityId },
@@ -297,7 +324,7 @@ export async function permifyCheckDetailed(params: {
   const failOpen = process.env.PERMIFY_FAIL_OPEN === "true";
   const body: PermifyCheckRequest = {
     tenantId: PERMIFY_TENANT_ID,
-    metadata: { schemaVersion: "", snapToken: "", depth: 20 },
+    metadata: { schemaVersion: PERMIFY_SCHEMA_VERSION, snapToken: PERMIFY_SNAP_TOKEN, depth: 20 },
     entity: { type: params.entityType, id: params.entityId },
     permission: params.permission,
     subject: { type: params.subjectType, id: params.subjectId },
@@ -391,5 +418,149 @@ export async function permifyCheckDetailed(params: {
       source: "permify",
       error: message,
     };
+  }
+}
+
+// ── Decision cache (2026-09-19, P-wave perf hotspot #1) ─────────────────────
+// Redis-cached authorization decisions for the hot path (requirePermify /
+// financialProcedure fired on EVERY protected call — 1–3 blocking HTTP POSTs
+// per request before this cache).
+//
+// Semantics (fail-closed preserved exactly):
+//   - Cache MISS, Redis error, or Redis down → REAL Permify call, identical
+//     outcome to permifyCheck (built on permifyCheckDetailed so outages are
+//     distinguishable from real denies).
+//   - Only REAL Permify verdicts are cached (verdict.reachable === true).
+//     Outage answers and PERMIFY_FAIL_OPEN answers are NEVER cached, so a
+//     fail-open window cannot be frozen into the cache.
+//   - ALLOW verdicts TTL = PERMIFY_DECISION_CACHE_TTL_S (default 45s).
+//     DENY verdicts TTL = PERMIFY_DECISION_CACHE_DENY_TTL_S (default 10s):
+//     a grant that flips deny→allow is never hidden for longer than this,
+//     so permission grants take effect quickly while revocations (allow→deny)
+//     are additionally busted by invalidatePermifyDecisionsForSubject() on
+//     every role-write path.
+//   - Key includes tenant, pinned schemaVersion, subject, entity, permission.
+//
+// Invalidation is exact in-process (keys tracked per subject) and exact in
+// Redis for those tracked keys; keys written by OTHER replicas expire by TTL
+// (≤45s) — disclosed bound for multi-replica deployments.
+
+const DECISION_CACHE_PREFIX = "permify:dec:";
+const DECISION_CACHE_ALLOW_TTL_S = (() => {
+  const v = Number(process.env.PERMIFY_DECISION_CACHE_TTL_S ?? 45);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 45;
+})();
+const DECISION_CACHE_DENY_TTL_S = (() => {
+  const v = Number(process.env.PERMIFY_DECISION_CACHE_DENY_TTL_S ?? 10);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 10;
+})();
+
+// subjectKey (`${subjectType}:${subjectId}`) → cache keys written by this
+// process. Bounded: cleared when it exceeds MAX_TRACKED_KEYS (invalidation
+// then degrades to TTL expiry — safe, disclosed above).
+const decisionKeysBySubject = new Map<string, Set<string>>();
+const MAX_TRACKED_KEYS = 10_000;
+
+function decisionCacheKey(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): string {
+  return (
+    DECISION_CACHE_PREFIX +
+    [
+      PERMIFY_TENANT_ID,
+      PERMIFY_SCHEMA_VERSION || "latest",
+      params.subjectType,
+      params.subjectId,
+      params.entityType,
+      params.entityId,
+      params.permission,
+    ].join(":")
+  );
+}
+
+/**
+ * permifyCheck with a Redis decision cache. Behaviorally identical to
+ * permifyCheck for every caller-observable outcome (same fail-closed /
+ * fail-open semantics); the only difference is latency on repeat decisions.
+ */
+export async function permifyCheckCached(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): Promise<boolean> {
+  // Boot-time fail-open posture (PERMIFY_FAIL_OPEN=true at module load): the
+  // cache is pointless (every check must hit the failing transport anyway to
+  // preserve the exact permifyCheck semantics, which read the flag at module
+  // load) — delegate uncached. Fail-open answers are never cacheable.
+  if (PERMIFY_FAIL_OPEN) {
+    return permifyCheck(params);
+  }
+  const key = decisionCacheKey(params);
+  try {
+    const hit = await getRedisClient().get(key);
+    if (hit === "1") return true;
+    if (hit === "0") return false;
+  } catch {
+    // Redis error/down → treat as MISS: real Permify call below. Fail-closed
+    // posture is untouched because a miss can never manufacture an allow.
+  }
+
+  const verdict = await permifyCheckDetailed(params);
+  const allowed = verdict.allowed === true;
+
+  if (verdict.reachable) {
+    try {
+      await getRedisClient().set(
+        key,
+        allowed ? "1" : "0",
+        "EX",
+        allowed ? DECISION_CACHE_ALLOW_TTL_S : DECISION_CACHE_DENY_TTL_S
+      );
+      const subj = `${params.subjectType}:${params.subjectId}`;
+      if (decisionKeysBySubject.size >= MAX_TRACKED_KEYS) {
+        decisionKeysBySubject.clear();
+      }
+      let keys = decisionKeysBySubject.get(subj);
+      if (!keys) {
+        keys = new Set();
+        decisionKeysBySubject.set(subj, keys);
+      }
+      keys.add(key);
+    } catch {
+      // Cache write failure is harmless — next call re-checks with Permify.
+    }
+  }
+  return allowed;
+}
+
+/**
+ * Bust cached decisions for one subject. Hooked on every role/permission
+ * write path: Keycloak role re-sync persist, admin user-role change, tenant
+ * admin update, login-path upsertUser role sync (2026-09-22), and the
+ * Permify-native relationship writes (2026-09-22: writePermifyRelationship /
+ * updatePermifyPolicy in journey-activities-extended.ts, writeResource-
+ * Relationship in journey-tenant-guard.ts, PermifyConnector.writeRelation in
+ * middlewareConnectors.ts) — so revocations take effect immediately instead
+ * of after TTL.
+ * Best-effort: Redis errors only mean the TTL bound applies.
+ */
+export async function invalidatePermifyDecisionsForSubject(
+  subjectType: string,
+  subjectId: string
+): Promise<void> {
+  const subj = `${subjectType}:${subjectId}`;
+  const keys = decisionKeysBySubject.get(subj);
+  decisionKeysBySubject.delete(subj);
+  if (!keys || keys.size === 0) return;
+  try {
+    await getRedisClient().del(...keys);
+  } catch {
+    // TTL bounds staleness when the delete cannot run.
   }
 }

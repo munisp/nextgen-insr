@@ -16,8 +16,9 @@ import {
   billingAuditLog,
   platformBillingLedger,
 } from "../../drizzle/schema";
+import { invalidatePermifyDecisionsForSubject } from "../_core/permify";
 import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, invalidateUserBySubCache } from "../db";
 
 export const adminDashboardRouter = router({
   // ── System Stats ──────────────────────────────────────────────────────────────
@@ -152,6 +153,17 @@ export const adminDashboardRouter = router({
           .update(users)
           .set({ role: input.role, updatedAt: new Date() })
           .where(eq(users.id, input.userId));
+
+        // 2026-09-19 (P-wave, perf #1/#6): role write → bust the Permify
+        // decision cache (and the cached user record) for this user so the
+        // change is effective immediately; TTL is the backstop.
+        void invalidatePermifyDecisionsForSubject("user", String(input.userId));
+        const [row] = await db
+          .select({ keycloakSub: users.keycloakSub })
+          .from(users)
+          .where(eq(users.id, input.userId))
+          .limit(1);
+        if (row?.keycloakSub) void invalidateUserBySubCache(row.keycloakSub);
 
         // 2026-09-19 (L-wave, L-S-9): every users.role write is audited with
         // the acting admin — admin minting was previously unaudited here.

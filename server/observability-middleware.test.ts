@@ -107,15 +107,37 @@ describe("Observability middleware module", () => {
     expect(content).toContain("export async function emitObservabilityEvent");
   });
 
-  it("uses try/catch for all middleware calls (fail-open)", () => {
+  // 2026-09-22 (platform-fix): REWRITTEN contract. The old assertion counted
+  // `try {` blocks (>= 4: Kafka, Redis, Fluvio, TigerBeetle), but the P-wave
+  // rewrite (2026-09-19, perf #4) replaced four sequential try/catch-awaited
+  // sinks with ONE batched fire-and-forget pipeline (Promise.allSettled +
+  // per-sink .catch chains) and REMOVED the zero-amount TigerBeetle heartbeat
+  // transfer entirely. Counting try blocks now tests the old implementation
+  // shape, not the behavior — so this test asserts the NEW honest contract:
+  // batched non-blocking sinks, fail-open per sink, no TB heartbeat, and the
+  // response path never awaits the emit.
+  it("batches Kafka/Redis/Fluvio in a non-blocking fail-open pipeline (no TB heartbeat)", () => {
     const mwPath = path.join(
       PROJECT,
       "server/middleware/observabilityMiddleware.ts"
     );
     const content = fs.readFileSync(mwPath, "utf-8");
-    // Count try blocks - should have at least 4 (Kafka, Redis, Fluvio, TigerBeetle)
-    const tryCount = (content.match(/try\s*{/g) || []).length;
-    expect(tryCount).toBeGreaterThanOrEqual(4);
+    // Batched pipeline: the three sinks run concurrently via allSettled.
+    expect(content).toContain("Promise.allSettled");
+    // Fail-open per sink: every sink promise has its own .catch chain.
+    const catchCount = (content.match(/\.catch\s*\(/g) || []).length;
+    expect(catchCount).toBeGreaterThanOrEqual(3);
+    // The response is never blocked: emitObservabilityEvent is only ever
+    // invoked detached (`.catch(...)`, never `await`ed by the middleware).
+    expect(content).not.toMatch(/await\s+emitObservabilityEvent/);
+    // The TigerBeetle zero-amount audit heartbeat was removed (P-wave #4) —
+    // no ledger client import/call may remain in the observability path.
+    // (Comments documenting the removal mention TB; strip comments first.)
+    const codeOnly = content
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    expect(codeOnly).not.toContain("tbCreateTransfer");
+    expect(codeOnly).not.toContain("tbClient");
   });
 
   it("catches errors silently (catch blocks)", () => {

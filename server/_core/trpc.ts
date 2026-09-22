@@ -4,7 +4,7 @@ import superjson from "superjson";
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 
 import type { TrpcContext } from "./context";
-import { permifyCheck } from "../_core/permify";
+import { permifyCheckCached } from "../_core/permify";
 import { createObservabilityMiddleware } from "../middleware/observabilityMiddleware";
 import { createSidecarMiddleware } from "../middleware/sidecarIntegration";
 
@@ -56,7 +56,10 @@ const requirePermify = t.middleware(async opts => {
 
   // Permify check: user:<userId> can "access" system:insurance-portal
   // This is the base access gate — resource-level checks are done per-procedure.
-  const allowed = await permifyCheck({
+  // 2026-09-19 (P-wave, perf #1): Redis decision cache (45s allow / 10s deny
+  // TTL, busted on role writes) — removes one blocking HTTP POST per call.
+  // Fail-closed unchanged: cache miss/Redis down → real Permify check.
+  const allowed = await permifyCheckCached({
     subjectType: "user",
     subjectId: String(ctx.user.id),
     entityType: "system",
@@ -108,7 +111,8 @@ export const adminProcedure = t.procedure
       }
 
       // Permify check: user:<userId> can "admin_access" system:insurance-portal
-      const allowed = await permifyCheck({
+      // 2026-09-19 (P-wave, perf #1): cached decision, same fail-closed semantics.
+      const allowed = await permifyCheckCached({
         subjectType: "user",
         subjectId: String(ctx.user.id),
         entityType: "system",
