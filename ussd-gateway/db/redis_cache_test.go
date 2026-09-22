@@ -19,7 +19,7 @@ func newTestCache(t *testing.T) (*RedisCache, *miniredis.Miniredis) {
 	return rc, mr
 }
 
-// 2026-09-19: regression test for the TTL-less-key hazard in the rate
+// 2026-09-22: regression test for the TTL-less-key hazard in the rate
 // limiter. IsRateLimited must set a TTL atomically with every increment so a
 // phone number can never be throttled permanently.
 func TestIsRateLimitedAlwaysSetsTTL(t *testing.T) {

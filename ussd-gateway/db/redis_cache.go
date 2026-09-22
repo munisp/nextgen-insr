@@ -56,7 +56,7 @@ const (
 
 // rateLimitScript atomically increments the rate-limit counter and sets the
 // window TTL if the key has none (first hit of a window). Atomicity
-// guarantees a TTL-less key can never be left behind (2026-09-19).
+// guarantees a TTL-less key can never be left behind (2026-09-22).
 var rateLimitScript = redis.NewScript(`
 local count = redis.call('INCR', KEYS[1])
 if redis.call('TTL', KEYS[1]) < 0 then
@@ -104,7 +104,7 @@ func (rc *RedisCache) GetSession(ctx context.Context, sessionID string) (*models
 func (rc *RedisCache) IsRateLimited(ctx context.Context, phone string) bool {
 	key := rateLimitPrefix + phone
 
-	// 2026-09-19 perf+correctness: INCR + conditional EXPIRE as two commands
+	// 2026-09-22 perf+correctness: INCR + conditional EXPIRE as two commands
 	// could leave a TTL-less key (permanently throttling a phone number) if the
 	// process died between the two; the even older code self-healed by issuing
 	// EXPIRE on every INCR (2 RTTs per request). Run both atomically in a
