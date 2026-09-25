@@ -1215,3 +1215,66 @@ services:
         limits:
           cpus: '2.0'
           memory: 2G
+
+  # ── Parametric Evaluator (Go) — Q-wave Q5 (2026-09-25) ──────────────────
+  # Consumes the Q2 parametric tables (migration 0087) on the shared Postgres.
+  # Outbox discipline: writes parametric_events ONLY — claim/payout settlement
+  # remains owned by the TS engine (server/lib/parametricEngine.ts). All
+  # externals config-gated + fail-closed (see service config.go).
+  parametric-evaluator:
+    build:
+      context: ./services/go/parametric-evaluator
+      dockerfile: Dockerfile
+    container_name: insureportal-parametric-evaluator
+    <<: *restart-policy
+    profiles: [app, all]
+    networks: [insureportal-infra, insureportal-app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 8095
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      KAFKA_BROKERS: kafka:9093
+      FLUVIO_ADDR: fluvio:9003
+      DAPR_HTTP_PORT: "3500"
+      FRAUD_DAPR_APP_ID: ${FRAUD_DAPR_APP_ID:-}
+      OPENSEARCH_ADDR: ${OPENSEARCH_ADDR:-}
+      POLL_INTERVAL_MS: ${PARAMETRIC_POLL_INTERVAL_MS:-30000}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8095/healthz"]
+      <<: *hc-defaults
+
+  # ── Geo Analytics (Python) — Q-wave Q5 (2026-09-25) ─────────────────────
+  # Geospatial risk support for parametric products: GeoLibre-style open
+  # geodata ingestion (configurable URLs, real HTTP, fail-closed), PostGIS
+  # zone storage/lookup (Apache Sedona where a Spark runtime is deployed —
+  # disclosed fallback), zone_risk_features parquet export to the lakehouse,
+  # config-gated OpenSearch indexing.
+  geo-analytics:
+    build:
+      context: ./services/python/geo-analytics
+      dockerfile: Dockerfile
+    container_name: insureportal-geo-analytics
+    <<: *restart-policy
+    profiles: [app, all]
+    networks: [insureportal-infra, insureportal-app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 8096
+      DATABASE_URL: ${DATABASE_URL}
+      GEODATA_SOURCES: ${GEODATA_SOURCES:-}
+      LAKEHOUSE_PATH: ${LAKEHOUSE_PATH:-}
+      OPENSEARCH_ADDR: ${OPENSEARCH_ADDR:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8096/healthz"]
+      <<: *hc-defaults

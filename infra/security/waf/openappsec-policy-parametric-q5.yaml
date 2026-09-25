@@ -1,0 +1,67 @@
+##
+## Q-wave Q5 (2026-09-25) — OpenAppSec WAF policy ADDENDUM for the new
+## polyglot parametric services (Go parametric-evaluator, Python
+## geo-analytics). ADDITIVE: this file does not modify the existing
+## openappsec-policy.yaml; it extends the same practiceRefs.
+##
+## DISCLOSURE (2026-09-25): this policy takes effect only where an
+## OpenAppSec agent (or the open-appsec integrated ingress/APISIX plugin) is
+## deployed and attached to these routes — the repo ships the policy, the
+## agent deployment is an environment prerequisite (fail-closed: without the
+## agent, traffic is simply not WAF-inspected, and the routes still enforce
+## APISIX rate limits + fail-closed backends).
+##
+apiVersion: openappsec.io/v1beta1
+kind: Policy
+metadata:
+  name: insureportal-parametric-q5-waf-policy
+  namespace: insureportal
+  labels:
+    app: insureportal
+    component: waf
+    tier: security
+    wave: q5-polyglot
+spec:
+  default:
+    mode: prevent-learn
+    practiceRef:
+      - name: owasp-top10-protection
+      - name: api-schema-validation
+      - name: rate-limiting
+
+  # ─── Protected assets (new Q5 routes; see gateway/apisix-routes.yaml) ──
+  specificRules:
+    - name: parametric-evaluator-api
+      match:
+        url: /api/v1/parametric-eval/
+      mode: prevent-learn
+      practiceRef:
+        - name: owasp-top10-protection
+        - name: api-schema-validation
+      # Operator-only re-evaluation hook: tighter rate limiting applied at
+      # APISIX (10 r/s); WAF inspects for injection in path/body.
+      customResponse:
+        httpResponseCode: 403
+        messageTitle: "Blocked by parametric WAF policy"
+
+    - name: geo-analytics-api
+      match:
+        url: /api/v1/geo/
+      mode: prevent-learn
+      practiceRef:
+        - name: owasp-top10-protection
+        - name: api-schema-validation
+      # Coordinate query params (lon/lat) are float-validated by FastAPI
+      # (pydantic ge/le bounds); WAF adds injection screening for the
+      # ingestion + export endpoints.
+
+  # ─── Exceptions (health probes only) ───────────────────────────────
+  exceptions:
+    - name: q5-healthcheck-bypass
+      match:
+        url: /api/v1/parametric-eval/healthz
+      action: skip
+    - name: q5-geo-healthcheck-bypass
+      match:
+        url: /api/v1/geo/healthz
+      action: skip
