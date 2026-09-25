@@ -42,6 +42,26 @@ export const VALID_SCOPES = [
 
 type ApiScope = (typeof VALID_SCOPES)[number];
 
+// 2026-09-25 (Q-wave Q1, embedded partner factory): product-scoped embed keys.
+// A partner embedding a product receives a key scoped EXACTLY to that product
+// ("embed:product:<partnerProductId>") — the scope set is open-ended per
+// product, so it cannot live in the VALID_SCOPES enum; the PATTERN is part of
+// the same server-side allowlist discipline (fail-closed: anything not
+// matching the enum or this anchored pattern is rejected).
+export const EMBED_PRODUCT_SCOPE_RE = /^embed:product:[1-9]\d{0,9}$/;
+export function isValidApiScope(scope: string): boolean {
+  return (
+    (VALID_SCOPES as readonly string[]).includes(scope) ||
+    EMBED_PRODUCT_SCOPE_RE.test(scope)
+  );
+}
+export const apiScopeSchema = z
+  .string()
+  .max(64)
+  .refine(isValidApiScope, {
+    message: "Scope is not in the server-side allowlist",
+  });
+
 /**
  * Generate a new API key in the format: 54lk_{prefix}_{random}
  * Returns both the raw key (shown once) and its SHA-256 hash for storage.
@@ -74,9 +94,12 @@ export const developerPortalRouter = router({
         name: z.string().min(1).max(128),
         description: z.string().max(512).optional(),
         scopes: z
-          .array(z.enum(VALID_SCOPES))
+          // 2026-09-25 (Q-wave Q1): allowlist now also covers the anchored
+          // "embed:product:<id>" pattern via apiScopeSchema; max raised so a
+          // partner can hold one scope per embedded product.
+          .array(apiScopeSchema)
           .min(1)
-          .max(VALID_SCOPES.length)
+          .max(64)
           .default(["transactions:read"]),
         rateLimit: z.number().int().min(100).max(100_000).default(1_000),
         expiresInDays: z.number().int().min(1).max(365).optional(),
