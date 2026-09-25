@@ -344,6 +344,7 @@ import { ollamaLLMRouter } from "./routers/ollamaLLM";
 import { openTelemetryRouter } from "./routers/openTelemetry";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 import { operationalRunbookRouter } from "./routers/operationalRunbook";
+import { parametricEngineRouter } from "./routers/parametricEngine";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1163,6 +1164,9 @@ export const appRouter = router({
   p2pPools: p2pPoolsRouter,
   voiceClaims: voiceClaimsRouter,
   parametric: parametricRouter,
+  // Q-wave Q2 (2026-09-25): parametric trigger engine + STP expansion
+  // (migration 0087). Router count 467 → 468 (sprint95 gate updated).
+  parametricEngine: parametricEngineRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
   openInsurance: openInsuranceRouter,

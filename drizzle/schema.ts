@@ -6007,3 +6007,150 @@ export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;
 // agents(phone) intentionally has NO new index here: migration 0079 already
 // created the unique index "agents_phone_unique" (G3 wave, audit #26).
 // Indexes do not change the platform table count (sprint46=250).
+
+// ─── Q-wave Q2 (2026-09-25): Parametric Trigger Engine + STP expansion ──────
+// Migration 0087. Append-only EOF tail. Naming disclosure: the brief's
+// `parametric_triggers` / `parametric_payouts` names are already taken by the
+// legacy innovation-schema weather tables (schema.innovations.ts), so the
+// engine tables use collision-free names (definitions / payout_settlements).
+// Table count: 250 → 256 (sprint46 gate updated with this measured value).
+export const parametricTriggerDefinitions = pgTable(
+  "parametric_trigger_definitions",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull().unique(),
+    metric: varchar("metric", { length: 64 }).notNull(),
+    operator: varchar("operator", { length: 8 }).notNull(), // gt|gte|lt|lte|eq
+    threshold: numeric("threshold", { precision: 18, scale: 4 }).notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    datasourceConfig: jsonb("datasource_config").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+export type ParametricTriggerDefinition =
+  typeof parametricTriggerDefinitions.$inferSelect;
+
+export const parametricProducts = pgTable(
+  "parametric_products",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => insuranceProducts.id),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    payoutAmount: numeric("payout_amount", { precision: 18, scale: 2 }).notNull(),
+    coveredPeril: varchar("covered_peril", { length: 64 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    productTriggerUniq: uniqueIndex("parametric_products_product_trigger_uniq").on(
+      t.productId,
+      t.triggerId
+    ),
+  })
+);
+export type ParametricProduct = typeof parametricProducts.$inferSelect;
+
+export const parametricEvents = pgTable(
+  "parametric_events",
+  {
+    id: serial("id").primaryKey(),
+    eventKey: varchar("event_key", { length: 256 }).notNull().unique(),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    measuredValue: numeric("measured_value", { precision: 18, scale: 4 }),
+    payloadHash: varchar("payload_hash", { length: 64 }),
+    payload: jsonb("payload"),
+    datasourceType: varchar("datasource_type", { length: 16 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull(), // fired|not_fired|data_unavailable
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    triggerStatusIdx: index("pte_trigger_status_idx").on(t.triggerId, t.status),
+  })
+);
+export type ParametricEvent = typeof parametricEvents.$inferSelect;
+
+export const parametricPayoutSettlements = pgTable(
+  "parametric_payout_settlements",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id")
+      .notNull()
+      .references(() => parametricEvents.id),
+    claimId: integer("claim_id")
+      .notNull()
+      .references(() => claims.id),
+    paymentId: integer("payment_id"),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull(), // paid|pending_adjudication|failed
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    eventClaimUniq: uniqueIndex("parametric_payout_event_claim_uniq").on(
+      t.eventId,
+      t.claimId
+    ),
+    eventIdx: index("ptp_event_idx").on(t.eventId),
+  })
+);
+export type ParametricPayoutSettlement =
+  typeof parametricPayoutSettlements.$inferSelect;
+
+// Staff-attested readings for 'manual' datasources (dual control).
+export const parametricManualReadings = pgTable(
+  "parametric_manual_readings",
+  {
+    id: serial("id").primaryKey(),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    metric: varchar("metric", { length: 64 }).notNull(),
+    value: numeric("value", { precision: 18, scale: 4 }).notNull(),
+    observedAt: timestamp("observed_at").notNull(),
+    attestedBy: integer("attested_by").notNull(),
+    confirmedBy: integer("confirmed_by"),
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    confirmedAt: timestamp("confirmed_at"),
+  },
+  t => ({
+    triggerIdx: index("pmr_trigger_idx").on(t.triggerId, t.createdAt),
+  })
+);
+export type ParametricManualReading =
+  typeof parametricManualReadings.$inferSelect;
+
+// Per-product STP auto-adjudication tiers (claimsJourneyPolicy extension).
+// No row for a product ⇒ the ₦200,000 platform default
+// (J03_AUTO_ADJUDICATION_CAP_NGN) applies unchanged.
+export const claimStpTiers = pgTable(
+  "claim_stp_tiers",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id").references(() => insuranceProducts.id),
+    tierName: varchar("tier_name", { length: 64 }).notNull(),
+    autoApproveCap: numeric("auto_approve_cap", { precision: 18, scale: 2 }).notNull(),
+    maxFraudScore: numeric("max_fraud_score", { precision: 5, scale: 2 }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    productTierUniq: uniqueIndex("claim_stp_tiers_product_tier_uniq").on(
+      t.productId,
+      t.tierName
+    ),
+    productIdx: index("cst_product_idx").on(t.productId),
+  })
+);
+export type ClaimStpTier = typeof claimStpTiers.$inferSelect;

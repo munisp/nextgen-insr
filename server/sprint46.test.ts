@@ -361,7 +361,15 @@ describe("Sprint 46: Data Integrity", () => {
     // push, causing 42P01 in routers that write innovation tables), so
     // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
     // a weakening — measured number wins.
-    expect(stats.totalTables).toBe(250);
+    // 2026-09-25 (Q-wave Q2): migration 0087 adds six REAL platform-schema
+    // tables for the parametric trigger engine + STP expansion:
+    // parametric_trigger_definitions, parametric_products,
+    // parametric_events, parametric_payout_settlements,
+    // parametric_manual_readings, claim_stp_tiers. All six pgTable
+    // definitions appended to drizzle/schema.ts, so drizzle-kit push
+    // materializes them: 250 + 6 = 256. Honest-count drift, not a
+    // weakening — the gate still counts information_schema at runtime.
+    expect(stats.totalTables).toBe(256);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
