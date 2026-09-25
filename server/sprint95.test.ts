@@ -46,8 +46,13 @@ describe("Sprint 95: Router Implementation", () => {
   // before phone-match customer merges, audit finding #8); verified
   // legitimate (router({...}) present, registered as phoneOwnership in
   // server/routers.ts). Measured 467 in CI (job 105754628299).
-  it("should have 467 router files", () => {
-    expect(routerFiles.length).toBe(467);
+  // 2026-09-25 drift fix (Q4 health & retention wave): verified live count =
+  // 469 — the 468th/469th files are server/routers/careRetention.ts and
+  // server/routers/providerPortal.ts, real tRPC routers added by the Q4 wave
+  // (migration 0089); verified legitimate (router({...}) present, registered
+  // as careRetention/providerPortal in server/routers.ts). Measured locally.
+  it("should have 469 router files", () => {
+    expect(routerFiles.length).toBe(469);
   });
 
   it("should have zero empty routers (router({}))", () => {

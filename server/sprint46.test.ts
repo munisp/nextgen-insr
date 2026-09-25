@@ -361,7 +361,12 @@ describe("Sprint 46: Data Integrity", () => {
     // push, causing 42P01 in routers that write innovation tables), so
     // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
     // a weakening — measured number wins.
-    expect(stats.totalTables).toBe(250);
+    // 2026-09-25 (Q4 health & retention wave): migration 0089 added four
+    // REAL platform-schema tables (teleconsult_sessions, wellness_content,
+    // provider_tariffs, photo_reimbursements), 250 + 4 = 254. Honest-count
+    // drift, not a weakening — the gate still counts information_schema at
+    // runtime; if CI measures differently, the measured number wins.
+    expect(stats.totalTables).toBe(254);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

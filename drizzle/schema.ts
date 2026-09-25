@@ -6007,3 +6007,142 @@ export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;
 // agents(phone) intentionally has NO new index here: migration 0079 already
 // created the unique index "agents_phone_unique" (G3 wave, audit #26).
 // Indexes do not change the platform table count (sprint46=250).
+
+// ─── Q4 health & retention wave (2026-09-25, migration 0089) ────────────────
+// Care-app retention layer (Alan model) + claims CX upgrades (Curacel model).
+// Four REAL platform tables, appended only; no existing table/column changed.
+// sprint46 table count: 250 + 4 = 254 (measured).
+
+// teleconsult_sessions — member teleconsult bookings against a configurable
+// external provider adapter (server/lib/teleconsultAdapter.ts). PHI-MINIMIZED
+// BY DESIGN: we store only the provider's opaque session reference, scheduling
+// metadata and a coarse lifecycle status. No transcripts, no notes, no
+// symptoms, no diagnosis payloads are ever persisted on this platform.
+export const teleconsultSessions = pgTable(
+  "teleconsult_sessions",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("memberId").notNull(),
+    // Provider adapter tenant/code (env TELECONSULT_PROVIDER_CODE) so future
+    // multi-provider deployments stay unambiguous.
+    providerCode: varchar("providerCode", { length: 64 }).notNull(),
+    // Opaque session reference returned by the provider — NOT a PHI payload.
+    providerSessionRef: varchar("providerSessionRef", {
+      length: 128,
+    }).notNull(),
+    // Coarse lifecycle only: scheduled | in_progress | completed | cancelled |
+    // failed. Mirrored from the provider on status polls; never clinical data.
+    status: varchar("status", { length: 32 }).default("scheduled").notNull(),
+    scheduledAt: timestamp("scheduledAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    memberIdx: index("tc_member_created_idx").on(t.memberId, t.createdAt),
+    statusIdx: index("tc_status_idx").on(t.status),
+    providerRefUnique: uniqueIndex("tc_provider_ref_unique").on(
+      t.providerCode,
+      t.providerSessionRef
+    ),
+  })
+);
+export type TeleconsultSession = typeof teleconsultSessions.$inferSelect;
+
+// wellness_content — staff-curated retention content (Alan-style care feed).
+// Members read a locale-aware, paginated feed of published items only.
+export const wellnessContent = pgTable(
+  "wellness_content",
+  {
+    id: serial("id").primaryKey(),
+    title: varchar("title", { length: 256 }).notNull(),
+    body: text("body").notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    // BCP-47-ish short tag ("en", "fr", "ha", "yo", "ig"); feed filters on it.
+    locale: varchar("locale", { length: 16 }).default("en").notNull(),
+    // draft | published | archived. Members NEVER see non-published rows.
+    status: varchar("status", { length: 16 }).default("draft").notNull(),
+    publishedAt: timestamp("publishedAt"),
+    createdBy: integer("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    feedIdx: index("wc_feed_idx").on(t.locale, t.category, t.publishedAt),
+    statusIdx: index("wc_status_idx").on(t.status),
+  })
+);
+export type WellnessContent = typeof wellnessContent.$inferSelect;
+
+// provider_tariffs — Curacel-model negotiated provider pricing:
+// (providerCode, serviceCode) -> negotiated price. Provider-portal
+// pre-authorization pricing is FAIL-CLOSED against this table: no tariff row,
+// no pre-auth quote.
+export const providerTariffs = pgTable(
+  "provider_tariffs",
+  {
+    id: serial("id").primaryKey(),
+    providerCode: varchar("providerCode", { length: 64 }).notNull(),
+    serviceCode: varchar("serviceCode", { length: 64 }).notNull(),
+    serviceName: varchar("serviceName", { length: 256 }),
+    negotiatedPrice: numeric("negotiatedPrice", {
+      precision: 18,
+      scale: 2,
+    }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    providerServiceUnique: uniqueIndex("pt_provider_service_unique").on(
+      t.providerCode,
+      t.serviceCode
+    ),
+    providerIdx: index("pt_provider_idx").on(t.providerCode),
+  })
+);
+export type ProviderTariff = typeof providerTariffs.$inferSelect;
+
+// photo_reimbursements — one-tap photo reimbursement requests. documentRefs
+// are object-storage keys issued by the EXISTING presigned PUT flow
+// (documentManagement.requestUploadUrl, P-wave); keys are user-scoped and
+// verified prefix-owned at submit time. Adjudication REUSES the existing
+// claim_status vocabulary (pending_review -> under_review -> approved /
+// rejected) and, when linked to a real claim, drives the claim's own status.
+export const photoReimbursements = pgTable(
+  "photo_reimbursements",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("memberId").notNull(),
+    // NULL = direct-to-review queue (no claim linkage requested/possible).
+    claimId: integer("claimId"),
+    documentRefs: json("documentRefs").$type<string[]>().notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    description: text("description"),
+    // Reuses claim statuses: pending_review | under_review | approved |
+    // rejected | paid.
+    status: varchar("status", { length: 32 })
+      .default("pending_review")
+      .notNull(),
+    // OCR honesty contract: not_requested | unavailable | manual_entry |
+    // completed. "manual_entry" is the DISCLOSED fallback when no OCR
+    // provider is configured — staff key amounts in by hand. No fake OCR
+    // results are ever synthesized (server/lib/ocrAdapter.ts).
+    ocrStatus: varchar("ocrStatus", { length: 32 })
+      .default("not_requested")
+      .notNull(),
+    // Only ever real adapter output; NULL otherwise.
+    ocrExtracted: json("ocrExtracted"),
+    reviewedBy: integer("reviewedBy"),
+    reviewedAt: timestamp("reviewedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    memberIdx: index("pr_member_idx").on(t.memberId, t.createdAt),
+    claimIdx: index("pr_claim_idx").on(t.claimId),
+    statusIdx: index("pr_status_idx").on(t.status),
+  })
+);
+export type PhotoReimbursement = typeof photoReimbursements.$inferSelect;

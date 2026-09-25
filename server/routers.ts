@@ -272,6 +272,9 @@ import {
 } from "./routers/innovationRouters";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
 import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
+// Q4 health & retention wave (2026-09-25)
+import { careRetentionRouter } from "./routers/careRetention";
+import { providerPortalRouter } from "./routers/providerPortal";
 // ── KYC/KYB Enforcement & Compliance Services ──
 // ── Insurance Domain Workflows (Sprint 98) ──
 // ── Insurance KPI Dashboards (all 16 roles) ──
@@ -1170,6 +1173,10 @@ export const appRouter = router({
   renewalPrediction: renewalPredictionRouter,
   sloMonitor: sloMonitorRouter,
   didIdentity: didIdentityRouter,
+  // Q4 health & retention wave (2026-09-25): care-app retention (Alan) +
+  // claims CX / provider portal (Curacel) — migration 0089.
+  careRetention: careRetentionRouter,
+  providerPortal: providerPortalRouter,
 });
 
 export type AppRouter = typeof appRouter;
