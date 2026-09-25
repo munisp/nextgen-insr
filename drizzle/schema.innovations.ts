@@ -405,3 +405,122 @@ export const verifiableCredentials = pgTable("verifiable_credentials", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
+
+// ── 17. Q-wave (2026-09-25): P2P pool surplus accounting + usage-based motor ──
+// Migration 0088. Five tables:
+//   pool_periods                — period-close accounting record per pool
+//   pool_surplus_distributions  — dual-control surplus distribution lines
+//   telematics_trips            — idempotent trip batch ingestion (clientTripId)
+//   telematics_scores           — rolling driving score + bounded rating factor
+//   usage_cover_activations     — per-trip / per-day cover activation
+export const poolPeriods = pgTable("pool_periods", {
+  id: serial("id").primaryKey(),
+  poolId: integer("pool_id").notNull().references(() => p2pPools.id),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  openingBalance: decimal("opening_balance", { precision: 15, scale: 2 }).notNull(),
+  contributionsCollected: decimal("contributions_collected", { precision: 15, scale: 2 }).notNull().default("0"),
+  claimsPaid: decimal("claims_paid", { precision: 15, scale: 2 }).notNull().default("0"),
+  closingBalance: decimal("closing_balance", { precision: 15, scale: 2 }).notNull(),
+  reserveBps: integer("reserve_bps").notNull(),
+  reserveAmount: decimal("reserve_amount", { precision: 15, scale: 2 }).notNull(),
+  surplusAmount: decimal("surplus_amount", { precision: 15, scale: 2 }).notNull(),
+  // 'p2p_refund' (Pineapple-style member refunds) or 'takaful_wakala'
+  // (surplus after wakala operator fee; Sharia config disclosed at propose).
+  distributionMode: varchar("distribution_mode", { length: 24 }).notNull().default("p2p_refund"),
+  wakalaFeeBps: integer("wakala_fee_bps"),
+  wakalaFeeAmount: decimal("wakala_fee_amount", { precision: 15, scale: 2 }),
+  // open → closed → distribution_proposed → distribution_approved → distributed
+  status: varchar("status", { length: 24 }).notNull().default("open"),
+  closedByUserId: integer("closed_by_user_id"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  poolPeriodIdx: index("idx_pool_periods_pool").on(t.poolId, t.periodEnd),
+  poolPeriodUq: uniqueIndex("uq_pool_periods_pool_start").on(t.poolId, t.periodStart),
+}));
+
+export const poolSurplusDistributions = pgTable("pool_surplus_distributions", {
+  id: serial("id").primaryKey(),
+  periodId: integer("period_id").notNull().references(() => poolPeriods.id),
+  poolId: integer("pool_id").notNull().references(() => p2pPools.id),
+  memberId: integer("member_id").notNull().references(() => p2pPoolMembers.id),
+  customerId: integer("customer_id").notNull().references(() => customers.id),
+  shareBps: integer("share_bps").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  // proposed → approved → executed | failed (failed is retryable; TB leg is
+  // ref-deduped so re-execution never double-pays).
+  status: varchar("status", { length: 16 }).notNull().default("proposed"),
+  proposedByUserId: integer("proposed_by_user_id").notNull(),
+  approvedByUserId: integer("approved_by_user_id"),
+  executedByUserId: integer("executed_by_user_id"),
+  tbTransferId: varchar("tb_transfer_id", { length: 64 }),
+  failureReason: text("failure_reason"),
+  executedAt: timestamp("executed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  periodIdx: index("idx_pool_surplus_dist_period").on(t.periodId, t.status),
+  memberUq: uniqueIndex("uq_pool_surplus_dist_period_member").on(t.periodId, t.memberId),
+}));
+
+export const telematicsTrips = pgTable("telematics_trips", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  policyId: integer("policy_id").notNull().references(() => policies.id),
+  customerId: integer("customer_id").notNull().references(() => customers.id),
+  // Client-generated idempotency key: a redelivered mobile SDK batch upserts
+  // ON CONFLICT DO NOTHING and never double-counts a trip.
+  clientTripId: varchar("client_trip_id", { length: 64 }).notNull(),
+  deviceId: varchar("device_id", { length: 64 }).notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+  distanceKm: decimal("distance_km", { precision: 10, scale: 3 }).notNull().default("0"),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  hardBrakes: integer("hard_brakes").notNull().default(0),
+  speedingEvents: integer("speeding_events").notNull().default(0),
+  corneringEvents: integer("cornering_events").notNull().default(0),
+  nightDrivingSeconds: integer("night_driving_seconds").notNull().default(0),
+  maxSpeedKmh: decimal("max_speed_kmh", { precision: 6, scale: 2 }),
+  tripScore: decimal("trip_score", { precision: 5, scale: 2 }),
+  rawEventCount: integer("raw_event_count").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientTripUq: uniqueIndex("uq_telematics_trips_client_trip").on(t.clientTripId),
+  policyIdx: index("idx_telematics_trips_policy").on(t.policyId, t.startedAt),
+}));
+
+export const telematicsScores = pgTable("telematics_scores", {
+  id: serial("id").primaryKey(),
+  policyId: integer("policy_id").notNull().references(() => policies.id).unique(),
+  customerId: integer("customer_id").notNull().references(() => customers.id),
+  // Rolling score 0–100 over the trailing window; ratingFactor is bounded
+  // 0.70–1.30 (1.00 default) and feeds insuranceProductCatalog.calculatePremium.
+  score: decimal("score", { precision: 5, scale: 2 }).notNull(),
+  ratingFactor: decimal("rating_factor", { precision: 4, scale: 2 }).notNull().default("1.00"),
+  tripsCounted: integer("trips_counted").notNull().default(0),
+  windowDays: integer("window_days").notNull().default(30),
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const usageCoverActivations = pgTable("usage_cover_activations", {
+  id: serial("id").primaryKey(),
+  policyId: integer("policy_id").notNull().references(() => policies.id),
+  customerId: integer("customer_id").notNull().references(() => customers.id),
+  coverType: varchar("cover_type", { length: 8 }).notNull(), // 'trip' | 'day'
+  // Client-generated idempotency key (app/USSD) — replay returns the existing
+  // activation instead of double-activating.
+  clientActivationId: varchar("client_activation_id", { length: 64 }).notNull(),
+  tripId: integer("trip_id").references(() => telematicsTrips.id),
+  days: integer("days"),
+  premiumAmount: decimal("premium_amount", { precision: 15, scale: 2 }),
+  status: varchar("status", { length: 16 }).notNull().default("active"), // active | expired | cancelled
+  activatedAt: timestamp("activated_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientActivationUq: uniqueIndex("uq_usage_cover_client_activation").on(t.clientActivationId),
+  policyStatusIdx: index("idx_usage_cover_policy_status").on(t.policyId, t.status),
+  expiryIdx: index("idx_usage_cover_expiry").on(t.status, t.expiresAt),
+}));

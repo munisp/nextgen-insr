@@ -361,7 +361,15 @@ describe("Sprint 46: Data Integrity", () => {
     // push, causing 42P01 in routers that write innovation tables), so
     // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
     // a weakening — measured number wins.
-    expect(stats.totalTables).toBe(250);
+    // 2026-09-25 (Q-wave Q3): count updated 250 → 255 — migration 0088
+    // added five REAL innovation-schema tables (pool_periods,
+    // pool_surplus_distributions, telematics_trips, telematics_scores,
+    // usage_cover_activations), pgTable definitions appended to
+    // drizzle/schema.innovations.ts so drizzle-kit push materializes
+    // them. Honest-count drift, not a weakening — the gate still counts
+    // information_schema at runtime; if CI measures differently, the
+    // measured number wins.
+    expect(stats.totalTables).toBe(255);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

@@ -48,6 +48,7 @@ import { loadVaultSecrets } from "../_core/vault";
 import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
 import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
 import { runPolicyLifecycleSweep } from "../cron/policyLifecycleSweep";
+import { runPoolPeriodCloseSweep, runUsageCoverExpirySweep } from "../cron/poolPeriodCloseSweep";
 import {
   startArchivalCronWorker,
   stopArchivalCronWorker,
@@ -964,6 +965,24 @@ async function startServer() {
       )
     );
   }); // Daily at 3 AM
+
+  // Q-wave Q3 (2026-09-25): pool period-close + usage-cover expiry sweeps,
+  // same node-cron pattern. Both idempotent and error-logged
+  // (see cron/poolPeriodCloseSweep).
+  cron.schedule("0 4 * * *", () => {
+    runPoolPeriodCloseSweep().catch(err =>
+      logger.error(
+        `[Cron] poolPeriodCloseSweep rejected: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+  }); // Daily at 4 AM
+  cron.schedule("0 * * * *", () => {
+    runUsageCoverExpirySweep().catch(err =>
+      logger.error(
+        `[Cron] usageCoverExpirySweep rejected: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+  }); // Hourly
 
   // SAR retry cron — every 15 minutes, retries pending NFIU submissions
   startSarRetryCronSchedule();

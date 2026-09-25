@@ -130,6 +130,25 @@ func (ps *PostgresStore) runMigrations() error {
 			created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_rebind_agent ON phone_rebind_audit(agent_id)`,
+
+		// Q-wave Q3 (2026-09-25): per-day usage-cover activations. Session-
+		// bound idempotency key dedups telco callback redelivery; the expiry
+		// index backs the sweep that flips due rows to 'expired'.
+		`CREATE TABLE IF NOT EXISTS usage_cover_activations (
+			id              TEXT PRIMARY KEY,
+			session_id      TEXT NOT NULL,
+			phone_number    TEXT NOT NULL,
+			product_id      TEXT NOT NULL,
+			days            INTEGER NOT NULL,
+			status          TEXT NOT NULL DEFAULT 'active',
+			reference       TEXT,
+			activated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			expires_at      TIMESTAMPTZ NOT NULL,
+			idempotency_key TEXT
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_cover_idempotency ON usage_cover_activations(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_cover_expiry ON usage_cover_activations(status, expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_cover_phone ON usage_cover_activations(phone_number, status)`,
 	}
 
 	for _, migration := range migrations {
@@ -693,4 +712,63 @@ func (ps *PostgresStore) RebindAgentPhone(ctx context.Context, agentID, oldPhone
 		return fmt.Errorf("postgres: rebind audit: %w", err)
 	}
 	return tx.Commit()
+}
+
+// CreateUsageCoverActivationIdempotent inserts a per-day usage-cover
+// activation bound to an idempotency key (Q-wave Q3, 2026-09-25). If a row
+// with the same key already exists (telco callback redelivery / session
+// resume replay), the EXISTING row is returned with dup=true instead of
+// creating a duplicate activation. Mirrors CreateTransactionIdempotent.
+func (ps *PostgresStore) CreateUsageCoverActivationIdempotent(ctx context.Context, act *models.UsageCoverActivation, idempotencyKey string) (*models.UsageCoverActivation, bool, error) {
+	if act.ID == "" {
+		act.ID = generateID()
+	}
+	if act.Reference == "" {
+		act.Reference = "UCD-" + generateID()[:12]
+	}
+	if act.Status == "" {
+		act.Status = models.UsageCoverStatusActive
+	}
+	act.ActivatedAt = time.Now().UTC()
+
+	query := `INSERT INTO usage_cover_activations
+		(id, session_id, phone_number, product_id, days, status, reference, activated_at, expires_at, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (idempotency_key) DO NOTHING
+		RETURNING id`
+	var id string
+	err := ps.db.QueryRowContext(ctx, query,
+		act.ID, act.SessionID, act.PhoneNumber, act.ProductID,
+		act.Days, act.Status, act.Reference, act.ActivatedAt, act.ExpiresAt, idempotencyKey,
+	).Scan(&id)
+	if err == nil {
+		return act, false, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, false, fmt.Errorf("postgres: create usage cover activation idempotent: %w", err)
+	}
+	// Conflict: fetch the existing row.
+	var existing models.UsageCoverActivation
+	row := ps.db.QueryRowContext(ctx,
+		`SELECT id, session_id, phone_number, product_id, days, status, reference, activated_at, expires_at
+		 FROM usage_cover_activations WHERE idempotency_key = $1`, idempotencyKey)
+	if err := row.Scan(&existing.ID, &existing.SessionID, &existing.PhoneNumber, &existing.ProductID,
+		&existing.Days, &existing.Status, &existing.Reference, &existing.ActivatedAt, &existing.ExpiresAt); err != nil {
+		return nil, false, fmt.Errorf("postgres: fetch idempotent usage cover activation: %w", err)
+	}
+	return &existing, true, nil
+}
+
+// ExpireDueUsageCoverActivations flips active activations whose expires_at
+// has passed to 'expired' in one guarded UPDATE. Idempotent — safe to call
+// on every sweep tick. Returns the number of rows expired.
+func (ps *PostgresStore) ExpireDueUsageCoverActivations(ctx context.Context) (int, error) {
+	result, err := ps.db.ExecContext(ctx,
+		`UPDATE usage_cover_activations SET status = 'expired'
+		 WHERE status = 'active' AND expires_at <= NOW()`)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: expire usage cover activations: %w", err)
+	}
+	affected, _ := result.RowsAffected()
+	return int(affected), nil
 }
