@@ -71,3 +71,17 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// Q-wave Q6 PWA hardening (2026-09-25) — additive service worker
+// registration for the offline shell. Previously /sw.js was only registered
+// lazily by the push-notifications service, so users without push permission
+// never got the offline shell. Registration is fire-and-forget: failure to
+// register must never break the app, and the worker itself never caches
+// POST/mutation responses or auth tokens (see public/sw.js disclosures).
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("[PWA] Service worker registration failed (non-fatal):", error);
+    });
+  });
+}
