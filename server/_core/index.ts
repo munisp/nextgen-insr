@@ -45,6 +45,7 @@ import { logger, requestLoggingMiddleware } from "./logger";
 import { ddosTelemetryMiddleware } from "../lib/ddosTelemetry";
 import { registerLakehouseCron } from "../lakehouseCron";
 import { registry, httpRequestDurationMs } from "../metrics";
+import { registerParametricCron } from "../parametricCron";
 import { createContext } from "./context";
 import { registerKeycloakAuthRoutes, KC_SESSION_COOKIE } from "./keycloakAuth";
 import { serveStatic, setupVite } from "./vite";
@@ -1009,6 +1010,10 @@ async function startServer() {
     registerSettlementCron();
     // Register lakehouse daily snapshot crons (02:00–02:15 WAT)
     registerLakehouseCron();
+    // Q-wave Q2 (2026-09-25): parametric trigger evaluation cron
+    // (node-cron pattern, same as settlement/lakehouse; idempotent per
+    // evaluation window — see server/parametricCron.ts).
+    registerParametricCron();
     // Start ERP auto-retry worker (exponential backoff)
     startErpRetryWorker();
     // Start archival cron worker (S60-3)

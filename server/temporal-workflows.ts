@@ -595,3 +595,34 @@ export async function BillingProvisioningWorkflow(input: {
     throw err;
   }
 }
+
+// ─── Q-wave Q1 (2026-09-25): freemium-upgrade reminder journey ───────────────
+// Started by embeddedPartnerFactory.enrollFreemium via startFreemiumUpgrade-
+// Reminder (server/temporal.ts). Sleeps for the reminder delay, then records
+// the reminder through the activity above. workflowId is deterministic
+// (`freemium-upgrade-reminder-<enrollmentId>`) so duplicate enrollments cannot
+// double-fire.
+const { sendFreemiumUpgradeReminder } = proxyActivities<{
+  sendFreemiumUpgradeReminder(input: {
+    enrollmentId: number;
+    customerId: number;
+  }): Promise<{ reminded: boolean }>;
+}>({ startToCloseTimeout: "1 minute" });
+
+export interface FreemiumUpgradeReminderInput {
+  enrollmentId: number;
+  customerId: number;
+  /** Days after enrollment before the upgrade reminder fires. */
+  reminderDelayDays: number;
+}
+
+export async function FreemiumUpgradeReminderWorkflow(
+  input: FreemiumUpgradeReminderInput
+): Promise<{ reminded: boolean }> {
+  const days = Math.min(Math.max(input.reminderDelayDays, 1), 30);
+  await sleep(`${days} days`);
+  return sendFreemiumUpgradeReminder({
+    enrollmentId: input.enrollmentId,
+    customerId: input.customerId,
+  });
+}

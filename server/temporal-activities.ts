@@ -492,3 +492,32 @@ export async function rollbackBillingStep(input: {
   );
   return { rolledBack: true, step: input.step };
 }
+
+// ─── Q-wave Q1 (2026-09-25): freemium-upgrade reminder journey activity ──────
+// Fired by FreemiumUpgradeReminderWorkflow after the reminder delay. Real
+// persistent effect: an audit-log entry recording the reminder; notification
+// delivery rides the existing notification pipeline (audit-driven alerts) —
+// no separate SMS provider is fabricated here.
+export async function sendFreemiumUpgradeReminder(input: {
+  enrollmentId: number;
+  customerId: number;
+}): Promise<{ reminded: boolean }> {
+  const db = await getDb();
+  if (!db) {
+    logger.warn(
+      `[Temporal] sendFreemiumUpgradeReminder: DB unavailable (enrollment ${input.enrollmentId})`
+    );
+    return { reminded: false };
+  }
+  const { writeAuditLog } = await import("./db");
+  await writeAuditLog({
+    action: "FREEMIUM_UPGRADE_REMINDER",
+    resource: "freemium_enrollment",
+    resourceId: String(input.enrollmentId),
+    metadata: { customerId: input.customerId },
+  });
+  logger.info(
+    `[Temporal] Freemium upgrade reminder recorded for enrollment ${input.enrollmentId} (customer ${input.customerId})`
+  );
+  return { reminded: true };
+}

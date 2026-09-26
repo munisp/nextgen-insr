@@ -69,6 +69,10 @@ export const FLUVIO_TOPICS = {
   AGENT_TELEMETRY: "agent-telemetry",
   KYC_EVENTS: "kyc-events",
   SETTLEMENT: "settlement-events",
+  // Q-wave Q1 (2026-09-25): embedded partner factory + freemium ladder
+  // fan-out streams (analytics/notification consumers).
+  EMBEDDED_EVENTS: "embedded-events",
+  FREEMIUM_EVENTS: "freemium-events",
 } as const;
 
 // ── In-memory buffer for when Fluvio is unreachable ──────────────────────────

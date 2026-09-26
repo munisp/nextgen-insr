@@ -219,6 +219,9 @@ import { dynamicQrPaymentRouter } from "./routers/dynamicQrPayment";
 import { e2eTestFrameworkRouter } from "./routers/e2eTestFramework";
 import { emailDeliveryLogRouter } from "./routers/emailDeliveryLogCrud";
 import { emailNotificationsRouter } from "./routers/emailNotifications";
+// Q-wave Q1 (2026-09-25): embedded partner product factory + freemium ladder
+// + scenario builder (migration 0086).
+import { embeddedPartnerFactoryRouter } from "./routers/embeddedPartnerFactory";
 import { encryptedFieldsRouter } from "./routers/encryptedFieldsCrud";
 import { eodReconciliationRouter } from "./routers/eodReconciliation";
 import { erpRouter } from "./routers/erp";
@@ -345,6 +348,7 @@ import { ollamaLLMRouter } from "./routers/ollamaLLM";
 import { openTelemetryRouter } from "./routers/openTelemetry";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 import { operationalRunbookRouter } from "./routers/operationalRunbook";
+import { parametricEngineRouter } from "./routers/parametricEngine";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1165,8 +1169,12 @@ export const appRouter = router({
   p2pPools: p2pPoolsRouter,
   voiceClaims: voiceClaimsRouter,
   parametric: parametricRouter,
+  // Q-wave Q2 (2026-09-25): parametric trigger engine + STP expansion
+  // (migration 0087). Router count 467 → 468 (sprint95 gate updated).
+  parametricEngine: parametricEngineRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
+  embeddedFactory: embeddedPartnerFactoryRouter,
   openInsurance: openInsuranceRouter,
   climateRisk: climateRiskRouter,
   renewalPrediction: renewalPredictionRouter,
