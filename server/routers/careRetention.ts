@@ -25,6 +25,7 @@ import { z } from "zod";
 import {
   auditLog,
   claims,
+  claimWorkflowEvents,
   photoReimbursements,
   teleconsultSessions,
   wellnessContent,
@@ -60,6 +61,64 @@ const REIMBURSEMENT_STATUSES = [
  */
 function ownedUploadPrefix(userId: number): string {
   return `uploads/claim_document/${userId}/`;
+}
+
+/**
+ * 2026-09-26 (Q24 fix): claim status state machine for adjudication-driven
+ * transitions. Terminal states (paid / rejected / closed) can NEVER be
+ * regressed — before this guard, adjudicating a photo reimbursement linked
+ * to a PAID claim silently rewrote it to "approved", after which
+ * settleClaimPayment fails closed and the claim became unpayable.
+ * Vocabulary = the repo's claim_status pgEnum (drizzle/schema.ts).
+ */
+type ClaimStatus =
+  | "submitted"
+  | "under_review"
+  | "investigation"
+  | "approved"
+  | "partially_approved"
+  | "rejected"
+  | "paid"
+  | "closed"
+  | "appealed"
+  | "escalated"
+  | "pending_adjudication";
+
+const TERMINAL_CLAIM_STATUSES: ReadonlySet<ClaimStatus> = new Set([
+  "paid",
+  "rejected",
+  "closed",
+]);
+
+const CLAIM_TRANSITIONS: Readonly<Record<ClaimStatus, readonly ClaimStatus[]>> = {
+  submitted: ["under_review", "investigation", "approved", "rejected", "escalated", "pending_adjudication"],
+  under_review: ["investigation", "approved", "partially_approved", "rejected", "escalated", "pending_adjudication"],
+  investigation: ["under_review", "approved", "partially_approved", "rejected", "escalated", "pending_adjudication"],
+  pending_adjudication: ["under_review", "investigation", "approved", "partially_approved", "rejected", "escalated"],
+  escalated: ["under_review", "approved", "rejected"],
+  appealed: ["under_review", "approved", "rejected"],
+  approved: ["paid", "closed"],
+  partially_approved: ["paid", "closed"],
+  paid: [],
+  rejected: [],
+  closed: [],
+};
+
+function assertClaimTransition(from: string, to: ClaimStatus): void {
+  const fromStatus = from as ClaimStatus;
+  if (TERMINAL_CLAIM_STATUSES.has(fromStatus)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Claim is in terminal state "${from}" and cannot be regressed to "${to}"`,
+    });
+  }
+  const allowed = CLAIM_TRANSITIONS[fromStatus];
+  if (!allowed || !allowed.includes(to)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Illegal claim status transition "${from}" → "${to}"`,
+    });
+  }
 }
 
 export const careRetentionRouter = router({
@@ -484,12 +543,55 @@ export const careRetentionRouter = router({
           updatedAt: new Date(),
         })
         .where(eq(photoReimbursements.id, row.id));
+      let claimFromStatus: ClaimStatus | null = null;
+      let approvedAmount: string | null = null;
       if (row.claimId != null) {
-        // Reuse the EXISTING claim_status vocabulary on the linked claim.
+        // Reuse the EXISTING claim_status vocabulary on the linked claim,
+        // but only via a LEGAL transition (2026-09-26, Q24 fix): terminal
+        // states (paid / rejected / closed) can never be regressed — a paid
+        // claim rewritten to "approved" becomes unpayable because
+        // settleClaimPayment fails closed on non-approved states.
+        const [claim] = await db
+          .select()
+          .from(claims)
+          .where(eq(claims.id, row.claimId))
+          .limit(1);
+        if (!claim) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Linked claim not found",
+          });
+        }
+        assertClaimTransition(claim.status, input.decision);
+        claimFromStatus = claim.status as ClaimStatus;
+        if (input.decision === "approved") {
+          // approvedAmount is set consistently with the reimbursement
+          // decision and bounded by the claimed amount; fail closed when
+          // the claimed amount is missing/unparseable rather than
+          // over-approving.
+          const claimed = Number(claim.claimedAmount);
+          const requested = Number(row.amount);
+          if (!Number.isFinite(claimed) || claimed <= 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "Linked claim has no valid claimed amount; approval would be unbounded — refused",
+            });
+          }
+          if (!Number.isFinite(requested) || requested <= 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "Reimbursement has no valid amount; cannot derive approvedAmount — refused",
+            });
+          }
+          approvedAmount = Math.min(requested, claimed).toFixed(2);
+        }
         await db
           .update(claims)
           .set({
             status: input.decision,
+            ...(approvedAmount != null ? { approvedAmount } : {}),
             rejectionReason:
               input.decision === "rejected"
                 ? (input.notes ?? "Photo reimbursement rejected")
@@ -497,6 +599,21 @@ export const careRetentionRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(claims.id, row.claimId));
+        // Workflow provenance for every adjudication-driven transition.
+        await db.insert(claimWorkflowEvents).values({
+          claimId: row.claimId,
+          eventType:
+            input.decision === "approved" ? "claim.approved" : "claim.rejected",
+          fromStatus: claimFromStatus ?? undefined,
+          toStatus: input.decision,
+          triggeredBy: ctx.user.id,
+          payload: {
+            photoReimbursementId: row.id,
+            decision: input.decision,
+            approvedAmount,
+          },
+          notes: input.notes ?? null,
+        });
       }
       await db.insert(auditLog).values({
         action: `photo_reimbursement_${input.decision}`,
@@ -506,9 +623,17 @@ export const careRetentionRouter = router({
         metadata: {
           reviewedBy: ctx.user.id,
           claimId: row.claimId,
+          claimFromStatus,
+          claimToStatus: row.claimId != null ? input.decision : null,
+          approvedAmount,
           notes: input.notes ?? null,
         },
       } as any);
-      return { id: row.id, status: input.decision, claimId: row.claimId };
+      return {
+        id: row.id,
+        status: input.decision,
+        claimId: row.claimId,
+        approvedAmount,
+      };
     }),
 });

@@ -20,7 +20,7 @@ import { describe, it, beforeAll, afterEach, expect, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 import { getDb } from "../../server/db";
-import { claims, users } from "../../drizzle/schema";
+import { claims, claimWorkflowEvents, users } from "../../drizzle/schema";
 import {
   adminUser,
   callerFor,
@@ -357,6 +357,127 @@ describe("Q4: one-tap photo reimbursement (presign -> submit -> review)", () => 
         decision: "approved",
       })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // ── 2026-09-26 (Q24 fix): claim state-machine guard + workflow provenance ──
+  it("a PAID linked claim cannot be regressed by adjudication (terminal-state guard)", async () => {
+    const member = callerFor(regularUser);
+    const staff = callerFor(adminUser);
+    const db = (await getDb())!;
+    const [paidClaim] = await db
+      .insert(claims)
+      .values({
+        claimNumber: `CLM-Q4-PAID-${Date.now()}`,
+        policyId: 1,
+        claimantId: regularUser.id,
+        status: "paid",
+        claimType: "health",
+        incidentDate: new Date(),
+        claimedAmount: "45000.00",
+        approvedAmount: "45000.00",
+        paidAmount: "45000.00",
+        incidentDescription: "Q4 paid-claim regression probe",
+      } as any)
+      .returning();
+    const fileKey = await presignReceipt();
+    const submitted = await member.careRetention.photoReimbursementSubmit({
+      claimId: paidClaim.id,
+      documentRefs: [fileKey],
+      amount: 45000,
+    });
+    await expect(
+      staff.careRetention.photoReimbursementReview({
+        id: submitted.id,
+        decision: "approved",
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    // Claim untouched: still paid, no regression, no workflow event.
+    const [after] = await db
+      .select()
+      .from(claims)
+      .where(eq(claims.id, paidClaim.id))
+      .limit(1);
+    expect(after.status).toBe("paid");
+    const events = await db
+      .select()
+      .from(claimWorkflowEvents)
+      .where(eq(claimWorkflowEvents.claimId, paidClaim.id));
+    expect(events.length).toBe(0);
+  });
+
+  it("legal adjudication transition writes a claimWorkflowEvents row and sets bounded approvedAmount", async () => {
+    const member = callerFor(regularUser);
+    const staff = callerFor(adminUser);
+    const claim = await makeClaim(regularUser.id); // claimedAmount 45000, submitted
+    const fileKey = await presignReceipt();
+    const submitted = await member.careRetention.photoReimbursementSubmit({
+      claimId: claim.id,
+      documentRefs: [fileKey],
+      amount: 60000, // above the claimed amount — must be clamped
+    });
+    const reviewed = await staff.careRetention.photoReimbursementReview({
+      id: submitted.id,
+      decision: "approved",
+    });
+    expect(reviewed.status).toBe("approved");
+    const db = (await getDb())!;
+    const [after] = await db
+      .select()
+      .from(claims)
+      .where(eq(claims.id, claim.id))
+      .limit(1);
+    expect(after.status).toBe("approved");
+    // approvedAmount bounded by the claimed amount (fail-closed clamp).
+    expect(Number(after.approvedAmount)).toBe(45000);
+
+    const events = await db
+      .select()
+      .from(claimWorkflowEvents)
+      .where(eq(claimWorkflowEvents.claimId, claim.id));
+    expect(events.length).toBe(1);
+    const ev = events[0];
+    expect(ev.eventType).toBe("claim.approved");
+    expect(ev.fromStatus).toBe("submitted");
+    expect(ev.toStatus).toBe("approved");
+    expect(ev.triggeredBy).toBe(adminUser.id);
+    expect(
+      (ev.payload as { photoReimbursementId?: number } | null)
+        ?.photoReimbursementId
+    ).toBe(submitted.id);
+  });
+
+  it("rejection writes a claim.rejected workflow event with from → to statuses", async () => {
+    const member = callerFor(regularUser);
+    const staff = callerFor(adminUser);
+    const claim = await makeClaim(regularUser.id);
+    const fileKey = await presignReceipt();
+    const submitted = await member.careRetention.photoReimbursementSubmit({
+      claimId: claim.id,
+      documentRefs: [fileKey],
+      amount: 10000,
+    });
+    await staff.careRetention.photoReimbursementReview({
+      id: submitted.id,
+      decision: "rejected",
+      notes: "Receipt illegible",
+    });
+    const db = (await getDb())!;
+    const [after] = await db
+      .select()
+      .from(claims)
+      .where(eq(claims.id, claim.id))
+      .limit(1);
+    expect(after.status).toBe("rejected");
+    expect(after.rejectionReason).toBe("Receipt illegible");
+    const events = await db
+      .select()
+      .from(claimWorkflowEvents)
+      .where(eq(claimWorkflowEvents.claimId, claim.id));
+    expect(events.length).toBe(1);
+    expect(events[0].eventType).toBe("claim.rejected");
+    expect(events[0].fromStatus).toBe("submitted");
+    expect(events[0].toStatus).toBe("rejected");
+    expect(events[0].triggeredBy).toBe(adminUser.id);
   });
 
   it("OCR adapter returns real fields only when a provider answers (test-layer stub)", async () => {
