@@ -73,6 +73,13 @@ const OPERATIONAL_TOPICS = [
   "aml.screening.results",
   "aml.sar.retry.complete",
   "workflow.events",
+  // Q-wave Q3 (2026-09-25): pool surplus lifecycle, UBI score updates,
+  // usage-cover activations.
+  "pool.surplus.proposed",
+  "pool.surplus.approved",
+  "pool.surplus.executed",
+  "telematics.score.updated",
+  "usagecover.activated",
 ] as const;
 
 const INFRA_TOPICS = [

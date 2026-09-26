@@ -21,7 +21,12 @@ import {
   bancassuranceRouter,
   // M-wave (W1, 2026-09-19): cvClaims under test (auto-approve flip removed).
   cvClaimsRouter,
+  // Q-wave Q3 (2026-09-25): telematics UBI + usage cover under the real
+  // middleware chain — production mount paths (server/routers.ts).
+  telematicsRouter,
+  usageCoverRouter,
 } from "../../../server/routers/innovationRouters";
+import { insuranceProductCatalogRouter } from "../../../server/routers/insuranceProductCatalog";
 // M-wave (W1, 2026-09-19): journey triggers under the real middleware chain.
 import { insuranceJourneyOrchestratorV2Router } from "../../../server/routers/insuranceJourneyOrchestratorV2";
 // N-wave (2026-09-19): V1 orchestrator under test (generic-trigger J03 /
@@ -90,6 +95,10 @@ export const integrationRouter = router({
   adminDashboard: adminDashboardRouter,
   pbacManagement: pbacManagementRouter,
   p2pPools: p2pPoolsRouter,
+  // Q-wave Q3 (2026-09-25): production mount paths (server/routers.ts).
+  telematics: telematicsRouter,
+  usageCover: usageCoverRouter,
+  insuranceProductCatalog: insuranceProductCatalogRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
   // M-wave (W1, 2026-09-19): production mount paths (server/routers.ts).

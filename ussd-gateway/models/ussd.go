@@ -154,3 +154,29 @@ func GetProductByID(id string) *ProductOption {
 	}
 	return nil
 }
+
+// UsageCoverActivation represents a USSD-initiated per-day usage-cover
+// activation (Q-wave Q3, 2026-09-25). Persisted in the gateway's OWN
+// ussd_usage_cover_activations table (renamed 2026-09-26, verify-a #11c, to
+// avoid colliding with the platform monolith's divergent
+// usage_cover_activations schema from migration 0088): the gateway records
+// the activation request durably and idempotently (session-bound
+// idempotency key) so telco callback redelivery never double-activates.
+type UsageCoverActivation struct {
+	ID          string    `json:"id"`
+	SessionID   string    `json:"session_id"`
+	PhoneNumber string    `json:"phone_number"`
+	ProductID   string    `json:"product_id"` // motor product the cover attaches to
+	Days        int       `json:"days"`
+	Status      string    `json:"status"` // active | expired | cancelled
+	Reference   string    `json:"reference"`
+	ActivatedAt time.Time `json:"activated_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// Usage cover status constants.
+const (
+	UsageCoverStatusActive    = "active"
+	UsageCoverStatusExpired   = "expired"
+	UsageCoverStatusCancelled = "cancelled"
+)

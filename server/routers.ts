@@ -272,6 +272,7 @@ import {
   nhiaRouter, comparisonRouter, p2pPoolsRouter, voiceClaimsRouter,
   parametricRouter, groupInsuranceRouter, bancassuranceRouter, openInsuranceRouter,
   climateRiskRouter, renewalPredictionRouter, sloMonitorRouter, didIdentityRouter,
+  usageCoverRouter,
 } from "./routers/innovationRouters";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
 import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
@@ -1159,6 +1160,7 @@ export const appRouter = router({
   journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
   j20Scheduler: j20SchedulerRouter,
   telematics: telematicsRouter,
+  usageCover: usageCoverRouter,
   cvClaims: cvClaimsRouter,
   fraudNetwork: fraudNetworkRouter,
   healthWearables: healthWearablesRouter,

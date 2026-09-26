@@ -34,7 +34,11 @@ import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { SignJWT } from "jose";
-import cron from "node-cron";
+// 2026-09-26: named `schedule` import merged into the existing statement —
+// `cron.schedule` on NEW schedules trips import/no-named-as-default-member,
+// while a second import line trips import/no-duplicates (ESLint ratchet).
+// Existing pre-baseline call sites are untouched.
+import cron, { schedule as scheduleCron } from "node-cron";
 import { RedisStore } from "rate-limit-redis";
 
 import { logger, requestLoggingMiddleware } from "./logger";
@@ -49,6 +53,7 @@ import { loadVaultSecrets } from "../_core/vault";
 import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
 import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
 import { runPolicyLifecycleSweep } from "../cron/policyLifecycleSweep";
+import { runPoolPeriodCloseSweep, runUsageCoverExpirySweep } from "../cron/poolPeriodCloseSweep";
 import {
   startArchivalCronWorker,
   stopArchivalCronWorker,
@@ -965,6 +970,24 @@ async function startServer() {
       )
     );
   }); // Daily at 3 AM
+
+  // Q-wave Q3 (2026-09-25): pool period-close + usage-cover expiry sweeps,
+  // same node-cron pattern. Both idempotent and error-logged
+  // (see cron/poolPeriodCloseSweep).
+  scheduleCron("0 4 * * *", () => {
+    runPoolPeriodCloseSweep().catch(err =>
+      logger.error(
+        `[Cron] poolPeriodCloseSweep rejected: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+  }); // Daily at 4 AM
+  scheduleCron("0 * * * *", () => {
+    runUsageCoverExpirySweep().catch(err =>
+      logger.error(
+        `[Cron] usageCoverExpirySweep rejected: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+  }); // Hourly
 
   // SAR retry cron — every 15 minutes, retries pending NFIU submissions
   startSarRetryCronSchedule();
