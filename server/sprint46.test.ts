@@ -361,7 +361,15 @@ describe("Sprint 46: Data Integrity", () => {
     // push, causing 42P01 in routers that write innovation tables), so
     // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
     // a weakening — measured number wins.
-    expect(stats.totalTables).toBe(250);
+    // 2026-09-25 (Q-wave Q1, feat/innov-embedded): migration 0086 adds four
+    // REAL platform-schema tables (partner_products, freemium_tiers,
+    // freemium_enrollments, scenario_templates), 250 + 4 = 254 measured on
+    // THIS branch. Sibling Q-wave branches add their own tables on their
+    // own branches (Q2 +6, Q4 +4) — the orchestrator resolves the merged
+    // count at merge time; this branch records only its own measured
+    // increment. Honest-count drift, not a weakening — the gate still
+    // counts information_schema at runtime; measured number wins.
+    expect(stats.totalTables).toBe(254);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

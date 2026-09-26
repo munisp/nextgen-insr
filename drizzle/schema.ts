@@ -6007,3 +6007,101 @@ export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;
 // agents(phone) intentionally has NO new index here: migration 0079 already
 // created the unique index "agents_phone_unique" (G3 wave, audit #26).
 // Indexes do not change the platform table count (sprint46=250).
+
+// ─── Q-wave Q1: Embedded partner product factory (2026-09-25, migration 0086) ──
+// Append-only tail: four NEW tables. partner_products is the Turaco/Lami-style
+// partner→product embedding config (limits, commission, branding, whitelabel,
+// sandbox flag); freemium_tiers + freemium_enrollments are the MicroEnsure-
+// style free→paid ladder; scenario_templates are ZhongAn-style event-bound
+// small-ticket covers. Sprint46 platform table count: 250 + 4 = 254 measured
+// on this branch (sibling Q2/Q4 branches add their own tables on their own
+// branches; orchestrator resolves the merged count — see migration 0086 header).
+export const partnerProducts = pgTable(
+  "partner_products",
+  {
+    id: serial("id").primaryKey(),
+    partnerCode: varchar("partnerCode", { length: 32 }).notNull().unique(),
+    partnerName: varchar("partnerName", { length: 128 }).notNull(),
+    productId: integer("productId")
+      .notNull()
+      .references(() => insuranceProducts.id),
+    maxSumInsured: numeric("maxSumInsured", { precision: 18, scale: 2 }).notNull(),
+    commissionRate: numeric("commissionRate", { precision: 5, scale: 2 })
+      .notNull()
+      .default("5.0"),
+    branding: jsonb("branding").default({}),
+    whitelabel: boolean("whitelabel").notNull().default(false),
+    sandbox: boolean("sandbox").notNull().default(false),
+    apiKeyHash: varchar("apiKeyHash", { length: 64 }),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdByUserId: integer("createdByUserId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    // 2026-09-26 fix: pp_* prefix collided with premium_payments' pp_status_idx
+    // (drizzle-kit push rejects duplicated index names across public schema)
+    productIdx: index("pprod_product_idx").on(t.productId),
+    statusIdx: index("pprod_status_idx").on(t.status),
+  })
+);
+export type PartnerProduct = typeof partnerProducts.$inferSelect;
+export type InsertPartnerProduct = typeof partnerProducts.$inferInsert;
+
+export const freemiumTiers = pgTable("freemium_tiers", {
+  id: serial("id").primaryKey(),
+  tierCode: varchar("tierCode", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  productId: integer("productId")
+    .notNull()
+    .references(() => insuranceProducts.id),
+  monthlyPremium: numeric("monthlyPremium", { precision: 18, scale: 2 })
+    .notNull()
+    .default("0"),
+  sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+  coverageType: varchar("coverageType", { length: 64 }).notNull(),
+  isFree: boolean("isFree").notNull().default(false),
+  sortOrder: integer("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FreemiumTier = typeof freemiumTiers.$inferSelect;
+
+export const freemiumEnrollments = pgTable(
+  "freemium_enrollments",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId").notNull(),
+    tierId: integer("tierId")
+      .notNull()
+      .references(() => freemiumTiers.id),
+    policyId: integer("policyId").references(() => policies.id),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+    upgradedAt: timestamp("upgradedAt"),
+    metadata: jsonb("metadata").default({}),
+  },
+  t => ({
+    customerIdx: index("fe_customer_idx").on(t.customerId),
+    tierIdx: index("fe_tier_idx").on(t.tierId),
+  })
+);
+export type FreemiumEnrollment = typeof freemiumEnrollments.$inferSelect;
+
+export const scenarioTemplates = pgTable("scenario_templates", {
+  id: serial("id").primaryKey(),
+  templateCode: varchar("templateCode", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  productId: integer("productId")
+    .notNull()
+    .references(() => insuranceProducts.id),
+  triggerEvent: varchar("triggerEvent", { length: 64 }).notNull(),
+  coverageType: varchar("coverageType", { length: 64 }).notNull(),
+  sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+  premiumAmount: numeric("premiumAmount", { precision: 18, scale: 2 }).notNull(),
+  durationHours: integer("durationHours").notNull().default(24),
+  terms: jsonb("terms").default({}),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ScenarioTemplate = typeof scenarioTemplates.$inferSelect;
