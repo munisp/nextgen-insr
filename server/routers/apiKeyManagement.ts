@@ -11,7 +11,7 @@ import { z } from "zod";
 import { apiKeys } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { VALID_SCOPES } from "./developerPortal";
+import { apiScopeSchema } from "./developerPortal";
 
 // 2026-09-19 (L-wave, L-P-9): server-side rate-limit ceilings. Callers may
 // request a rateLimit but it is CLAMPED server-side — a non-admin can never
@@ -225,7 +225,9 @@ const createKey = protectedProcedure
       // 2026-09-19 (L-wave, L-P-9): scopes are validated against the
       // server-side allowlist (same VALID_SCOPES as developerPortal) —
       // callers can no longer self-grant arbitrary scope strings.
-      scopes: z.array(z.enum(VALID_SCOPES)).optional(),
+      // 2026-09-25 (Q-wave Q1): allowlist also covers the anchored
+      // "embed:product:<id>" pattern via apiScopeSchema (same discipline).
+      scopes: z.array(apiScopeSchema).max(64).optional(),
       rateLimit: z.number().int().positive().max(100000).optional(),
       expiresAt: z.coerce.date().optional(),
     })

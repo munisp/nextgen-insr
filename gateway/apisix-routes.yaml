@@ -457,6 +457,41 @@ routes:
         key_type: var
         key: remote_addr
 
+  # === Q-wave Q5 (2026-09-25): polyglot parametric services (ADDITIVE) ===
+  # Go parametric-evaluator: operator re-evaluation hook + health/metrics.
+  # Settlement writes remain owned by the TS parametric engine (outbox
+  # discipline) — this route exposes NO payout capability.
+  - uri: /api/v1/parametric-eval/*
+    name: parametric-evaluator
+    upstream:
+      type: roundrobin
+      nodes:
+        "parametric-evaluator:8095": 1
+    plugins:
+      proxy-rewrite:
+        regex_uri: ["^/api/v1/parametric-eval/(.*)", "/$1"]
+      limit-req:
+        rate: 10
+        burst: 5
+        key_type: var
+        key: remote_addr
+
+  # Python geo-analytics: zone lookup/enrichment for parametric triggers.
+  - uri: /api/v1/geo/*
+    name: geo-analytics
+    upstream:
+      type: roundrobin
+      nodes:
+        "geo-analytics:8096": 1
+    plugins:
+      proxy-rewrite:
+        regex_uri: ["^/api/v1/geo/(.*)", "/$1"]
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
+
 # Global plugins applied to all routes
 global_rules:
   - plugins:

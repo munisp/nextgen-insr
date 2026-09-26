@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { wellnessApi, WellnessFeedItem } from '../services/api';
 
 interface HealthMetrics {
   daily_steps: number;
@@ -40,6 +41,30 @@ export default function HealthWellnessScreen() {
     { id: 'WC-002', title: 'Sleep Champion', description: 'Get 7+ hours of sleep', progress: 4, target: 5, unit: 'nights', reward_points: 300, category: 'sleep' },
     { id: 'WC-003', title: 'Hydration Hero', description: 'Drink 2.5L daily', progress: 1800, target: 2500, unit: 'ml', reward_points: 400, category: 'hydration' },
   ]);
+
+  // Q4 (2026-09-25): real wellness feed state (no fixtures).
+  const [feed, setFeed] = useState<{ loading: boolean; error: string | null; items: WellnessFeedItem[] }>({
+    loading: true,
+    error: null,
+    items: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    wellnessApi
+      .feed({ locale: 'en', limit: 10 })
+      .then(res => {
+        if (!cancelled) setFeed({ loading: false, error: null, items: res.items });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setFeed({ loading: false, error: err instanceof Error ? err.message : 'load failed', items: [] });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const getTierColor = (tier: string) => {
     switch (tier) {
@@ -119,6 +144,27 @@ export default function HealthWellnessScreen() {
         <Text style={styles.connectButtonText}>Connect Wearable Device</Text>
         <Text style={styles.connectSubtext}>Google Health Connect • Apple HealthKit • Samsung Health</Text>
       </TouchableOpacity>
+
+      {/* Q4 (2026-09-25): REAL staff-curated wellness feed from the platform
+          (careRetention.wellnessFeed). Loading / error / empty states are
+          rendered honestly — no placeholder articles are ever fabricated. */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Wellness Feed</Text>
+        {feed.loading && <Text style={styles.feedStatus}>Loading…</Text>}
+        {!feed.loading && feed.error != null && (
+          <Text style={styles.feedStatus}>Couldn't load wellness content. Pull to retry later.</Text>
+        )}
+        {!feed.loading && feed.error == null && feed.items.length === 0 && (
+          <Text style={styles.feedStatus}>No wellness articles published yet.</Text>
+        )}
+        {!feed.loading && feed.error == null && feed.items.map(item => (
+          <View key={item.id} style={styles.feedCard}>
+            <Text style={styles.feedCategory}>{item.category.toUpperCase()}</Text>
+            <Text style={styles.feedTitle}>{item.title}</Text>
+            <Text style={styles.feedBody} numberOfLines={3}>{item.body}</Text>
+          </View>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -155,4 +201,10 @@ const styles = StyleSheet.create({
   connectButton: { margin: 16, padding: 16, backgroundColor: '#1f2937', borderRadius: 12, alignItems: 'center' },
   connectButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
   connectSubtext: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  // Q4 (2026-09-25): wellness feed styles.
+  feedStatus: { fontSize: 13, color: '#6b7280', textAlign: 'center', paddingVertical: 12 },
+  feedCard: { backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
+  feedCategory: { fontSize: 11, fontWeight: '700', color: '#059669', marginBottom: 4 },
+  feedTitle: { fontSize: 15, fontWeight: '600', color: '#1f2937' },
+  feedBody: { fontSize: 13, color: '#6b7280', marginTop: 4 },
 });

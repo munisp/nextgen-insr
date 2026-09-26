@@ -35,14 +35,31 @@ import {
   renewalPredictions, sloDefinitions, errorBudgetBurns, incidents,
   cvDamageAssessments, fraudGraphNodes, fraudGraphEdges, voiceClaimTranscripts,
   didIdentities, verifiableCredentials,
+  // Q-wave Q3 (2026-09-25): pool surplus accounting + usage-based motor.
+  poolPeriods, poolSurplusDistributions, telematicsTrips, telematicsScores,
+  usageCoverActivations,
 } from "../../drizzle/schema.innovations";
 import { protectedProcedure, adminProcedure, publicProcedure, router } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { validateAudioUrl } from "../_core/voiceTranscription";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
+import { kafkaPublish, TOPICS } from "../kafka";
 import { writeAuditLog } from "../lib/auditLogger";
-import { acquireLock, releaseLock } from "../lib/redisClient";
+import { acquireLock, releaseLock, getRedisClient } from "../lib/redisClient";
+import {
+  computePeriodClose, computeDistributionShares, persistPeriodClose,
+} from "../lib/poolSurplus";
+import {
+  scoreTrip, rollingScore, ratingFactorFromScore, TELEMATICS_WINDOW_DAYS_DEFAULT,
+} from "../lib/telematicsScoring";
 import { tbCreateTransfer, TB_SYSTEM_ACCOUNTS } from "../tbClient";
+
+// 2026-09-26: canonical drizzle handle type from the repo's getDb() accessor
+// (type-only usage — getDb is already imported). Removes the `any` params in
+// the Q3 helpers below so row types flow from the table definitions and the
+// ESLint unsafe-* ratchet stays clean.
+type DrizzleDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 // ── Service URL helpers ───────────────────────────────────────────────────────
 const SVC = {
@@ -177,7 +194,198 @@ export const telematicsRouter = router({
         .orderBy(desc(telematicsEvents.recordedAt))
         .limit(input.limit);
     }),
+
+  // ── Q-wave Q3 (2026-09-25): UBI trip ingestion + rolling score ───────────
+
+  /**
+   * Batch trip ingestion from the mobile SDK. Idempotent by clientTripId
+   * (unique index + ON CONFLICT DO NOTHING): a redelivered batch replays
+   * honestly (inserted=0, duplicates=N) and NEVER double-counts a trip.
+   * Payload is zod-schema-validated per trip; the whole batch is rejected on
+   * any schema violation (no partial silent drops). After ingest the rolling
+   * score is recomputed and the Redis score cache invalidated.
+   */
+  ingestTripBatch: protectedProcedure
+    .input(z.object({
+      policyId: z.number(),
+      trips: z.array(z.object({
+        clientTripId: z.string().min(8).max(64),
+        deviceId: z.string().min(1).max(64),
+        startedAt: z.string().datetime(),
+        endedAt: z.string().datetime(),
+        distanceKm: z.number().min(0).max(5000),
+        durationSeconds: z.number().int().min(0).max(86400),
+        hardBrakes: z.number().int().min(0).max(10000).default(0),
+        speedingEvents: z.number().int().min(0).max(10000).default(0),
+        corneringEvents: z.number().int().min(0).max(10000).default(0),
+        nightDrivingSeconds: z.number().int().min(0).max(86400).default(0),
+        maxSpeedKmh: z.number().min(0).max(400).optional(),
+        rawEventCount: z.number().int().min(0).default(0),
+      })).min(1).max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // AUTHORIZATION (2026-09-26, verify-a finding #10 — cross-policy trip
+      // injection IDOR): a caller may only ingest trips for a policy they
+      // OWN; staff (admin/supervisor) may ingest for any policy (e.g.
+      // back-office device imports). Fail-closed: an unknown policy or a
+      // policy owned by someone else is denied and audited — an authenticated
+      // user can never move another policy's rating factor.
+      const [policy] = await db.select({ id: policies.id, customerId: policies.customerId })
+        .from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      const isStaff = ctx.user.role === "admin" || ctx.user.role === "supervisor";
+      if (!policy || (policy.customerId !== ctx.user.id && !isStaff)) {
+        await writeAuditLog({
+          action: "TELEMATICS_INGEST_DENIED",
+          resource: "policy",
+          resourceId: String(input.policyId),
+          status: "failure",
+          metadata: {
+            callerUserId: ctx.user.id,
+            reason: !policy ? "policy_not_found" : "policy_not_owned_by_caller",
+            tripCount: input.trips.length,
+          },
+        });
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot ingest trips for a policy you do not own",
+        });
+      }
+
+      let inserted = 0;
+      let duplicates = 0;
+      for (const t of input.trips) {
+        const tripScore = scoreTrip(t);
+        const rows = await db.insert(telematicsTrips).values({
+          policyId: input.policyId,
+          customerId: ctx.user.id,
+          clientTripId: t.clientTripId,
+          deviceId: t.deviceId,
+          startedAt: new Date(t.startedAt),
+          endedAt: new Date(t.endedAt),
+          distanceKm: t.distanceKm.toString(),
+          durationSeconds: t.durationSeconds,
+          hardBrakes: t.hardBrakes,
+          speedingEvents: t.speedingEvents,
+          corneringEvents: t.corneringEvents,
+          nightDrivingSeconds: t.nightDrivingSeconds,
+          maxSpeedKmh: t.maxSpeedKmh?.toString() ?? null,
+          tripScore: tripScore.toString(),
+          rawEventCount: t.rawEventCount,
+        }).onConflictDoNothing({ target: telematicsTrips.clientTripId }).returning({ id: telematicsTrips.id });
+        if (rows.length > 0) inserted++;
+        else duplicates++;
+      }
+
+      // Recompute the rolling score over the trailing window and upsert the
+      // per-policy score row with the bounded rating factor.
+      const score = await recomputeRollingScore(db, input.policyId, ctx.user.id);
+
+      const eventPayload = {
+        id: `telematics-score-${input.policyId}-${Date.now()}`,
+        policyId: input.policyId,
+        score: score?.score ?? null,
+        ratingFactor: score?.ratingFactor ?? null,
+        tripsCounted: score?.tripsCounted ?? 0,
+        batchInserted: inserted,
+        batchDuplicates: duplicates,
+      };
+      await kafkaPublish(TOPICS.TELEMATICS_SCORE_UPDATED, String(input.policyId), eventPayload).catch(() => false);
+      await fluvioProduce("telematics.score.updated", { value: JSON.stringify(eventPayload) }).catch(() => {});
+
+      return {
+        success: true as const,
+        inserted,
+        duplicates,
+        idempotent: duplicates > 0 && inserted === 0,
+        rollingScore: score?.score ?? null,
+        ratingFactor: score?.ratingFactor ?? null,
+        tripsCounted: score?.tripsCounted ?? 0,
+      };
+    }),
+
+  /**
+   * Current rolling score + bounded rating factor for a policy. Redis-cached
+   * (60s TTL) — the cache is a read accelerator only; on any Redis failure
+   * the read falls through to PostgreSQL (the source of truth) honestly.
+   */
+  getScore: protectedProcedure
+    .input(z.object({ policyId: z.number() }))
+    .query(async ({ input }) => {
+      const cacheKey = `telematics:score:${input.policyId}`;
+      try {
+        const cached = await getRedisClient().get(cacheKey);
+        if (cached) return { ...JSON.parse(cached), source: "redis_cache" as const };
+      } catch { /* cache miss/unavailable — fall through to PG */ }
+
+      const db = await getDb();
+      if (!db) return { policyId: input.policyId, score: null, ratingFactor: 1.0, tripsCounted: 0, source: "postgresql" as const };
+      const [row] = await db.select().from(telematicsScores)
+        .where(eq(telematicsScores.policyId, input.policyId)).limit(1);
+      const payload = row
+        ? {
+            policyId: input.policyId,
+            score: parseFloat(row.score),
+            ratingFactor: parseFloat(row.ratingFactor),
+            tripsCounted: row.tripsCounted,
+            windowDays: row.windowDays,
+            computedAt: row.computedAt,
+          }
+        : { policyId: input.policyId, score: null, ratingFactor: 1.0, tripsCounted: 0 };
+      try {
+        await getRedisClient().set(cacheKey, JSON.stringify(payload), "EX", 60);
+      } catch { /* best-effort cache write */ }
+      return { ...payload, source: "postgresql" as const };
+    }),
 });
+
+/**
+ * Recompute the rolling score for a policy from telematics_trips over the
+ * trailing window, upsert telematics_scores, and invalidate the Redis cache
+ * entry. Shared by ingestTripBatch and any future score jobs.
+ */
+async function recomputeRollingScore(db: DrizzleDb, policyId: number, customerId: number) {
+  const since = new Date();
+  since.setDate(since.getDate() - TELEMATICS_WINDOW_DAYS_DEFAULT);
+  const trips = await db.select().from(telematicsTrips)
+    .where(and(eq(telematicsTrips.policyId, policyId), gte(telematicsTrips.startedAt, since)));
+  if (trips.length === 0) return null;
+
+  const score = rollingScore(
+    trips.map((t) => ({ tripScore: parseFloat(t.tripScore ?? "100"), distanceKm: parseFloat(t.distanceKm) })),
+  );
+  const ratingFactor = ratingFactorFromScore(score);
+  const [row] = await db.insert(telematicsScores).values({
+    policyId,
+    customerId,
+    score: score.toString(),
+    ratingFactor: ratingFactor.toString(),
+    tripsCounted: trips.length,
+    windowDays: TELEMATICS_WINDOW_DAYS_DEFAULT,
+    computedAt: new Date(),
+    updatedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: telematicsScores.policyId,
+    set: {
+      score: score.toString(),
+      ratingFactor: ratingFactor.toString(),
+      tripsCounted: trips.length,
+      windowDays: TELEMATICS_WINDOW_DAYS_DEFAULT,
+      customerId,
+      computedAt: new Date(),
+      updatedAt: new Date(),
+    },
+  }).returning();
+
+  // Invalidate the score cache so the next getScore reads the fresh row.
+  try {
+    await getRedisClient().del(`telematics:score:${policyId}`);
+  } catch { /* best-effort invalidation */ }
+
+  return { score, ratingFactor, tripsCounted: trips.length, id: row?.id };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 2. CV CLAIMS ADJUSTER ROUTER
@@ -938,6 +1146,483 @@ export const p2pPoolsRouter = router({
         .orderBy(desc(p2pPools.createdAt))
         .limit(20);
       return query;
+    }),
+
+  // ── Q-wave Q3 (2026-09-25): period-close surplus accounting ──────────────
+  // Lifecycle: closePoolPeriod → proposeSurplusDistribution →
+  // approveSurplusDistribution (checker ≠ maker) → executeSurplusDistribution
+  // (TB transfers, ref-deduped, fail-loud). All four run on
+  // financialProcedure ("refund"/"claim_settle" ops — Permify fail-closed).
+
+  /**
+   * Close a pool period and compute the surplus. Staff-only (financial
+   * "claim_settle" op). Idempotent per (poolId, periodStart): a replay
+   * returns the already-closed period instead of double-closing.
+   */
+  closePoolPeriod: financialProcedure
+    .input(z.object({
+      poolId: z.number(),
+      periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      reserveBps: z.number().int().min(0).max(9000).optional(),
+      distributionMode: z.enum(["p2p_refund", "takaful_wakala"]).default("p2p_refund"),
+      wakalaFeeBps: z.number().int().min(0).max(5000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      let comp;
+      try {
+        comp = await computePeriodClose(db, input);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      const { period, alreadyClosed } = await persistPeriodClose(db, comp, ctx.user.id);
+      if (alreadyClosed) {
+        return { success: true as const, idempotent: true as const, periodId: period.id, status: period.status };
+      }
+
+      await writeAuditLog({
+        action: "P2P_POOL_PERIOD_CLOSED",
+        resource: "pool_period",
+        resourceId: String(period.id),
+        metadata: {
+          closedByUserId: ctx.user.id,
+          poolId: input.poolId,
+          closingBalance: comp.closingBalance,
+          reserveBps: comp.reserveBps,
+          surplusAmount: comp.surplusAmount,
+          distributionMode: comp.distributionMode,
+          wakalaFeeBps: comp.wakalaFeeBps,
+          wakalaFeeAmount: comp.wakalaFeeAmount,
+        },
+      });
+
+      return {
+        success: true as const,
+        idempotent: false as const,
+        periodId: period.id,
+        status: "closed",
+        closingBalance: comp.closingBalance,
+        reserveAmount: comp.reserveAmount,
+        surplusAmount: comp.surplusAmount,
+        distributableSurplus: comp.distributableSurplus,
+      };
+    }),
+
+  /**
+   * Propose a surplus distribution for a closed period (maker). Computes
+   * pro-rata member shares (takaful mode: wakala fee already deducted at
+   * close; the Sharia config is disclosed in the response and audit) and
+   * persists proposed lines. Surplus-cap invariant asserted here AND at
+   * execute. Idempotent per period: a second proposal replays the existing
+   * lines (they are unique per (periodId, memberId)).
+   */
+  proposeSurplusDistribution: financialProcedure
+    .input(z.object({ periodId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [period] = await db.select().from(poolPeriods)
+        .where(eq(poolPeriods.id, input.periodId)).limit(1);
+      if (!period) throw new TRPCError({ code: "NOT_FOUND", message: "Period not found" });
+      if (period.status === "distribution_proposed" || period.status === "distribution_approved" || period.status === "distributed") {
+        const existing = await db.select().from(poolSurplusDistributions)
+          .where(eq(poolSurplusDistributions.periodId, period.id));
+        return {
+          success: true as const, idempotent: true as const, periodId: period.id,
+          status: period.status, lines: existing.length,
+          totalAmount: existing.reduce((s: number, l) => s + parseFloat(l.amount), 0),
+        };
+      }
+      if (period.status !== "closed") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Period ${period.id} is '${period.status}', not closed` });
+      }
+
+      const wakalaFee = period.wakalaFeeAmount != null ? parseFloat(period.wakalaFeeAmount) : 0;
+      const distributable = Math.round((parseFloat(period.surplusAmount) - wakalaFee) * 100) / 100;
+      const shares = await computeDistributionShares(db, {
+        poolId: period.poolId,
+        distributableSurplus: distributable,
+      });
+      if (shares.length === 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No eligible members (active with contributionPaid > 0) or zero distributable surplus",
+        });
+      }
+
+      // Propose-time surplus-cap assert (also asserted at execute).
+      const totalAmount = Math.round(shares.reduce((s, sh) => s + sh.amount, 0) * 100) / 100;
+      if (totalAmount > distributable + 0.005) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Surplus-cap violation at propose: ${totalAmount} > ${distributable} — refusing to persist`,
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        for (const sh of shares) {
+          await tx.insert(poolSurplusDistributions).values({
+            periodId: period.id,
+            poolId: period.poolId,
+            memberId: sh.memberId,
+            customerId: sh.customerId,
+            shareBps: sh.shareBps,
+            amount: sh.amount.toString(),
+            status: "proposed",
+            proposedByUserId: ctx.user.id,
+          }).onConflictDoNothing({
+            target: [poolSurplusDistributions.periodId, poolSurplusDistributions.memberId],
+          });
+        }
+        await tx.update(poolPeriods)
+          .set({ status: "distribution_proposed" })
+          .where(eq(poolPeriods.id, period.id));
+      });
+
+      // Sharia disclosure (takaful mode): the wakala operator fee, its bps,
+      // and the pre/post-fee surplus are returned to the caller, audit-logged
+      // and event-published — participants must be able to see exactly what
+      // the wakeel deducted before surplus distribution.
+      const shariaDisclosure = period.distributionMode === "takaful_wakala"
+        ? {
+            mode: "takaful_wakala" as const,
+            wakalaFeeBps: period.wakalaFeeBps,
+            wakalaFeeAmount: wakalaFee,
+            grossSurplus: parseFloat(period.surplusAmount),
+            distributableSurplus: distributable,
+            note: "Wakala model: the operator (wakeel) fee is deducted from the period surplus BEFORE pro-rata distribution to participants, per the pool's Sharia governance config.",
+          }
+        : null;
+
+      await writeAuditLog({
+        action: "P2P_SURPLUS_DISTRIBUTION_PROPOSED",
+        resource: "pool_period",
+        resourceId: String(period.id),
+        metadata: {
+          proposedByUserId: ctx.user.id,
+          poolId: period.poolId,
+          lines: shares.length,
+          totalAmount,
+          distributionMode: period.distributionMode,
+          shariaDisclosure,
+        },
+      });
+      const eventPayload = {
+        id: `pool-surplus-proposed-${period.id}`,
+        periodId: period.id, poolId: period.poolId, lines: shares.length,
+        totalAmount, distributionMode: period.distributionMode,
+        wakalaFeeAmount: wakalaFee || undefined,
+      };
+      await kafkaPublish(TOPICS.POOL_SURPLUS_PROPOSED, String(period.id), eventPayload).catch(() => false);
+      await fluvioProduce("pool.surplus.proposed", { value: JSON.stringify(eventPayload) }).catch(() => {});
+
+      return {
+        success: true as const,
+        idempotent: false as const,
+        periodId: period.id,
+        status: "distribution_proposed",
+        lines: shares.length,
+        totalAmount,
+        shariaDisclosure,
+      };
+    }),
+
+  /**
+   * Approve a proposed distribution (checker). Maker-checker: the approver
+   * must NOT be the proposer. Flips every proposed line to approved.
+   */
+  approveSurplusDistribution: financialProcedure
+    .input(z.object({ periodId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [period] = await db.select().from(poolPeriods)
+        .where(eq(poolPeriods.id, input.periodId)).limit(1);
+      if (!period) throw new TRPCError({ code: "NOT_FOUND", message: "Period not found" });
+      if (period.status === "distribution_approved" || period.status === "distributed") {
+        return { success: true as const, idempotent: true as const, periodId: period.id, status: period.status };
+      }
+      if (period.status !== "distribution_proposed") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Period ${period.id} is '${period.status}', not distribution_proposed` });
+      }
+
+      const proposed = await db.select().from(poolSurplusDistributions)
+        .where(and(eq(poolSurplusDistributions.periodId, period.id), eq(poolSurplusDistributions.status, "proposed")));
+      if (proposed.length === 0) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No proposed distribution lines" });
+      }
+      // Maker-checker SoD: the proposer cannot approve their own proposal.
+      if (proposed.some((l) => l.proposedByUserId === ctx.user.id)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the distribution proposer cannot approve their own proposal",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.update(poolSurplusDistributions)
+          .set({ status: "approved", approvedByUserId: ctx.user.id, updatedAt: new Date() })
+          .where(and(eq(poolSurplusDistributions.periodId, period.id), eq(poolSurplusDistributions.status, "proposed")));
+        await tx.update(poolPeriods)
+          .set({ status: "distribution_approved" })
+          .where(eq(poolPeriods.id, period.id));
+      });
+
+      await writeAuditLog({
+        action: "P2P_SURPLUS_DISTRIBUTION_APPROVED",
+        resource: "pool_period",
+        resourceId: String(period.id),
+        metadata: { approvedByUserId: ctx.user.id, poolId: period.poolId, lines: proposed.length },
+      });
+      const eventPayload = { id: `pool-surplus-approved-${period.id}`, periodId: period.id, poolId: period.poolId, lines: proposed.length };
+      await kafkaPublish(TOPICS.POOL_SURPLUS_APPROVED, String(period.id), eventPayload).catch(() => false);
+      await fluvioProduce("pool.surplus.approved", { value: JSON.stringify(eventPayload) }).catch(() => {});
+
+      return { success: true as const, idempotent: false as const, periodId: period.id, status: "distribution_approved", lines: proposed.length };
+    }),
+
+  /**
+   * Execute an approved distribution — the real funds path. Per member:
+   * atomic line claim (proposed/approved/failed → executing is NOT needed;
+   * the status flip approved→executed is claimed in one UPDATE), then a
+   * TigerBeetle transfer pool → customer via the existing fail-closed
+   * tbCreateTransfer (ref-deduped per line, so retries never double-pay).
+   * The surplus-cap invariant is re-asserted against the LIVE period row
+   * before any transfer: approved lines summing above the distributable
+   * surplus abort the whole execution with no funds moved.
+   */
+  executeSurplusDistribution: financialProcedure
+    .input(z.object({ periodId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [period] = await db.select().from(poolPeriods)
+        .where(eq(poolPeriods.id, input.periodId)).limit(1);
+      if (!period) throw new TRPCError({ code: "NOT_FOUND", message: "Period not found" });
+      if (period.status === "distributed") {
+        return { success: true as const, idempotent: true as const, periodId: period.id, status: "distributed" };
+      }
+      if (period.status !== "distribution_approved") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Period ${period.id} is '${period.status}', not distribution_approved` });
+      }
+
+      const [pool] = await db.select().from(p2pPools)
+        .where(eq(p2pPools.id, period.poolId)).limit(1);
+      if (!pool) throw new TRPCError({ code: "NOT_FOUND", message: "Pool not found" });
+
+      const lines = await db.select().from(poolSurplusDistributions)
+        .where(eq(poolSurplusDistributions.periodId, period.id));
+      const payable = lines.filter((l) => l.status === "approved" || l.status === "failed");
+      if (payable.length === 0) {
+        return { success: true as const, idempotent: true as const, periodId: period.id, status: period.status, executed: 0, failed: 0 };
+      }
+      // SoD: the executor must not be the proposer (maker) of these lines.
+      if (payable.some((l) => l.proposedByUserId === ctx.user.id)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Segregation of duties: the distribution proposer cannot execute their own proposal",
+        });
+      }
+
+      // Execute-time surplus-cap assert against the LIVE period accounting.
+      const wakalaFee = period.wakalaFeeAmount != null ? parseFloat(period.wakalaFeeAmount) : 0;
+      const distributable = Math.round((parseFloat(period.surplusAmount) - wakalaFee) * 100) / 100;
+      const totalApproved = Math.round(payable.reduce((s, l) => s + parseFloat(l.amount), 0) * 100) / 100;
+      if (totalApproved > distributable + 0.005) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Surplus-cap violation at execute: approved lines sum ${totalApproved} > distributable ${distributable} — no funds moved`,
+        });
+      }
+      const poolBalance = parseFloat(pool.poolBalance ?? "0");
+      if (totalApproved > poolBalance + 0.005) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Approved distribution ${totalApproved} exceeds live pool balance ${poolBalance} — no funds moved`,
+        });
+      }
+
+      const poolTbAccount = pool.tbAccountId ?? `p2p-pool-${pool.id}`;
+      let executed = 0;
+      let failed = 0;
+      for (const line of payable) {
+        // Atomic claim: exactly one executor flips the line.
+        const claimed = await db.update(poolSurplusDistributions)
+          .set({ status: "executing", executedByUserId: ctx.user.id, updatedAt: new Date() })
+          .where(and(
+            eq(poolSurplusDistributions.id, line.id),
+            sql`status IN ('approved','failed')`,
+          ))
+          .returning({ id: poolSurplusDistributions.id });
+        if (claimed.length === 0) continue; // concurrently claimed or already executed
+
+        const payoutRef = `pool-surplus-${period.id}-${line.id}`;
+        const lineAmount = parseFloat(line.amount);
+        try {
+          // ORDERING (2026-09-26, verify-a finding #6 — fund-mirroring race):
+          // the atomic balance-guarded DB debit commits BEFORE the
+          // TigerBeetle leg. The old order (TB first, guarded debit second)
+          // could leave a committed TB payout unmirrored in the DB pool
+          // balance when a concurrent drain failed the guard — the line was
+          // marked failed while the customer had already been paid in TB.
+          //
+          // Retry-safety: poolDebitedAt is written in the SAME transaction as
+          // the debit, so a failed line whose poolDebitedAt is still set
+          // already holds the debit and the retry skips straight to the
+          // ref-deduped TB leg (at-most-once debit + at-most-once payout).
+          if (!line.poolDebitedAt) {
+            await db.transaction(async (tx) => {
+              // Debit the pool balance atomically; the balance guard makes a
+              // concurrent over-draw impossible.
+              const debited = await tx.update(p2pPools)
+                .set({
+                  poolBalance: sql`(pool_balance - ${lineAmount}::numeric)::numeric(15,2)`,
+                  updatedAt: new Date(),
+                })
+                .where(sql`id = ${pool.id} AND pool_balance >= ${lineAmount}::numeric`)
+                .returning({ id: p2pPools.id });
+              if (debited.length === 0) {
+                throw new TRPCError({ code: "CONFLICT", message: "Pool balance changed concurrently — line left for retry" });
+              }
+              await tx.update(poolSurplusDistributions)
+                .set({ poolDebitedAt: new Date(), updatedAt: new Date() })
+                .where(eq(poolSurplusDistributions.id, line.id));
+            });
+          }
+
+          // TigerBeetle leg SECOND (ref-deduped: a retry replays the original
+          // outcome and can never double-pay).
+          let tbResult;
+          try {
+            tbResult = await tbCreateTransfer({
+              debitAccountId: poolTbAccount,
+              creditAccountId: `customer-${line.customerId}`,
+              amount: Math.round(lineAmount * 100),
+              ledger: 6000,
+              code: 900,
+              ref: payoutRef,
+              txType: "pool_surplus_refund",
+            });
+          } catch (tbErr) {
+            // COMPENSATION (saga): the DB debit already committed, so credit
+            // the amount back atomically with clearing poolDebitedAt — a
+            // failed TB leg must never leave the DB pool balance debited for
+            // a payout that did not happen. If the credit-back itself fails
+            // the line stays failed with poolDebitedAt SET, and the reason
+            // screams for manual reconciliation (fail-loud, never silent).
+            const tbReason = tbErr instanceof Error ? tbErr.message : String(tbErr);
+            try {
+              await db.transaction(async (tx) => {
+                await tx.update(p2pPools)
+                  .set({
+                    poolBalance: sql`(pool_balance + ${lineAmount}::numeric)::numeric(15,2)`,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(p2pPools.id, pool.id));
+                await tx.update(poolSurplusDistributions)
+                  .set({ poolDebitedAt: null, updatedAt: new Date() })
+                  .where(eq(poolSurplusDistributions.id, line.id));
+              });
+            } catch (compErr) {
+              const compReason = compErr instanceof Error ? compErr.message : String(compErr);
+              throw new Error(
+                `TB payout failed AND compensating credit-back failed — UNRECONCILED DB debit of ${lineAmount} on pool ${pool.id} ` +
+                `(ref ${payoutRef}); manual reconciliation required. TB cause: ${tbReason} | compensation cause: ${compReason}`
+              );
+            }
+            throw new Error(
+              `TB transfer failed after pool debit; compensating credit-back posted (ref ${payoutRef}). TB cause: ${tbReason}`
+            );
+          }
+
+          await db.update(poolSurplusDistributions)
+            .set({
+              status: "executed",
+              tbTransferId: tbResult?.id ?? null,
+              executedAt: new Date(),
+              failureReason: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(poolSurplusDistributions.id, line.id));
+          executed++;
+        } catch (err) {
+          // FAIL-LOUD: mark failed with the reason; retryable via re-call
+          // (the TB leg is ref-deduped and an uncompensated debit is tracked
+          // by poolDebitedAt, so a retry never double-pays or double-debits).
+          const reason = err instanceof Error ? err.message : String(err);
+          await db.update(poolSurplusDistributions)
+            .set({ status: "failed", failureReason: reason.slice(0, 300), updatedAt: new Date() })
+            .where(eq(poolSurplusDistributions.id, line.id))
+            .catch(() => {});
+          failed++;
+        }
+      }
+
+      const remaining = await db.select({ id: poolSurplusDistributions.id })
+        .from(poolSurplusDistributions)
+        .where(and(
+          eq(poolSurplusDistributions.periodId, period.id),
+          sql`status IN ('approved','executing','failed')`,
+        ));
+      if (remaining.length === 0) {
+        await db.update(poolPeriods).set({ status: "distributed" }).where(eq(poolPeriods.id, period.id));
+      }
+
+      await writeAuditLog({
+        action: "P2P_SURPLUS_DISTRIBUTION_EXECUTED",
+        resource: "pool_period",
+        resourceId: String(period.id),
+        status: failed > 0 ? "failure" : "success",
+        metadata: { executedByUserId: ctx.user.id, poolId: period.poolId, executed, failed, totalApproved },
+      });
+      const eventPayload = {
+        id: `pool-surplus-executed-${period.id}`,
+        periodId: period.id, poolId: period.poolId, executed, failed, totalApproved,
+      };
+      await kafkaPublish(TOPICS.POOL_SURPLUS_EXECUTED, String(period.id), eventPayload).catch(() => false);
+      await fluvioProduce("pool.surplus.executed", { value: JSON.stringify(eventPayload) }).catch(() => {});
+
+      return {
+        success: failed === 0,
+        idempotent: false as const,
+        periodId: period.id,
+        status: remaining.length === 0 ? "distributed" : "distribution_approved",
+        executed,
+        failed,
+      };
+    }),
+
+  /** Period accounting history for a pool (staff + pool members). */
+  listPoolPeriods: protectedProcedure
+    .input(z.object({ poolId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(poolPeriods)
+        .where(eq(poolPeriods.poolId, input.poolId))
+        .orderBy(desc(poolPeriods.periodEnd))
+        .limit(50);
+    }),
+
+  /** Distribution lines for a period (staff + affected members). */
+  listSurplusDistributions: protectedProcedure
+    .input(z.object({ periodId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(poolSurplusDistributions)
+        .where(eq(poolSurplusDistributions.periodId, input.periodId))
+        .orderBy(desc(poolSurplusDistributions.amount));
     }),
 });
 
@@ -1827,3 +2512,221 @@ export const didIdentityRouter = router({
       return { valid: true, credentialType: vc.credentialType, claims: vc.claims, issuer: vc.issuer };
     }),
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 18. Q-wave Q3 (2026-09-25): USAGE-BASED COVER ACTIVATION (per-trip / per-day)
+// ═══════════════════════════════════════════════════════════════════════════════
+export const usageCoverRouter = router({
+
+  /**
+   * Activate per-trip or per-day cover on a motor policy. Idempotent by
+   * clientActivationId (unique index): an app/USSD replay returns the
+   * EXISTING activation instead of double-activating. Day cover expires at
+   * activatedAt + days; trip cover binds to an ingested telematics trip and
+   * expires at the trip end + a 2h grace. Fail-closed: no DB → error, never
+   * a phantom "active" cover.
+   *
+   * PREMIUM DISCLOSURE (strengthened 2026-09-26, verify-a finding #11b):
+   * premiumAmount is RECORDED, NEVER COLLECTED at this write path. No funds
+   * move here — no TigerBeetle transfer, no payment-provider call; the amount
+   * is a caller-declared estimate persisted for later collection via the
+   * standard premium-collection rails (collectPremium / mobile-money). It is
+   * validated for shape only (non-negative, bounded) and MUST NOT be treated
+   * as received funds by any downstream consumer.
+   *
+   * DOUBLE-COVER GUARD (2026-09-26, verify-a finding #11a): a new activation
+   * whose window [now, expiresAt] overlaps an existing active/pending
+   * activation for the same policy is rejected with CONFLICT (409-style) —
+   * distinct clientActivationIds can no longer stack concurrent cover windows
+   * on one policy. Residual TOCTOU race disclosed: two concurrent requests
+   * with distinct client keys could both pass the pre-check; closing that
+   * fully needs a range exclusion constraint (follow-up).
+   */
+  activateCover: protectedProcedure
+    .input(z.object({
+      policyId: z.number(),
+      coverType: z.enum(["trip", "day"]),
+      clientActivationId: z.string().min(8).max(64),
+      days: z.number().int().min(1).max(30).optional(),
+      tripId: z.number().optional(),
+      // Recorded-not-collected estimate (see docstring); bounded to the
+      // numeric(15,2) column range with headroom.
+      premiumAmount: z.number().nonnegative().max(9_999_999_999.99).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Idempotent replay first — same client key returns the stored row.
+      const [existing] = await db.select().from(usageCoverActivations)
+        .where(eq(usageCoverActivations.clientActivationId, input.clientActivationId)).limit(1);
+      if (existing) {
+        return {
+          success: true as const, idempotent: true as const,
+          activationId: existing.id, status: existing.status, expiresAt: existing.expiresAt,
+        };
+      }
+
+      let expiresAt: Date;
+      let tripId: number | null = null;
+      if (input.coverType === "day") {
+        if (!input.days) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "days is required for per-day cover" });
+        }
+        expiresAt = new Date(Date.now() + input.days * 24 * 3600 * 1000);
+      } else {
+        if (!input.tripId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "tripId is required for per-trip cover" });
+        }
+        const [trip] = await db.select().from(telematicsTrips)
+          .where(eq(telematicsTrips.id, input.tripId)).limit(1);
+        if (!trip) throw new TRPCError({ code: "NOT_FOUND", message: "Trip not found" });
+        if (trip.policyId !== input.policyId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Trip does not belong to this policy" });
+        }
+        tripId = trip.id;
+        expiresAt = new Date(new Date(trip.endedAt).getTime() + 2 * 3600 * 1000);
+      }
+
+      // Double-cover guard (see docstring): reject when an existing active or
+      // pending activation for this policy overlaps the new window
+      // [now, expiresAt]. Expired/cancelled rows and windows that merely
+      // abut (end <= now or start >= expiresAt) do not conflict.
+      const now = new Date();
+      const [conflict] = await db.select({
+        id: usageCoverActivations.id,
+        status: usageCoverActivations.status,
+        expiresAt: usageCoverActivations.expiresAt,
+      }).from(usageCoverActivations)
+        .where(and(
+          eq(usageCoverActivations.policyId, input.policyId),
+          sql`status IN ('active','pending')`,
+          sql`${usageCoverActivations.activatedAt} < ${expiresAt}`,
+          sql`${usageCoverActivations.expiresAt} > ${now}`,
+        ))
+        .limit(1);
+      if (conflict) {
+        await writeAuditLog({
+          action: "USAGE_COVER_OVERLAP_DENIED",
+          resource: "policy",
+          resourceId: String(input.policyId),
+          status: "failure",
+          metadata: {
+            customerId: ctx.user.id,
+            coverType: input.coverType,
+            conflictingActivationId: conflict.id,
+            // ISO string, NOT a raw Date: the audit hash chain canonicalizes
+            // objects structurally, and a Date would hash as '{}' at write
+            // time but as its stored ISO string at verify time (chain break).
+            conflictingExpiresAt: new Date(conflict.expiresAt).toISOString(),
+          },
+        });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `An overlapping ${conflict.status} cover activation (id ${conflict.id}) already exists for this policy — refusing double-cover`,
+        });
+      }
+
+      let inserted;
+      try {
+        [inserted] = await db.insert(usageCoverActivations).values({
+          policyId: input.policyId,
+          customerId: ctx.user.id,
+          coverType: input.coverType,
+          clientActivationId: input.clientActivationId,
+          tripId,
+          days: input.coverType === "day" ? input.days! : null,
+          premiumAmount: input.premiumAmount?.toString() ?? null,
+          status: "active",
+          expiresAt,
+        }).returning();
+      } catch (err: unknown) {
+        // Unique-race replay: a concurrent request with the same client key
+        // won the insert — return the winner honestly.
+        // 2026-09-26: catch unknown (not any) — ratchet-safe error narrowing.
+        const raceMsg = err instanceof Error ? err.message : String(err);
+        if (raceMsg.includes("uq_usage_cover_client_activation")) {
+          const [winner] = await db.select().from(usageCoverActivations)
+            .where(eq(usageCoverActivations.clientActivationId, input.clientActivationId)).limit(1);
+          if (winner) {
+            return { success: true as const, idempotent: true as const, activationId: winner.id, status: winner.status, expiresAt: winner.expiresAt };
+          }
+        }
+        throw err;
+      }
+
+      await writeAuditLog({
+        action: "USAGE_COVER_ACTIVATED",
+        resource: "usage_cover_activation",
+        resourceId: String(inserted.id),
+        metadata: {
+          customerId: ctx.user.id, policyId: input.policyId,
+          coverType: input.coverType, days: input.days ?? null, tripId,
+          expiresAt: expiresAt.toISOString(),
+        },
+      });
+      const eventPayload = {
+        id: `usagecover-${inserted.id}`,
+        activationId: inserted.id, policyId: input.policyId, customerId: ctx.user.id,
+        coverType: input.coverType, expiresAt: expiresAt.toISOString(),
+      };
+      await kafkaPublish(TOPICS.USAGE_COVER_ACTIVATED, String(inserted.id), eventPayload).catch(() => false);
+      await fluvioProduce("usagecover.activated", { value: JSON.stringify(eventPayload) }).catch(() => {});
+
+      return {
+        success: true as const, idempotent: false as const,
+        activationId: inserted.id, status: "active", expiresAt,
+      };
+    }),
+
+  /** Cancel an active cover the caller owns (no refund rail — disclosed). */
+  cancelCover: protectedProcedure
+    .input(z.object({ activationId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [row] = await db.select().from(usageCoverActivations)
+        .where(eq(usageCoverActivations.id, input.activationId)).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Activation not found" });
+      if (row.customerId !== ctx.user.id && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not your cover activation" });
+      }
+      if (row.status !== "active") {
+        return { success: true as const, idempotent: true as const, activationId: row.id, status: row.status };
+      }
+      await db.update(usageCoverActivations)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(usageCoverActivations.id, row.id), eq(usageCoverActivations.status, "active")));
+      return { success: true as const, idempotent: false as const, activationId: row.id, status: "cancelled" };
+    }),
+
+  /** Current cover status for a policy (caller-scoped). */
+  getCoverStatus: protectedProcedure
+    .input(z.object({ policyId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(usageCoverActivations)
+        .where(and(
+          eq(usageCoverActivations.policyId, input.policyId),
+          eq(usageCoverActivations.customerId, ctx.user.id),
+        ))
+        .orderBy(desc(usageCoverActivations.activatedAt))
+        .limit(20);
+    }),
+});
+
+/**
+ * Expire due usage-cover activations. Idempotent guarded UPDATE — safe to
+ * run on every cron tick. Invoked by server/cron/poolPeriodCloseSweep.ts.
+ */
+export async function expireDueUsageCover(db: DrizzleDb): Promise<number> {
+  const expired = await db.update(usageCoverActivations)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(
+      eq(usageCoverActivations.status, "active"),
+      lte(usageCoverActivations.expiresAt, new Date()),
+    ))
+    .returning({ id: usageCoverActivations.id });
+  return expired.length;
+}

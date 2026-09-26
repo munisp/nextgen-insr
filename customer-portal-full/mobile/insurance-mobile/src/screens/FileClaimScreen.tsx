@@ -2,14 +2,57 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { useOfflineSync } from '../services/offlineSync';
+import { reimbursementApi } from '../services/api';
 
-export function FileClaimScreen({ navigation }: { navigation: any }) {
+export function FileClaimScreen({ navigation, route }: { navigation: any; route?: { params?: { reimbursement?: boolean } } }) {
   const { enqueue, state } = useOfflineSync();
+  // Q4 (2026-09-25): one-tap photo reimbursement mode. Entered from
+  // ClaimsScreen's "Photo Reimbursement" entry point. Uses the EXISTING
+  // P-wave presigned upload flow (authorize+sign, direct PUT to storage,
+  // then submit) — receipts never transit the API server as bytes.
+  const isReimbursement = route?.params?.reimbursement === true;
   const [form, setForm] = useState({ type: '', description: '', amount: '', policyNumber: '' });
   const [evidence, setEvidence] = useState<Array<{ uri: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const claimTypes = ['Motor Accident', 'Health/Medical', 'Property Damage', 'Life/Death', 'Marine Cargo', 'Fire/Burglary', 'Travel', 'Agricultural'];
+
+  async function handleReimbursementSubmit() {
+    if (evidence.length === 0) { Alert.alert('Required', 'Please snap at least one receipt photo'); return; }
+    if (!form.amount || Number.isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
+      Alert.alert('Required', 'Please enter the receipt amount'); return;
+    }
+    setSubmitting(true);
+    try {
+      const fileKeys: string[] = [];
+      for (const photo of evidence) {
+        const blob = await (await fetch(photo.uri)).blob();
+        const mime = blob.type || 'image/jpeg';
+        const signed = await reimbursementApi.requestUploadUrl({
+          fileName: photo.name,
+          mimeType: (['image/jpeg', 'image/png', 'image/webp'].includes(mime) ? mime : 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/webp',
+          fileSize: blob.size,
+        });
+        await reimbursementApi.uploadBytes(signed.uploadUrl, blob, mime);
+        fileKeys.push(signed.fileKey);
+      }
+      const result = await reimbursementApi.submit({
+        documentRefs: fileKeys,
+        amount: Number(form.amount),
+        description: form.description || undefined,
+      });
+      // Surface the server's OCR disclosure verbatim when present — it is an
+      // honest manual-entry notice, NOT an extraction result.
+      const ocrNote = result.ocrDisclosure ? `\n\n${result.ocrDisclosure}` : '';
+      Alert.alert('Reimbursement Submitted', `Request #${result.id} is ${result.status.replace(/_/g, ' ')}.${ocrNote}`, [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (err) {
+      Alert.alert('Submission Failed', err instanceof Error ? err.message : 'Please try again');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!form.type || !form.description) { Alert.alert('Required', 'Please fill in claim type and description'); return; }
@@ -38,9 +81,29 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.back}>← Back</Text></TouchableOpacity>
-        <Text style={styles.title}>File a Claim</Text>
+        <Text style={styles.title}>{isReimbursement ? 'Photo Reimbursement' : 'File a Claim'}</Text>
       </View>
       <View style={styles.form}>
+        {isReimbursement ? (
+          <>
+            <Text style={styles.label}>Receipt Photos ({evidence.length}) *</Text>
+            <View style={styles.evidenceRow}>
+              <TouchableOpacity style={styles.evidenceBtn} onPress={() => addPhoto('camera')}><Text style={styles.evidenceBtnText}>📷 Camera</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.evidenceBtn} onPress={() => addPhoto('gallery')}><Text style={styles.evidenceBtnText}>🖼️ Gallery</Text></TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Receipt Amount (₦) *</Text>
+            <TextInput style={styles.input} value={form.amount} onChangeText={(v) => setForm({ ...form, amount: v })} keyboardType="numeric" placeholder="0" placeholderTextColor="#94a3b8" />
+
+            <Text style={styles.label}>Note (optional)</Text>
+            <TextInput style={[styles.input, styles.textarea]} value={form.description} onChangeText={(v) => setForm({ ...form, description: v })} multiline numberOfLines={3} placeholder="What is this receipt for?" placeholderTextColor="#94a3b8" />
+
+            <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitDisabled]} onPress={handleReimbursementSubmit} disabled={submitting}>
+              <Text style={styles.submitText}>{submitting ? 'Uploading...' : 'Submit Reimbursement'}</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
         <Text style={styles.label}>Claim Type *</Text>
         <View style={styles.typeGrid}>
           {claimTypes.map((t) => (
@@ -70,6 +133,8 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
         <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitDisabled]} onPress={handleSubmit} disabled={submitting}>
           <Text style={styles.submitText}>{submitting ? 'Submitting...' : 'Submit Claim'}</Text>
         </TouchableOpacity>
+          </>
+        )}
       </View>
       <View style={{ height: 40 }} />
     </ScrollView>

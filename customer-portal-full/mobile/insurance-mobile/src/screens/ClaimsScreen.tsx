@@ -32,6 +32,12 @@ export function ClaimsScreen({ navigation }: { navigation: any }) {
           <Text style={styles.newBtnText}>+ New Claim</Text>
         </TouchableOpacity>
       </View>
+      {/* Q4 (2026-09-25): one-tap photo reimbursement entry point. Routes to
+          the existing FileClaim screen in reimbursement mode (camera flow +
+          P-wave presigned upload + careRetention.photoReimbursementSubmit). */}
+      <TouchableOpacity style={styles.reimburseBtn} onPress={() => navigation.navigate('FileClaim', { reimbursement: true })}>
+        <Text style={styles.reimburseBtnText}>📷 Photo Reimbursement — snap a receipt, get reimbursed</Text>
+      </TouchableOpacity>
       <View style={styles.filterRow}>
         {['all', 'pending', 'processing', 'approved', 'rejected'].map((f) => (
           <TouchableOpacity key={f} style={[styles.chip, filter === f && styles.chipActive]} onPress={() => setFilter(f)}>
@@ -69,6 +75,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '700', color: '#0f172a' },
   newBtn: { backgroundColor: '#2563eb', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
   newBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  // Q4 (2026-09-25): photo reimbursement entry.
+  reimburseBtn: { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#059669', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  reimburseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   filterRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 12 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#f1f5f9' },
   chipActive: { backgroundColor: '#2563eb' },

@@ -361,7 +361,20 @@ describe("Sprint 46: Data Integrity", () => {
     // push, causing 42P01 in routers that write innovation tables), so
     // 223 + 27 innovation tables = 250 measured. Honest-count drift, not
     // a weakening — measured number wins.
-    expect(stats.totalTables).toBe(250);
+    // 2026-09-26 (merge: Q-wave Q1+Q2+Q3+Q4 — FINAL): union of all four
+    // branch counts. Q1 migration 0086 +4 (partner_products,
+    // freemium_tiers, freemium_enrollments, scenario_templates); Q2
+    // migration 0087 +6 (parametric_trigger_definitions,
+    // parametric_products, parametric_events,
+    // parametric_payout_settlements, parametric_manual_readings,
+    // claim_stp_tiers); Q3 migration 0088 +5 (pool_periods,
+    // pool_surplus_distributions, telematics_trips, telematics_scores,
+    // usage_cover_activations); Q4 migration 0089 +4
+    // (teleconsult_sessions, wellness_content, provider_tariffs,
+    // photo_reimbursements). 250 + 4 + 6 + 5 + 4 = 269. Honest-count
+    // drift, not a weakening — the gate still counts information_schema
+    // at runtime; measured number wins.
+    expect(stats.totalTables).toBe(269);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

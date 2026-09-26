@@ -3195,8 +3195,7 @@ export const agentSuspensionLog = pgTable(
   })
 );
 
-// ==================== Sprint 50: 20 Production Features Schema =============
-// F01: Real-Time Transaction Monitoring
+// ==================== Sprint 50: 20 Production Features Schema ======// F01: Real-Time Transaction Monitoring
 export const txMonitoringAlerts = pgTable(
   "tx_monitoring_alerts",
   {
@@ -6007,3 +6006,386 @@ export type PhoneVerificationOtp = typeof phoneVerificationOtps.$inferSelect;
 // agents(phone) intentionally has NO new index here: migration 0079 already
 // created the unique index "agents_phone_unique" (G3 wave, audit #26).
 // Indexes do not change the platform table count (sprint46=250).
+
+// ─── Q-wave Q1: Embedded partner product factory (2026-09-25, migration 0086) ──
+// Append-only tail: four NEW tables. partner_products is the Turaco/Lami-style
+// partner→product embedding config (limits, commission, branding, whitelabel,
+// sandbox flag); freemium_tiers + freemium_enrollments are the MicroEnsure-
+// style free→paid ladder; scenario_templates are ZhongAn-style event-bound
+// small-ticket covers. Sprint46 platform table count: 250 + 4 = 254 measured
+// on this branch (sibling Q2/Q4 branches add their own tables on their own
+// branches; orchestrator resolves the merged count — see migration 0086 header).
+export const partnerProducts = pgTable(
+  "partner_products",
+  {
+    id: serial("id").primaryKey(),
+    partnerCode: varchar("partnerCode", { length: 32 }).notNull().unique(),
+    partnerName: varchar("partnerName", { length: 128 }).notNull(),
+    productId: integer("productId")
+      .notNull()
+      .references(() => insuranceProducts.id),
+    maxSumInsured: numeric("maxSumInsured", { precision: 18, scale: 2 }).notNull(),
+    commissionRate: numeric("commissionRate", { precision: 5, scale: 2 })
+      .notNull()
+      .default("5.0"),
+    branding: jsonb("branding").default({}),
+    whitelabel: boolean("whitelabel").notNull().default(false),
+    sandbox: boolean("sandbox").notNull().default(false),
+    apiKeyHash: varchar("apiKeyHash", { length: 64 }),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdByUserId: integer("createdByUserId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    // 2026-09-26 fix: pp_* prefix collided with premium_payments' pp_status_idx
+    // (drizzle-kit push rejects duplicated index names across public schema)
+    productIdx: index("pprod_product_idx").on(t.productId),
+    statusIdx: index("pprod_status_idx").on(t.status),
+  })
+);
+export type PartnerProduct = typeof partnerProducts.$inferSelect;
+export type InsertPartnerProduct = typeof partnerProducts.$inferInsert;
+
+export const freemiumTiers = pgTable("freemium_tiers", {
+  id: serial("id").primaryKey(),
+  tierCode: varchar("tierCode", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  productId: integer("productId")
+    .notNull()
+    .references(() => insuranceProducts.id),
+  monthlyPremium: numeric("monthlyPremium", { precision: 18, scale: 2 })
+    .notNull()
+    .default("0"),
+  sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+  coverageType: varchar("coverageType", { length: 64 }).notNull(),
+  isFree: boolean("isFree").notNull().default(false),
+  sortOrder: integer("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FreemiumTier = typeof freemiumTiers.$inferSelect;
+
+export const freemiumEnrollments = pgTable(
+  "freemium_enrollments",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId").notNull(),
+    tierId: integer("tierId")
+      .notNull()
+      .references(() => freemiumTiers.id),
+    policyId: integer("policyId").references(() => policies.id),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    enrolledAt: timestamp("enrolledAt").defaultNow().notNull(),
+    upgradedAt: timestamp("upgradedAt"),
+    metadata: jsonb("metadata").default({}),
+  },
+  t => ({
+    customerIdx: index("fe_customer_idx").on(t.customerId),
+    tierIdx: index("fe_tier_idx").on(t.tierId),
+  })
+);
+export type FreemiumEnrollment = typeof freemiumEnrollments.$inferSelect;
+
+export const scenarioTemplates = pgTable("scenario_templates", {
+  id: serial("id").primaryKey(),
+  templateCode: varchar("templateCode", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  productId: integer("productId")
+    .notNull()
+    .references(() => insuranceProducts.id),
+  triggerEvent: varchar("triggerEvent", { length: 64 }).notNull(),
+  coverageType: varchar("coverageType", { length: 64 }).notNull(),
+  sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+  premiumAmount: numeric("premiumAmount", { precision: 18, scale: 2 }).notNull(),
+  durationHours: integer("durationHours").notNull().default(24),
+  terms: jsonb("terms").default({}),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ScenarioTemplate = typeof scenarioTemplates.$inferSelect;
+// ─── Q-wave Q2 (2026-09-25): Parametric Trigger Engine + STP expansion ──────
+// Migration 0087. Append-only EOF tail. Naming disclosure: the brief's
+// `parametric_triggers` / `parametric_payouts` names are already taken by the
+// legacy innovation-schema weather tables (schema.innovations.ts), so the
+// engine tables use collision-free names (definitions / payout_settlements).
+// Table count: 250 → 256 (sprint46 gate updated with this measured value).
+export const parametricTriggerDefinitions = pgTable(
+  "parametric_trigger_definitions",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull().unique(),
+    metric: varchar("metric", { length: 64 }).notNull(),
+    operator: varchar("operator", { length: 8 }).notNull(), // gt|gte|lt|lte|eq
+    threshold: numeric("threshold", { precision: 18, scale: 4 }).notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    datasourceConfig: jsonb("datasource_config").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+export type ParametricTriggerDefinition =
+  typeof parametricTriggerDefinitions.$inferSelect;
+
+export const parametricProducts = pgTable(
+  "parametric_products",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => insuranceProducts.id),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    payoutAmount: numeric("payout_amount", { precision: 18, scale: 2 }).notNull(),
+    coveredPeril: varchar("covered_peril", { length: 64 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    productTriggerUniq: uniqueIndex("parametric_products_product_trigger_uniq").on(
+      t.productId,
+      t.triggerId
+    ),
+  })
+);
+export type ParametricProduct = typeof parametricProducts.$inferSelect;
+
+export const parametricEvents = pgTable(
+  "parametric_events",
+  {
+    id: serial("id").primaryKey(),
+    eventKey: varchar("event_key", { length: 256 }).notNull().unique(),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    measuredValue: numeric("measured_value", { precision: 18, scale: 4 }),
+    payloadHash: varchar("payload_hash", { length: 64 }),
+    payload: jsonb("payload"),
+    datasourceType: varchar("datasource_type", { length: 16 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull(), // fired|not_fired|data_unavailable
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    triggerStatusIdx: index("pte_trigger_status_idx").on(t.triggerId, t.status),
+  })
+);
+export type ParametricEvent = typeof parametricEvents.$inferSelect;
+
+export const parametricPayoutSettlements = pgTable(
+  "parametric_payout_settlements",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id")
+      .notNull()
+      .references(() => parametricEvents.id),
+    claimId: integer("claim_id")
+      .notNull()
+      .references(() => claims.id),
+    paymentId: integer("payment_id"),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull(), // paid|pending_adjudication|failed
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    eventClaimUniq: uniqueIndex("parametric_payout_event_claim_uniq").on(
+      t.eventId,
+      t.claimId
+    ),
+    eventIdx: index("ptp_event_idx").on(t.eventId),
+  })
+);
+export type ParametricPayoutSettlement =
+  typeof parametricPayoutSettlements.$inferSelect;
+
+// Staff-attested readings for 'manual' datasources (dual control).
+export const parametricManualReadings = pgTable(
+  "parametric_manual_readings",
+  {
+    id: serial("id").primaryKey(),
+    triggerId: integer("trigger_id")
+      .notNull()
+      .references(() => parametricTriggerDefinitions.id),
+    metric: varchar("metric", { length: 64 }).notNull(),
+    value: numeric("value", { precision: 18, scale: 4 }).notNull(),
+    observedAt: timestamp("observed_at").notNull(),
+    attestedBy: integer("attested_by").notNull(),
+    confirmedBy: integer("confirmed_by"),
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    confirmedAt: timestamp("confirmed_at"),
+  },
+  t => ({
+    triggerIdx: index("pmr_trigger_idx").on(t.triggerId, t.createdAt),
+  })
+);
+export type ParametricManualReading =
+  typeof parametricManualReadings.$inferSelect;
+
+// Per-product STP auto-adjudication tiers (claimsJourneyPolicy extension).
+// No row for a product ⇒ the ₦200,000 platform default
+// (J03_AUTO_ADJUDICATION_CAP_NGN) applies unchanged.
+export const claimStpTiers = pgTable(
+  "claim_stp_tiers",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id").references(() => insuranceProducts.id),
+    tierName: varchar("tier_name", { length: 64 }).notNull(),
+    autoApproveCap: numeric("auto_approve_cap", { precision: 18, scale: 2 }).notNull(),
+    maxFraudScore: numeric("max_fraud_score", { precision: 5, scale: 2 }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    productTierUniq: uniqueIndex("claim_stp_tiers_product_tier_uniq").on(
+      t.productId,
+      t.tierName
+    ),
+    productIdx: index("cst_product_idx").on(t.productId),
+  })
+);
+export type ClaimStpTier = typeof claimStpTiers.$inferSelect;
+
+// ─── Q4 health & retention wave (2026-09-25, migration 0089) ────────────────
+// Care-app retention layer (Alan model) + claims CX upgrades (Curacel model).
+// Four REAL platform tables, appended only; no existing table/column changed.
+// sprint46 table count: 250 + 4 = 254 (measured).
+
+// teleconsult_sessions — member teleconsult bookings against a configurable
+// external provider adapter (server/lib/teleconsultAdapter.ts). PHI-MINIMIZED
+// BY DESIGN: we store only the provider's opaque session reference, scheduling
+// metadata and a coarse lifecycle status. No transcripts, no notes, no
+// symptoms, no diagnosis payloads are ever persisted on this platform.
+export const teleconsultSessions = pgTable(
+  "teleconsult_sessions",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("memberId").notNull(),
+    // Provider adapter tenant/code (env TELECONSULT_PROVIDER_CODE) so future
+    // multi-provider deployments stay unambiguous.
+    providerCode: varchar("providerCode", { length: 64 }).notNull(),
+    // Opaque session reference returned by the provider — NOT a PHI payload.
+    providerSessionRef: varchar("providerSessionRef", {
+      length: 128,
+    }).notNull(),
+    // Coarse lifecycle only: scheduled | in_progress | completed | cancelled |
+    // failed. Mirrored from the provider on status polls; never clinical data.
+    status: varchar("status", { length: 32 }).default("scheduled").notNull(),
+    scheduledAt: timestamp("scheduledAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    memberIdx: index("tc_member_created_idx").on(t.memberId, t.createdAt),
+    statusIdx: index("tc_status_idx").on(t.status),
+    providerRefUnique: uniqueIndex("tc_provider_ref_unique").on(
+      t.providerCode,
+      t.providerSessionRef
+    ),
+  })
+);
+export type TeleconsultSession = typeof teleconsultSessions.$inferSelect;
+
+// wellness_content — staff-curated retention content (Alan-style care feed).
+// Members read a locale-aware, paginated feed of published items only.
+export const wellnessContent = pgTable(
+  "wellness_content",
+  {
+    id: serial("id").primaryKey(),
+    title: varchar("title", { length: 256 }).notNull(),
+    body: text("body").notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    // BCP-47-ish short tag ("en", "fr", "ha", "yo", "ig"); feed filters on it.
+    locale: varchar("locale", { length: 16 }).default("en").notNull(),
+    // draft | published | archived. Members NEVER see non-published rows.
+    status: varchar("status", { length: 16 }).default("draft").notNull(),
+    publishedAt: timestamp("publishedAt"),
+    createdBy: integer("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    feedIdx: index("wc_feed_idx").on(t.locale, t.category, t.publishedAt),
+    statusIdx: index("wc_status_idx").on(t.status),
+  })
+);
+export type WellnessContent = typeof wellnessContent.$inferSelect;
+
+// provider_tariffs — Curacel-model negotiated provider pricing:
+// (providerCode, serviceCode) -> negotiated price. Provider-portal
+// pre-authorization pricing is FAIL-CLOSED against this table: no tariff row,
+// no pre-auth quote.
+export const providerTariffs = pgTable(
+  "provider_tariffs",
+  {
+    id: serial("id").primaryKey(),
+    providerCode: varchar("providerCode", { length: 64 }).notNull(),
+    serviceCode: varchar("serviceCode", { length: 64 }).notNull(),
+    serviceName: varchar("serviceName", { length: 256 }),
+    negotiatedPrice: numeric("negotiatedPrice", {
+      precision: 18,
+      scale: 2,
+    }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    providerServiceUnique: uniqueIndex("pt_provider_service_unique").on(
+      t.providerCode,
+      t.serviceCode
+    ),
+    providerIdx: index("pt_provider_idx").on(t.providerCode),
+  })
+);
+export type ProviderTariff = typeof providerTariffs.$inferSelect;
+
+// photo_reimbursements — one-tap photo reimbursement requests. documentRefs
+// are object-storage keys issued by the EXISTING presigned PUT flow
+// (documentManagement.requestUploadUrl, P-wave); keys are user-scoped and
+// verified prefix-owned at submit time. Adjudication REUSES the existing
+// claim_status vocabulary (pending_review -> under_review -> approved /
+// rejected) and, when linked to a real claim, drives the claim's own status.
+export const photoReimbursements = pgTable(
+  "photo_reimbursements",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("memberId").notNull(),
+    // NULL = direct-to-review queue (no claim linkage requested/possible).
+    claimId: integer("claimId"),
+    documentRefs: json("documentRefs").$type<string[]>().notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    description: text("description"),
+    // Reuses claim statuses: pending_review | under_review | approved |
+    // rejected | paid.
+    status: varchar("status", { length: 32 })
+      .default("pending_review")
+      .notNull(),
+    // OCR honesty contract: not_requested | unavailable | manual_entry |
+    // completed. "manual_entry" is the DISCLOSED fallback when no OCR
+    // provider is configured — staff key amounts in by hand. No fake OCR
+    // results are ever synthesized (server/lib/ocrAdapter.ts).
+    ocrStatus: varchar("ocrStatus", { length: 32 })
+      .default("not_requested")
+      .notNull(),
+    // Only ever real adapter output; NULL otherwise.
+    ocrExtracted: json("ocrExtracted"),
+    reviewedBy: integer("reviewedBy"),
+    reviewedAt: timestamp("reviewedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    memberIdx: index("pr_member_idx").on(t.memberId, t.createdAt),
+    claimIdx: index("pr_claim_idx").on(t.claimId),
+    statusIdx: index("pr_status_idx").on(t.status),
+  })
+);
+export type PhotoReimbursement = typeof photoReimbursements.$inferSelect;

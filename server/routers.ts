@@ -219,6 +219,9 @@ import { dynamicQrPaymentRouter } from "./routers/dynamicQrPayment";
 import { e2eTestFrameworkRouter } from "./routers/e2eTestFramework";
 import { emailDeliveryLogRouter } from "./routers/emailDeliveryLogCrud";
 import { emailNotificationsRouter } from "./routers/emailNotifications";
+// Q-wave Q1 (2026-09-25): embedded partner product factory + freemium ladder
+// + scenario builder (migration 0086).
+import { embeddedPartnerFactoryRouter } from "./routers/embeddedPartnerFactory";
 import { encryptedFieldsRouter } from "./routers/encryptedFieldsCrud";
 import { eodReconciliationRouter } from "./routers/eodReconciliation";
 import { erpRouter } from "./routers/erp";
@@ -269,9 +272,13 @@ import {
   nhiaRouter, comparisonRouter, p2pPoolsRouter, voiceClaimsRouter,
   parametricRouter, groupInsuranceRouter, bancassuranceRouter, openInsuranceRouter,
   climateRiskRouter, renewalPredictionRouter, sloMonitorRouter, didIdentityRouter,
+  usageCoverRouter,
 } from "./routers/innovationRouters";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
 import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
+// Q4 health & retention wave (2026-09-25)
+import { careRetentionRouter } from "./routers/careRetention";
+import { providerPortalRouter } from "./routers/providerPortal";
 // ── KYC/KYB Enforcement & Compliance Services ──
 // ── Insurance Domain Workflows (Sprint 98) ──
 // ── Insurance KPI Dashboards (all 16 roles) ──
@@ -344,6 +351,7 @@ import { ollamaLLMRouter } from "./routers/ollamaLLM";
 import { openTelemetryRouter } from "./routers/openTelemetry";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 import { operationalRunbookRouter } from "./routers/operationalRunbook";
+import { parametricEngineRouter } from "./routers/parametricEngine";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1155,6 +1163,7 @@ export const appRouter = router({
   journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
   j20Scheduler: j20SchedulerRouter,
   telematics: telematicsRouter,
+  usageCover: usageCoverRouter,
   cvClaims: cvClaimsRouter,
   fraudNetwork: fraudNetworkRouter,
   healthWearables: healthWearablesRouter,
@@ -1163,13 +1172,21 @@ export const appRouter = router({
   p2pPools: p2pPoolsRouter,
   voiceClaims: voiceClaimsRouter,
   parametric: parametricRouter,
+  // Q-wave Q2 (2026-09-25): parametric trigger engine + STP expansion
+  // (migration 0087). Router count 467 → 468 (sprint95 gate updated).
+  parametricEngine: parametricEngineRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
+  embeddedFactory: embeddedPartnerFactoryRouter,
   openInsurance: openInsuranceRouter,
   climateRisk: climateRiskRouter,
   renewalPrediction: renewalPredictionRouter,
   sloMonitor: sloMonitorRouter,
   didIdentity: didIdentityRouter,
+  // Q4 health & retention wave (2026-09-25): care-app retention (Alan) +
+  // claims CX / provider portal (Curacel) — migration 0089.
+  careRetention: careRetentionRouter,
+  providerPortal: providerPortalRouter,
 });
 
 export type AppRouter = typeof appRouter;

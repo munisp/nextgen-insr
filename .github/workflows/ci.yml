@@ -293,7 +293,11 @@ jobs:
 
       - name: Lint Kubernetes manifests
         run: |
-          find . -path "*/k8s/*.yaml" -o -path "*/k8s/*.yml" | head -50 | while read f; do
+          # 2026-09-26 fix: exclude Helm chart templates (*/k8s/charts/*/templates/*)
+          # — they are Go templates, not plain YAML, so yamllint can never parse
+          # them (e.g. k8s/charts/kafka/templates/serviceaccount.yaml). Non-
+          # deterministic `find` ordering made this gate flaky on unmodified files.
+          find . -path "*/k8s/*.yaml" -o -path "*/k8s/*.yml" | grep -v "/templates/" | head -50 | while read f; do
             echo "=== $f ==="
             yamllint -d relaxed "$f"
           done
