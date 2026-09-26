@@ -31,8 +31,9 @@ CREATE TABLE IF NOT EXISTS "partner_products" (
   "createdAt" timestamp NOT NULL DEFAULT now(),
   "updatedAt" timestamp NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS "pp_product_idx" ON "partner_products" ("productId");
-CREATE INDEX IF NOT EXISTS "pp_status_idx" ON "partner_products" ("status");
+-- 2026-09-26 fix: renamed from pp_product_idx (prefix collided with premium_payments.pp_status_idx)
+CREATE INDEX IF NOT EXISTS "pprod_product_idx" ON "partner_products" ("productId");
+CREATE INDEX IF NOT EXISTS "pprod_status_idx" ON "partner_products" ("status");
 
 -- 2. freemium_tiers: the ladder definitions (free basic cover → paid tiers).
 CREATE TABLE IF NOT EXISTS "freemium_tiers" (
@@ -78,3 +79,4 @@ CREATE TABLE IF NOT EXISTS "scenario_templates" (
   "isActive" boolean NOT NULL DEFAULT true,
   "createdAt" timestamp NOT NULL DEFAULT now()
 );
+

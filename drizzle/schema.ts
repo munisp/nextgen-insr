@@ -6039,8 +6039,10 @@ export const partnerProducts = pgTable(
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    productIdx: index("pp_product_idx").on(t.productId),
-    statusIdx: index("pp_status_idx").on(t.status),
+    // 2026-09-26 fix: pp_* prefix collided with premium_payments' pp_status_idx
+    // (drizzle-kit push rejects duplicated index names across public schema)
+    productIdx: index("pprod_product_idx").on(t.productId),
+    statusIdx: index("pprod_status_idx").on(t.status),
   })
 );
 export type PartnerProduct = typeof partnerProducts.$inferSelect;
