@@ -45,6 +45,12 @@ export const TOPICS = {
   TX_SETTLED: "54link.settlements.completed",
   FRAUD_ALERT: "54link.fraud.alert_raised",
   SIM_FAILOVER: "54link.connectivity.sim_failover",
+  // Q-wave Q3 (2026-09-25): P2P pool surplus lifecycle + usage-based motor.
+  POOL_SURPLUS_PROPOSED: "54link.pool.surplus_proposed",
+  POOL_SURPLUS_APPROVED: "54link.pool.surplus_approved",
+  POOL_SURPLUS_EXECUTED: "54link.pool.surplus_executed",
+  TELEMATICS_SCORE_UPDATED: "54link.telematics.score_updated",
+  USAGE_COVER_ACTIVATED: "54link.usagecover.activated",
 } as const;
 
 export type KafkaTopic = (typeof TOPICS)[keyof typeof TOPICS];

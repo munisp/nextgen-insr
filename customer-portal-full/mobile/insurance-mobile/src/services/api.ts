@@ -103,3 +103,80 @@ export const authApi = {
   setup2FA: (userId: string) => api.post('/api/v1/auth/setup-2fa', { userId }),
   getProfile: () => api.get('/api/v1/auth/profile'),
 };
+
+// ── Q4 health & retention wave (2026-09-25) ─────────────────────────────────
+// tRPC-over-HTTP bindings for the care-app retention layer + claims CX
+// upgrades (server: appRouter mounted at /api/trpc, superjson transformer).
+// The shared axios instance attaches the member JWT, so these calls run under
+// the same member auth as the web portal. Errors propagate honestly — the UI
+// must render its error/empty state, never fabricated content.
+interface TrpcEnvelope<T> {
+  result?: { data?: { json?: T } };
+  error?: { message?: string };
+}
+
+function unwrap<T>(env: TrpcEnvelope<T>): T {
+  if (env.error) throw new Error(env.error.message ?? 'Request failed');
+  return env.result?.data?.json as T;
+}
+
+export interface WellnessFeedItem {
+  id: number;
+  title: string;
+  body: string;
+  category: string;
+  locale: string;
+  publishedAt: string | null;
+}
+
+export const wellnessApi = {
+  feed: async (params?: { locale?: string; category?: string; limit?: number; offset?: number }) => {
+    const input = encodeURIComponent(JSON.stringify({ json: { locale: 'en', ...params } }));
+    const res = await api.get<TrpcEnvelope<{ items: WellnessFeedItem[]; total: number; locale: string }>>(
+      `/api/trpc/careRetention.wellnessFeed?input=${input}`,
+    );
+    return unwrap(res.data);
+  },
+};
+
+export interface PresignedUpload {
+  uploadUrl: string;
+  fileKey: string;
+  bucket: string;
+  expiresIn: number;
+  instructions: string;
+}
+
+export interface ReimbursementSubmitResult {
+  id: number;
+  status: string;
+  claimId: number | null;
+  ocrStatus: string;
+  // Disclosed fallback notice when no OCR provider is configured — surface
+  // this to the user verbatim; it is NOT an OCR result.
+  ocrDisclosure: string | null;
+}
+
+export const reimbursementApi = {
+  // Step 1 of the EXISTING P-wave presigned flow: authorize + sign only.
+  requestUploadUrl: async (input: { fileName: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'; fileSize: number }) => {
+    const res = await api.post<TrpcEnvelope<PresignedUpload>>(
+      '/api/trpc/documentManagement.requestUploadUrl',
+      { json: { ...input, purpose: 'claim_document' } },
+    );
+    return unwrap(res.data);
+  },
+  // Step 2: PUT bytes directly to object storage at the presigned URL.
+  uploadBytes: async (uploadUrl: string, blob: Blob, mimeType: string) => {
+    const res = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob });
+    if (!res.ok) throw new Error(`Upload failed (HTTP ${res.status})`);
+  },
+  // Step 3: submit the reimbursement request with the issued file keys.
+  submit: async (input: { claimId?: number; documentRefs: string[]; amount: number; description?: string }) => {
+    const res = await api.post<TrpcEnvelope<ReimbursementSubmitResult>>(
+      '/api/trpc/careRetention.photoReimbursementSubmit',
+      { json: input },
+    );
+    return unwrap(res.data);
+  },
+};

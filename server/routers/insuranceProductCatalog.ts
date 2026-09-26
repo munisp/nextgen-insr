@@ -16,6 +16,8 @@ import { eq, desc, count, sql, and, gte, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
+// Q-wave Q3 (2026-09-25): UBI rolling score for motor rating.
+import { telematicsScores } from "../../drizzle/schema.innovations";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -108,6 +110,10 @@ export const insuranceProductCatalogRouter = router({
       durationMonths: z.number().min(1).max(120).default(12),
       age: z.number().min(18).max(70).optional(),
       coverageType: z.string().optional(),
+      // Q-wave Q3 (2026-09-25): optional policy for UBI rating — when the
+      // policy has a telematics rolling score, the bounded rating factor
+      // (0.70–1.30, default 1.00) is applied to motor premiums.
+      policyId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -127,9 +133,28 @@ export const insuranceProductCatalogRouter = router({
         else if (input.age >= 40) loadingFactor += 0.15;
       }
 
+      // Q-wave Q3 (2026-09-25): UBI rating factor for motor products. Read
+      // from the telematics_scores rolling-score row (bounded 0.70–1.30);
+      // no score history ⇒ 1.00 — never an implicit discount or loading.
+      let telematicsRatingFactor = 1.0;
+      let telematicsScore: number | null = null;
+      if (input.policyId != null && product.coverageType === "motor") {
+        const [scoreRow] = await db.select().from(telematicsScores)
+          .where(eq(telematicsScores.policyId, input.policyId)).limit(1);
+        if (scoreRow) {
+          const f = parseFloat(scoreRow.ratingFactor);
+          if (Number.isFinite(f) && f >= 0.7 && f <= 1.3) {
+            telematicsRatingFactor = f;
+            telematicsScore = parseFloat(scoreRow.score);
+          }
+          // Out-of-band factor (schema drift / manual edit) is ignored —
+          // fail-closed to 1.00 rather than pricing off a corrupt factor.
+        }
+      }
+
       // Duration adjustment
       const durationFactor = input.durationMonths / 12;
-      const annualPremium = input.sumInsured * baseRate * loadingFactor;
+      const annualPremium = input.sumInsured * baseRate * loadingFactor * telematicsRatingFactor;
       const premiumNGN = Math.round(annualPremium * durationFactor * 100) / 100;
       const stampDuty = Math.round(premiumNGN * 0.005 * 100) / 100; // 0.5% stamp duty
       const totalPayable = premiumNGN + stampDuty;
@@ -141,6 +166,8 @@ export const insuranceProductCatalogRouter = router({
         durationMonths: input.durationMonths,
         baseRate,
         loadingFactor,
+        telematicsRatingFactor,
+        telematicsScore,
         annualPremium,
         premiumNGN,
         stampDuty,
