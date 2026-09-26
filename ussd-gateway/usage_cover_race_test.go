@@ -41,8 +41,8 @@ func setupUsageCoverRaceDB(t *testing.T) *sql.DB {
 	// backend); against a full PostgreSQL CI service the DSN can raise this.
 	sqlDB.SetMaxOpenConns(1)
 	stmts := []string{
-		`DROP TABLE IF EXISTS usage_cover_activations`,
-		`CREATE TABLE usage_cover_activations (
+		`DROP TABLE IF EXISTS ussd_usage_cover_activations`,
+		`CREATE TABLE ussd_usage_cover_activations (
 			id              TEXT PRIMARY KEY,
 			session_id      TEXT NOT NULL,
 			phone_number    TEXT NOT NULL,
@@ -54,8 +54,8 @@ func setupUsageCoverRaceDB(t *testing.T) *sql.DB {
 			expires_at      TIMESTAMPTZ NOT NULL,
 			idempotency_key TEXT
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_cover_idempotency ON usage_cover_activations(idempotency_key) WHERE idempotency_key IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_usage_cover_expiry ON usage_cover_activations(status, expires_at)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_ussd_usage_cover_idempotency ON ussd_usage_cover_activations(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_ussd_usage_cover_expiry ON ussd_usage_cover_activations(status, expires_at)`,
 	}
 	for _, s := range stmts {
 		if _, err := sqlDB.Exec(s); err != nil {
@@ -63,7 +63,7 @@ func setupUsageCoverRaceDB(t *testing.T) *sql.DB {
 		}
 	}
 	t.Cleanup(func() {
-		_, _ = sqlDB.Exec(`DROP TABLE IF EXISTS usage_cover_activations`)
+		_, _ = sqlDB.Exec(`DROP TABLE IF EXISTS ussd_usage_cover_activations`)
 		_ = sqlDB.Close()
 	})
 	return sqlDB
@@ -119,7 +119,7 @@ func TestUsageCoverActivationIdempotentRace(t *testing.T) {
 
 	// The critical invariant: exactly ONE activation row exists for the key.
 	var count int
-	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM usage_cover_activations WHERE idempotency_key = $1`, idemKey).Scan(&count); err != nil {
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM ussd_usage_cover_activations WHERE idempotency_key = $1`, idemKey).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if count != 1 {
@@ -134,7 +134,7 @@ func TestExpireDueUsageCoverActivations(t *testing.T) {
 
 	// One due row, one future row.
 	if _, err := sqlDB.Exec(
-		`INSERT INTO usage_cover_activations (id, session_id, phone_number, product_id, days, status, reference, expires_at, idempotency_key)
+		`INSERT INTO ussd_usage_cover_activations (id, session_id, phone_number, product_id, days, status, reference, expires_at, idempotency_key)
 		 VALUES
 		 ('UC-DUE', 's1', '+2348000000003', 'motor', 1, 'active', 'UCD-due000001', NOW() - INTERVAL '1 hour', 'usagecover:s1:1'),
 		 ('UC-LIVE', 's2', '+2348000000003', 'motor', 5, 'active', 'UCD-live00001', NOW() + INTERVAL '5 days', 'usagecover:s2:5')`); err != nil {
@@ -157,10 +157,10 @@ func TestExpireDueUsageCoverActivations(t *testing.T) {
 		t.Fatalf("expiry sweep not idempotent: second run expired %d", again)
 	}
 	var dueStatus, liveStatus string
-	if err := sqlDB.QueryRow(`SELECT status FROM usage_cover_activations WHERE id = 'UC-DUE'`).Scan(&dueStatus); err != nil {
+	if err := sqlDB.QueryRow(`SELECT status FROM ussd_usage_cover_activations WHERE id = 'UC-DUE'`).Scan(&dueStatus); err != nil {
 		t.Fatalf("due status: %v", err)
 	}
-	if err := sqlDB.QueryRow(`SELECT status FROM usage_cover_activations WHERE id = 'UC-LIVE'`).Scan(&liveStatus); err != nil {
+	if err := sqlDB.QueryRow(`SELECT status FROM ussd_usage_cover_activations WHERE id = 'UC-LIVE'`).Scan(&liveStatus); err != nil {
 		t.Fatalf("live status: %v", err)
 	}
 	if dueStatus != models.UsageCoverStatusExpired {

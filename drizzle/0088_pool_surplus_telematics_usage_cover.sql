@@ -47,12 +47,19 @@ CREATE TABLE IF NOT EXISTS "pool_surplus_distributions" (
   "executed_by_user_id" integer,
   "tb_transfer_id" varchar(64),
   "failure_reason" text,
+  -- 2026-09-26 (verify-a #6): records the atomic balance-guarded pool debit
+  -- (which now precedes the TigerBeetle leg) so a failed-line retry never
+  -- double-debits the pool.
+  "pool_debited_at" timestamptz,
   "executed_at" timestamptz,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_pool_surplus_dist_period_member" ON "pool_surplus_distributions" ("period_id", "member_id");
 CREATE INDEX IF NOT EXISTS "idx_pool_surplus_dist_period" ON "pool_surplus_distributions" ("period_id", "status");
+-- Idempotent backfill for environments where 0088 already created the table
+-- before pool_debited_at was introduced (CREATE TABLE IF NOT EXISTS no-ops).
+ALTER TABLE "pool_surplus_distributions" ADD COLUMN IF NOT EXISTS "pool_debited_at" timestamptz;
 
 CREATE TABLE IF NOT EXISTS "telematics_trips" (
   "id" bigserial PRIMARY KEY,

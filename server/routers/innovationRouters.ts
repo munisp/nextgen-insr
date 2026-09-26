@@ -221,6 +221,33 @@ export const telematicsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // AUTHORIZATION (2026-09-26, verify-a finding #10 — cross-policy trip
+      // injection IDOR): a caller may only ingest trips for a policy they
+      // OWN; staff (admin/supervisor) may ingest for any policy (e.g.
+      // back-office device imports). Fail-closed: an unknown policy or a
+      // policy owned by someone else is denied and audited — an authenticated
+      // user can never move another policy's rating factor.
+      const [policy] = await db.select({ id: policies.id, customerId: policies.customerId })
+        .from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      const isStaff = ctx.user.role === "admin" || ctx.user.role === "supervisor";
+      if (!policy || (policy.customerId !== ctx.user.id && !isStaff)) {
+        await writeAuditLog({
+          action: "TELEMATICS_INGEST_DENIED",
+          resource: "policy",
+          resourceId: String(input.policyId),
+          status: "failure",
+          metadata: {
+            callerUserId: ctx.user.id,
+            reason: !policy ? "policy_not_found" : "policy_not_owned_by_caller",
+            tripCount: input.trips.length,
+          },
+        });
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot ingest trips for a policy you do not own",
+        });
+      }
+
       let inserted = 0;
       let duplicates = 0;
       for (const t of input.trips) {
@@ -1434,43 +1461,98 @@ export const p2pPoolsRouter = router({
         if (claimed.length === 0) continue; // concurrently claimed or already executed
 
         const payoutRef = `pool-surplus-${period.id}-${line.id}`;
+        const lineAmount = parseFloat(line.amount);
         try {
-          const tbResult = await tbCreateTransfer({
-            debitAccountId: poolTbAccount,
-            creditAccountId: `customer-${line.customerId}`,
-            amount: Math.round(parseFloat(line.amount) * 100),
-            ledger: 6000,
-            code: 900,
-            ref: payoutRef,
-            txType: "pool_surplus_refund",
-          });
-          await db.transaction(async (tx) => {
-            // Debit the pool balance atomically with the line flip; the
-            // balance guard makes a concurrent over-draw impossible.
-            const debited = await tx.update(p2pPools)
-              .set({
-                poolBalance: sql`(pool_balance - ${parseFloat(line.amount)}::numeric)::numeric(15,2)`,
-                updatedAt: new Date(),
-              })
-              .where(sql`id = ${pool.id} AND pool_balance >= ${parseFloat(line.amount)}::numeric`)
-              .returning({ id: p2pPools.id });
-            if (debited.length === 0) {
-              throw new TRPCError({ code: "CONFLICT", message: "Pool balance changed concurrently — line left for retry" });
+          // ORDERING (2026-09-26, verify-a finding #6 — fund-mirroring race):
+          // the atomic balance-guarded DB debit commits BEFORE the
+          // TigerBeetle leg. The old order (TB first, guarded debit second)
+          // could leave a committed TB payout unmirrored in the DB pool
+          // balance when a concurrent drain failed the guard — the line was
+          // marked failed while the customer had already been paid in TB.
+          //
+          // Retry-safety: poolDebitedAt is written in the SAME transaction as
+          // the debit, so a failed line whose poolDebitedAt is still set
+          // already holds the debit and the retry skips straight to the
+          // ref-deduped TB leg (at-most-once debit + at-most-once payout).
+          if (!line.poolDebitedAt) {
+            await db.transaction(async (tx) => {
+              // Debit the pool balance atomically; the balance guard makes a
+              // concurrent over-draw impossible.
+              const debited = await tx.update(p2pPools)
+                .set({
+                  poolBalance: sql`(pool_balance - ${lineAmount}::numeric)::numeric(15,2)`,
+                  updatedAt: new Date(),
+                })
+                .where(sql`id = ${pool.id} AND pool_balance >= ${lineAmount}::numeric`)
+                .returning({ id: p2pPools.id });
+              if (debited.length === 0) {
+                throw new TRPCError({ code: "CONFLICT", message: "Pool balance changed concurrently — line left for retry" });
+              }
+              await tx.update(poolSurplusDistributions)
+                .set({ poolDebitedAt: new Date(), updatedAt: new Date() })
+                .where(eq(poolSurplusDistributions.id, line.id));
+            });
+          }
+
+          // TigerBeetle leg SECOND (ref-deduped: a retry replays the original
+          // outcome and can never double-pay).
+          let tbResult;
+          try {
+            tbResult = await tbCreateTransfer({
+              debitAccountId: poolTbAccount,
+              creditAccountId: `customer-${line.customerId}`,
+              amount: Math.round(lineAmount * 100),
+              ledger: 6000,
+              code: 900,
+              ref: payoutRef,
+              txType: "pool_surplus_refund",
+            });
+          } catch (tbErr) {
+            // COMPENSATION (saga): the DB debit already committed, so credit
+            // the amount back atomically with clearing poolDebitedAt — a
+            // failed TB leg must never leave the DB pool balance debited for
+            // a payout that did not happen. If the credit-back itself fails
+            // the line stays failed with poolDebitedAt SET, and the reason
+            // screams for manual reconciliation (fail-loud, never silent).
+            const tbReason = tbErr instanceof Error ? tbErr.message : String(tbErr);
+            try {
+              await db.transaction(async (tx) => {
+                await tx.update(p2pPools)
+                  .set({
+                    poolBalance: sql`(pool_balance + ${lineAmount}::numeric)::numeric(15,2)`,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(p2pPools.id, pool.id));
+                await tx.update(poolSurplusDistributions)
+                  .set({ poolDebitedAt: null, updatedAt: new Date() })
+                  .where(eq(poolSurplusDistributions.id, line.id));
+              });
+            } catch (compErr) {
+              const compReason = compErr instanceof Error ? compErr.message : String(compErr);
+              throw new Error(
+                `TB payout failed AND compensating credit-back failed — UNRECONCILED DB debit of ${lineAmount} on pool ${pool.id} ` +
+                `(ref ${payoutRef}); manual reconciliation required. TB cause: ${tbReason} | compensation cause: ${compReason}`
+              );
             }
-            await tx.update(poolSurplusDistributions)
-              .set({
-                status: "executed",
-                tbTransferId: tbResult?.id ?? null,
-                executedAt: new Date(),
-                failureReason: null,
-                updatedAt: new Date(),
-              })
-              .where(eq(poolSurplusDistributions.id, line.id));
-          });
+            throw new Error(
+              `TB transfer failed after pool debit; compensating credit-back posted (ref ${payoutRef}). TB cause: ${tbReason}`
+            );
+          }
+
+          await db.update(poolSurplusDistributions)
+            .set({
+              status: "executed",
+              tbTransferId: tbResult?.id ?? null,
+              executedAt: new Date(),
+              failureReason: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(poolSurplusDistributions.id, line.id));
           executed++;
         } catch (err) {
           // FAIL-LOUD: mark failed with the reason; retryable via re-call
-          // (the TB leg is ref-deduped, so a retry never double-pays).
+          // (the TB leg is ref-deduped and an uncompensated debit is tracked
+          // by poolDebitedAt, so a retry never double-pays or double-debits).
           const reason = err instanceof Error ? err.message : String(err);
           await db.update(poolSurplusDistributions)
             .set({ status: "failed", failureReason: reason.slice(0, 300), updatedAt: new Date() })
@@ -2437,6 +2519,22 @@ export const usageCoverRouter = router({
    * activatedAt + days; trip cover binds to an ingested telematics trip and
    * expires at the trip end + a 2h grace. Fail-closed: no DB → error, never
    * a phantom "active" cover.
+   *
+   * PREMIUM DISCLOSURE (strengthened 2026-09-26, verify-a finding #11b):
+   * premiumAmount is RECORDED, NEVER COLLECTED at this write path. No funds
+   * move here — no TigerBeetle transfer, no payment-provider call; the amount
+   * is a caller-declared estimate persisted for later collection via the
+   * standard premium-collection rails (collectPremium / mobile-money). It is
+   * validated for shape only (non-negative, bounded) and MUST NOT be treated
+   * as received funds by any downstream consumer.
+   *
+   * DOUBLE-COVER GUARD (2026-09-26, verify-a finding #11a): a new activation
+   * whose window [now, expiresAt] overlaps an existing active/pending
+   * activation for the same policy is rejected with CONFLICT (409-style) —
+   * distinct clientActivationIds can no longer stack concurrent cover windows
+   * on one policy. Residual TOCTOU race disclosed: two concurrent requests
+   * with distinct client keys could both pass the pre-check; closing that
+   * fully needs a range exclusion constraint (follow-up).
    */
   activateCover: protectedProcedure
     .input(z.object({
@@ -2445,7 +2543,9 @@ export const usageCoverRouter = router({
       clientActivationId: z.string().min(8).max(64),
       days: z.number().int().min(1).max(30).optional(),
       tripId: z.number().optional(),
-      premiumAmount: z.number().nonnegative().optional(),
+      // Recorded-not-collected estimate (see docstring); bounded to the
+      // numeric(15,2) column range with headroom.
+      premiumAmount: z.number().nonnegative().max(9_999_999_999.99).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -2480,6 +2580,45 @@ export const usageCoverRouter = router({
         }
         tripId = trip.id;
         expiresAt = new Date(new Date(trip.endedAt).getTime() + 2 * 3600 * 1000);
+      }
+
+      // Double-cover guard (see docstring): reject when an existing active or
+      // pending activation for this policy overlaps the new window
+      // [now, expiresAt]. Expired/cancelled rows and windows that merely
+      // abut (end <= now or start >= expiresAt) do not conflict.
+      const now = new Date();
+      const [conflict] = await db.select({
+        id: usageCoverActivations.id,
+        status: usageCoverActivations.status,
+        expiresAt: usageCoverActivations.expiresAt,
+      }).from(usageCoverActivations)
+        .where(and(
+          eq(usageCoverActivations.policyId, input.policyId),
+          sql`status IN ('active','pending')`,
+          sql`${usageCoverActivations.activatedAt} < ${expiresAt}`,
+          sql`${usageCoverActivations.expiresAt} > ${now}`,
+        ))
+        .limit(1);
+      if (conflict) {
+        await writeAuditLog({
+          action: "USAGE_COVER_OVERLAP_DENIED",
+          resource: "policy",
+          resourceId: String(input.policyId),
+          status: "failure",
+          metadata: {
+            customerId: ctx.user.id,
+            coverType: input.coverType,
+            conflictingActivationId: conflict.id,
+            // ISO string, NOT a raw Date: the audit hash chain canonicalizes
+            // objects structurally, and a Date would hash as '{}' at write
+            // time but as its stored ISO string at verify time (chain break).
+            conflictingExpiresAt: new Date(conflict.expiresAt).toISOString(),
+          },
+        });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `An overlapping ${conflict.status} cover activation (id ${conflict.id}) already exists for this policy — refusing double-cover`,
+        });
       }
 
       let inserted;

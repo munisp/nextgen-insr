@@ -156,9 +156,11 @@ func GetProductByID(id string) *ProductOption {
 }
 
 // UsageCoverActivation represents a USSD-initiated per-day usage-cover
-// activation (Q-wave Q3, 2026-09-25). Mirror of the platform
-// usage_cover_activations record for the gateway's own store: the gateway
-// records the activation request durably and idempotently (session-bound
+// activation (Q-wave Q3, 2026-09-25). Persisted in the gateway's OWN
+// ussd_usage_cover_activations table (renamed 2026-09-26, verify-a #11c, to
+// avoid colliding with the platform monolith's divergent
+// usage_cover_activations schema from migration 0088): the gateway records
+// the activation request durably and idempotently (session-bound
 // idempotency key) so telco callback redelivery never double-activates.
 type UsageCoverActivation struct {
 	ID          string    `json:"id"`

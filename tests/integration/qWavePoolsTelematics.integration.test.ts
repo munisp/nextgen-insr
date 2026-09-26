@@ -20,7 +20,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { customers, insuranceProducts, policies, users } from "../../drizzle/schema";
+import { auditLog, customers, insuranceProducts, policies, users } from "../../drizzle/schema";
 import {
   p2pPoolMembers,
   p2pPools,
@@ -470,6 +470,167 @@ describe("Q-wave Q3: pool surplus + telematics + usage cover (integration, real 
       expect(row.status).toBe("expired");
       // Idempotent re-run.
       expect(await expireDueUsageCover(db)).toBe(0);
+    });
+
+    // 2026-09-26 (verify-a finding #11a): overlap guard.
+    it("adjacent non-overlapping activation is allowed; overlapping activation is rejected with CONFLICT", async () => {
+      // Prior windows on POLICY_ID are all in the past (expired day cover,
+      // past trip window), so a fresh day cover is adjacent/non-overlapping.
+      const adjacent = await callerFor(Q3_MEMBER_A).usageCover.activateCover({
+        policyId: POLICY_ID, coverType: "day", clientActivationId: "q3-uc-0000000010", days: 1,
+      });
+      expect(adjacent.success).toBe(true);
+      expect(adjacent.idempotent).toBe(false);
+      expect(adjacent.status).toBe("active");
+
+      // A second activation with a DIFFERENT client key overlaps the live
+      // window — double-cover refused loudly.
+      await expectTrpcError(
+        callerFor(Q3_MEMBER_A).usageCover.activateCover({
+          policyId: POLICY_ID, coverType: "day", clientActivationId: "q3-uc-0000000011", days: 2,
+        }),
+        "CONFLICT"
+      );
+
+      const db = (await getDb())!;
+      const rows = await db.select().from(usageCoverActivations)
+        .where(eq(usageCoverActivations.clientActivationId, "q3-uc-0000000011"));
+      expect(rows.length).toBe(0); // nothing persisted from the denied attempt
+      // Denial audited.
+      const audit = await db.select().from(auditLog)
+        .where(and(eq(auditLog.action, "USAGE_COVER_OVERLAP_DENIED"), eq(auditLog.resourceId, String(POLICY_ID))));
+      expect(audit.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ── 9. 2026-09-26 (verify-a finding #10): trip-ingest authorization ──────
+  describe("telematics ingest authorization", () => {
+    it("a non-owner cannot inject trips into another user's policy (audited denial)", async () => {
+      await expectTrpcError(
+        callerFor(Q3_MEMBER_B).telematics.ingestTripBatch({
+          policyId: POLICY_ID, // owned by Q3_MEMBER_A
+          trips: [{
+            clientTripId: "q3-trip-evil-00001", deviceId: "dev-b",
+            startedAt: "2026-09-24T08:00:00Z", endedAt: "2026-09-24T08:30:00Z",
+            distanceKm: 10, durationSeconds: 1800, hardBrakes: 0, speedingEvents: 0,
+            corneringEvents: 0, nightDrivingSeconds: 0, rawEventCount: 0,
+          }],
+        }),
+        "FORBIDDEN"
+      );
+      const db = (await getDb())!;
+      // Nothing persisted; the victim policy still has exactly its 2 trips.
+      const trips = await db.select().from(telematicsTrips)
+        .where(eq(telematicsTrips.policyId, POLICY_ID));
+      expect(trips.length).toBe(2);
+      // Denial audited fail-closed.
+      const audit = await db.select().from(auditLog)
+        .where(and(eq(auditLog.action, "TELEMATICS_INGEST_DENIED"), eq(auditLog.resourceId, String(POLICY_ID))));
+      expect(audit.length).toBeGreaterThanOrEqual(1);
+      expect(audit[0]!.status).toBe("failure");
+    });
+
+    it("staff may ingest for any policy; the owner still can", async () => {
+      const db = (await getDb())!;
+      await db.insert(policies).values({
+        id: 960005, policyNumber: "Q3-POL-000005", productId: PRODUCT_ID,
+        customerId: Q3_MEMBER_B.id, status: "active", coverageType: "motor",
+        sumInsured: "1000000", annualPremium: "20000",
+      }).onConflictDoNothing();
+
+      const staff = await callerFor(adminUser).telematics.ingestTripBatch({
+        policyId: 960005,
+        trips: [{
+          clientTripId: "q3-trip-staff-0001", deviceId: "dev-staff",
+          startedAt: "2026-09-24T09:00:00Z", endedAt: "2026-09-24T09:30:00Z",
+          distanceKm: 12, durationSeconds: 1800, hardBrakes: 0, speedingEvents: 0,
+          corneringEvents: 0, nightDrivingSeconds: 0, rawEventCount: 10,
+        }],
+      });
+      expect(staff.success).toBe(true);
+      expect(staff.inserted).toBe(1);
+
+      const owner = await callerFor(Q3_MEMBER_B).telematics.ingestTripBatch({
+        policyId: 960005,
+        trips: [{
+          clientTripId: "q3-trip-owner-0001", deviceId: "dev-b",
+          startedAt: "2026-09-24T10:00:00Z", endedAt: "2026-09-24T10:30:00Z",
+          distanceKm: 8, durationSeconds: 1800, hardBrakes: 1, speedingEvents: 0,
+          corneringEvents: 0, nightDrivingSeconds: 0, rawEventCount: 5,
+        }],
+      });
+      expect(owner.success).toBe(true);
+      expect(owner.inserted).toBe(1);
+    });
+  });
+
+  // ── 10. 2026-09-26 (verify-a finding #6): debit-before-transfer ordering ──
+  describe("surplus execute fund-mirroring (debit first, TB second)", () => {
+    it("TB outage after the DB debit leaves a compensating credit-back; retry pays exactly once", async () => {
+      const db = (await getDb())!;
+      const ORDER_POOL = 960301;
+      await db.insert(p2pPools).values({
+        id: ORDER_POOL, poolName: "Q3 Ordering Pool", poolType: "community", productType: "motor",
+        organiserId: adminUser.id, maxMembers: 50, contributionAmount: "5000",
+        contributionFrequency: "monthly", poolBalance: "5000", reinsuranceThreshold: "100000",
+        periodStart: "2026-08-01", periodEnd: "2026-08-31", status: "active",
+      });
+      await db.insert(p2pPoolMembers).values({
+        id: 960311, poolId: ORDER_POOL, customerId: Q3_MEMBER_A.id, contributionPaid: "5000", status: "active",
+      });
+      const close = await callerFor(adminUser).p2pPools.closePoolPeriod({
+        poolId: ORDER_POOL, periodStart: "2026-08-01", periodEnd: "2026-08-31", reserveBps: 2000,
+      });
+      if (!("periodId" in close)) throw new Error("expected periodId");
+      const pid = close.periodId;
+      await callerFor(adminUser).p2pPools.proposeSurplusDistribution({ periodId: pid });
+      await callerFor(Q3_SUPERVISOR).p2pPools.approveSurplusDistribution({ periodId: pid });
+      // Single line: 4000 (surplus 5000 − 20% reserve).
+
+      const ledgerUrl = process.env.TB_SIDECAR_URL;
+      if (!ledgerUrl) throw new Error("TB_SIDECAR_URL must be set by globalSetup for this boundary test");
+      const down = await fetch(`${ledgerUrl}/__test/down`, { method: "POST" });
+      expect(down.ok).toBe(true);
+      try {
+        // TB leg fails AFTER the balance-guarded debit; the compensating
+        // credit-back must restore the pool balance (debit-first ordering).
+        const ex = await callerFor(approverUser).p2pPools.executeSurplusDistribution({ periodId: pid });
+        if (!("executed" in ex)) throw new Error("expected executed count");
+        expect(ex.executed).toBe(0);
+        expect(ex.failed).toBe(1);
+
+        const [pool] = await db.select().from(p2pPools).where(eq(p2pPools.id, ORDER_POOL));
+        expect(parseFloat(pool.poolBalance)).toBe(5000); // credit-back restored
+        const [line] = await db.select().from(poolSurplusDistributions)
+          .where(eq(poolSurplusDistributions.periodId, pid));
+        expect(line.status).toBe("failed");
+        expect(line.failureReason).toContain("compensating credit-back posted");
+        expect(line.poolDebitedAt).toBeNull(); // compensation cleared the marker
+        expect(line.tbTransferId).toBeNull();
+      } finally {
+        // Shared mini-ledger across the single-fork suite — always restore.
+        await fetch(`${ledgerUrl}/__test/up`, { method: "POST" });
+      }
+
+      // Retry: ref-deduped TB leg pays exactly once; the pool is debited
+      // exactly once (fresh debit after the successful credit-back).
+      const retry = await callerFor(approverUser).p2pPools.executeSurplusDistribution({ periodId: pid });
+      if (!("executed" in retry)) throw new Error("expected executed count");
+      expect(retry.executed).toBe(1);
+      expect(retry.failed).toBe(0);
+
+      const [pool] = await db.select().from(p2pPools).where(eq(p2pPools.id, ORDER_POOL));
+      expect(parseFloat(pool.poolBalance)).toBe(1000); // 5000 − 4000 once
+      const [line] = await db.select().from(poolSurplusDistributions)
+        .where(eq(poolSurplusDistributions.periodId, pid));
+      expect(line.status).toBe("executed");
+      expect(line.tbTransferId).toBeTruthy();
+
+      // Independent ledger verification: one committed payout of 400000 kobo.
+      const custAcct = await fetch(`${ledgerUrl}/accounts/customer-${Q3_MEMBER_A.id}`).then((r) => r.json());
+      expect(parseInt(custAcct.credits_posted, 10)).toBe(400000 + 480000); // + earlier 4800 distribution
+      const poolAcct = await fetch(`${ledgerUrl}/accounts/p2p-pool-${ORDER_POOL}`).then((r) => r.json());
+      expect(parseInt(poolAcct.debits_posted, 10)).toBe(400000); // debited exactly once
     });
   });
 });

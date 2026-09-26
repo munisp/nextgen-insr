@@ -456,6 +456,12 @@ export const poolSurplusDistributions = pgTable("pool_surplus_distributions", {
   executedByUserId: integer("executed_by_user_id"),
   tbTransferId: varchar("tb_transfer_id", { length: 64 }),
   failureReason: text("failure_reason"),
+  // 2026-09-26 (verify-a finding #6, fund-mirroring): set in the SAME
+  // transaction as the balance-guarded pool debit, which now commits BEFORE
+  // the TigerBeetle leg. A failed line with poolDebitedAt still set holds an
+  // uncompensated DB debit, so a retry skips the debit and goes straight to
+  // the ref-deduped TB transfer (at-most-once debit + at-most-once payout).
+  poolDebitedAt: timestamp("pool_debited_at", { withTimezone: true }),
   executedAt: timestamp("executed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -134,7 +134,14 @@ func (ps *PostgresStore) runMigrations() error {
 		// Q-wave Q3 (2026-09-25): per-day usage-cover activations. Session-
 		// bound idempotency key dedups telco callback redelivery; the expiry
 		// index backs the sweep that flips due rows to 'expired'.
-		`CREATE TABLE IF NOT EXISTS usage_cover_activations (
+		// 2026-09-26 (verify-a finding #11c): table renamed
+		// usage_cover_activations → ussd_usage_cover_activations. The platform
+		// monolith's migration 0088 creates a DIFFERENT table under the old
+		// name (serial id, policy_id/customer_id/client_activation_id); with a
+		// shared Postgres database the colliding CREATE ... IF NOT EXISTS
+		// would silently no-op and break one service's inserts. The ussd_
+		// prefix makes the gateway's own-store schema unambiguous.
+		`CREATE TABLE IF NOT EXISTS ussd_usage_cover_activations (
 			id              TEXT PRIMARY KEY,
 			session_id      TEXT NOT NULL,
 			phone_number    TEXT NOT NULL,
@@ -146,9 +153,9 @@ func (ps *PostgresStore) runMigrations() error {
 			expires_at      TIMESTAMPTZ NOT NULL,
 			idempotency_key TEXT
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_cover_idempotency ON usage_cover_activations(idempotency_key) WHERE idempotency_key IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_usage_cover_expiry ON usage_cover_activations(status, expires_at)`,
-		`CREATE INDEX IF NOT EXISTS idx_usage_cover_phone ON usage_cover_activations(phone_number, status)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_ussd_usage_cover_idempotency ON ussd_usage_cover_activations(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_ussd_usage_cover_expiry ON ussd_usage_cover_activations(status, expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_ussd_usage_cover_phone ON ussd_usage_cover_activations(phone_number, status)`,
 	}
 
 	for _, migration := range migrations {
@@ -731,7 +738,7 @@ func (ps *PostgresStore) CreateUsageCoverActivationIdempotent(ctx context.Contex
 	}
 	act.ActivatedAt = time.Now().UTC()
 
-	query := `INSERT INTO usage_cover_activations
+	query := `INSERT INTO ussd_usage_cover_activations
 		(id, session_id, phone_number, product_id, days, status, reference, activated_at, expires_at, idempotency_key)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (idempotency_key) DO NOTHING
@@ -751,7 +758,7 @@ func (ps *PostgresStore) CreateUsageCoverActivationIdempotent(ctx context.Contex
 	var existing models.UsageCoverActivation
 	row := ps.db.QueryRowContext(ctx,
 		`SELECT id, session_id, phone_number, product_id, days, status, reference, activated_at, expires_at
-		 FROM usage_cover_activations WHERE idempotency_key = $1`, idempotencyKey)
+		 FROM ussd_usage_cover_activations WHERE idempotency_key = $1`, idempotencyKey)
 	if err := row.Scan(&existing.ID, &existing.SessionID, &existing.PhoneNumber, &existing.ProductID,
 		&existing.Days, &existing.Status, &existing.Reference, &existing.ActivatedAt, &existing.ExpiresAt); err != nil {
 		return nil, false, fmt.Errorf("postgres: fetch idempotent usage cover activation: %w", err)
@@ -764,7 +771,7 @@ func (ps *PostgresStore) CreateUsageCoverActivationIdempotent(ctx context.Contex
 // on every sweep tick. Returns the number of rows expired.
 func (ps *PostgresStore) ExpireDueUsageCoverActivations(ctx context.Context) (int, error) {
 	result, err := ps.db.ExecContext(ctx,
-		`UPDATE usage_cover_activations SET status = 'expired'
+		`UPDATE ussd_usage_cover_activations SET status = 'expired'
 		 WHERE status = 'active' AND expires_at <= NOW()`)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: expire usage cover activations: %w", err)
