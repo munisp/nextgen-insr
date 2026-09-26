@@ -87,6 +87,9 @@ import { documentManagementRouter } from "../../../server/routers/documentManage
 // Q-wave Q2 (2026-09-25): parametric engine under the real middleware chain,
 // production mount path (server/routers.ts).
 import { parametricEngineRouter } from "../../../server/routers/parametricEngine";
+// Q4 health & retention wave (2026-09-25).
+import { careRetentionRouter } from "../../../server/routers/careRetention";
+import { providerPortalRouter } from "../../../server/routers/providerPortal";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -176,6 +179,10 @@ export const integrationRouter = router({
   documentManagement: documentManagementRouter,
   // Q-wave Q2 (2026-09-25): production mount path (server/routers.ts).
   parametricEngine: parametricEngineRouter,
+  // Q4 health & retention wave (2026-09-25): production mount paths
+  // (server/routers.ts, appRouter tail).
+  careRetention: careRetentionRouter,
+  providerPortal: providerPortalRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
