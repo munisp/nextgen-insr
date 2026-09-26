@@ -28,6 +28,8 @@
  */
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 
+import type { getDb } from "../db";
+
 import {
   p2pPoolClaims,
   p2pPoolMembers,
@@ -59,13 +61,19 @@ export interface PeriodCloseComputation {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+// 2026-09-26: canonical drizzle handle type from the repo's getDb() accessor
+// (type-only import — no runtime cycle). Row types flow from the table
+// definitions, so callers get fully-typed rows and the ESLint unsafe-*
+// ratchet stays clean (previously `db: any`).
+type DrizzleDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
 /**
  * Compute the period-close accounting for a pool. Pure read — no writes.
  * Throws on unknown pool or a negative closing balance (ledger drift —
  * fail-closed rather than distributing against a broken balance).
  */
 export async function computePeriodClose(
-  db: any,
+  db: DrizzleDb,
   opts: {
     poolId: number;
     periodStart: string;
@@ -108,7 +116,7 @@ export async function computePeriodClose(
 
   const contributionsCollected = r2(parseFloat(contributions));
   const claimsPaid = r2(parseFloat(claimsTotal));
-  const closingBalance = r2(parseFloat(pool.poolBalance ?? "0"));
+  const closingBalance = r2(parseFloat(pool.poolBalance));
   if (closingBalance < 0) {
     throw new Error(`Pool ${opts.poolId} closing balance is negative (${closingBalance}) — ledger drift; refusing to close`);
   }
@@ -150,7 +158,7 @@ export interface DistributionShare {
  * difference is at most one 0.01 unit (never an over-allocation).
  */
 export async function computeDistributionShares(
-  db: any,
+  db: DrizzleDb,
   opts: { poolId: number; distributableSurplus: number },
 ): Promise<DistributionShare[]> {
   if (opts.distributableSurplus <= 0) return [];
@@ -158,12 +166,12 @@ export async function computeDistributionShares(
     .select()
     .from(p2pPoolMembers)
     .where(and(eq(p2pPoolMembers.poolId, opts.poolId), eq(p2pPoolMembers.status, "active")));
-  const eligible = members.filter((m: any) => parseFloat(m.contributionPaid ?? "0") > 0);
-  const total = eligible.reduce((s: number, m: any) => s + parseFloat(m.contributionPaid), 0);
+  const eligible = members.filter((m) => parseFloat(m.contributionPaid) > 0);
+  const total = eligible.reduce((s: number, m) => s + parseFloat(m.contributionPaid), 0);
   if (eligible.length === 0 || total <= 0) return [];
 
   const totalUnits = Math.round(opts.distributableSurplus * 100);
-  const raw = eligible.map((m: any) => {
+  const raw = eligible.map((m) => {
     const shareBps = Math.round((parseFloat(m.contributionPaid) / total) * 10_000);
     const exactUnits = (parseFloat(m.contributionPaid) / total) * totalUnits;
     return {
@@ -174,12 +182,12 @@ export async function computeDistributionShares(
       remainder: exactUnits - Math.floor(exactUnits),
     };
   });
-  let assigned = raw.reduce((s: number, r: any) => s + r.floorUnits, 0);
+  let assigned = raw.reduce((s: number, r) => s + r.floorUnits, 0);
   const byRemainder = [...raw].sort((a, b) => b.remainder - a.remainder);
   for (let i = 0; assigned < totalUnits && i < byRemainder.length; i++, assigned++) {
     byRemainder[i]!.floorUnits += 1;
   }
-  const shares = raw.map((r: any) => ({
+  const shares = raw.map((r) => ({
     memberId: r.memberId,
     customerId: r.customerId,
     shareBps: r.shareBps,
@@ -198,7 +206,7 @@ export async function computeDistributionShares(
  * the unique index — a concurrent double-close returns the existing row.
  */
 export async function persistPeriodClose(
-  db: any,
+  db: DrizzleDb,
   comp: PeriodCloseComputation,
   closedByUserId: number | null,
 ) {
@@ -230,5 +238,11 @@ export async function persistPeriodClose(
     .from(poolPeriods)
     .where(and(eq(poolPeriods.poolId, comp.poolId), eq(poolPeriods.periodStart, comp.periodStart)))
     .limit(1);
+  // 2026-09-26: fail-closed — a conflict with no readable row means the
+  // period record vanished between insert-conflict and re-read (or the read
+  // replica lagged); refuse rather than returning an undefined period.
+  if (!existing) {
+    throw new Error(`pool_periods row for pool ${comp.poolId} (${comp.periodStart}) not found after insert conflict — refusing to proceed`);
+  }
   return { period: existing, alreadyClosed: true };
 }

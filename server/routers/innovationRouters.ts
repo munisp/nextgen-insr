@@ -55,6 +55,12 @@ import {
 } from "../lib/telematicsScoring";
 import { tbCreateTransfer, TB_SYSTEM_ACCOUNTS } from "../tbClient";
 
+// 2026-09-26: canonical drizzle handle type from the repo's getDb() accessor
+// (type-only usage — getDb is already imported). Removes the `any` params in
+// the Q3 helpers below so row types flow from the table definitions and the
+// ESLint unsafe-* ratchet stays clean.
+type DrizzleDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
 // ── Service URL helpers ───────────────────────────────────────────────────────
 const SVC = {
   telematics: process.env.TELEMATICS_ENGINE_URL ?? "http://telematics-engine:8097",
@@ -340,7 +346,7 @@ export const telematicsRouter = router({
  * trailing window, upsert telematics_scores, and invalidate the Redis cache
  * entry. Shared by ingestTripBatch and any future score jobs.
  */
-async function recomputeRollingScore(db: any, policyId: number, customerId: number) {
+async function recomputeRollingScore(db: DrizzleDb, policyId: number, customerId: number) {
   const since = new Date();
   since.setDate(since.getDate() - TELEMATICS_WINDOW_DAYS_DEFAULT);
   const trips = await db.select().from(telematicsTrips)
@@ -348,7 +354,7 @@ async function recomputeRollingScore(db: any, policyId: number, customerId: numb
   if (trips.length === 0) return null;
 
   const score = rollingScore(
-    trips.map((t: any) => ({ tripScore: parseFloat(t.tripScore ?? "100"), distanceKm: parseFloat(t.distanceKm ?? "0") })),
+    trips.map((t) => ({ tripScore: parseFloat(t.tripScore ?? "100"), distanceKm: parseFloat(t.distanceKm) })),
   );
   const ratingFactor = ratingFactorFromScore(score);
   const [row] = await db.insert(telematicsScores).values({
@@ -1232,7 +1238,7 @@ export const p2pPoolsRouter = router({
         return {
           success: true as const, idempotent: true as const, periodId: period.id,
           status: period.status, lines: existing.length,
-          totalAmount: existing.reduce((s: number, l: any) => s + parseFloat(l.amount), 0),
+          totalAmount: existing.reduce((s: number, l) => s + parseFloat(l.amount), 0),
         };
       }
       if (period.status !== "closed") {
@@ -2634,10 +2640,12 @@ export const usageCoverRouter = router({
           status: "active",
           expiresAt,
         }).returning();
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Unique-race replay: a concurrent request with the same client key
         // won the insert — return the winner honestly.
-        if (String(err?.message ?? "").includes("uq_usage_cover_client_activation")) {
+        // 2026-09-26: catch unknown (not any) — ratchet-safe error narrowing.
+        const raceMsg = err instanceof Error ? err.message : String(err);
+        if (raceMsg.includes("uq_usage_cover_client_activation")) {
           const [winner] = await db.select().from(usageCoverActivations)
             .where(eq(usageCoverActivations.clientActivationId, input.clientActivationId)).limit(1);
           if (winner) {
@@ -2712,7 +2720,7 @@ export const usageCoverRouter = router({
  * Expire due usage-cover activations. Idempotent guarded UPDATE — safe to
  * run on every cron tick. Invoked by server/cron/poolPeriodCloseSweep.ts.
  */
-export async function expireDueUsageCover(db: any): Promise<number> {
+export async function expireDueUsageCover(db: DrizzleDb): Promise<number> {
   const expired = await db.update(usageCoverActivations)
     .set({ status: "expired", updatedAt: new Date() })
     .where(and(

@@ -35,6 +35,10 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { SignJWT } from "jose";
 import cron from "node-cron";
+// 2026-09-26: named import for NEW schedules — `cron.schedule` trips
+// import/no-named-as-default-member (ESLint ratchet, baseline 24). Existing
+// pre-baseline call sites are untouched; new code must not add violations.
+import { schedule as scheduleCron } from "node-cron";
 import { RedisStore } from "rate-limit-redis";
 
 import { logger, requestLoggingMiddleware } from "./logger";
@@ -969,14 +973,14 @@ async function startServer() {
   // Q-wave Q3 (2026-09-25): pool period-close + usage-cover expiry sweeps,
   // same node-cron pattern. Both idempotent and error-logged
   // (see cron/poolPeriodCloseSweep).
-  cron.schedule("0 4 * * *", () => {
+  scheduleCron("0 4 * * *", () => {
     runPoolPeriodCloseSweep().catch(err =>
       logger.error(
         `[Cron] poolPeriodCloseSweep rejected: ${err instanceof Error ? err.message : String(err)}`
       )
     );
   }); // Daily at 4 AM
-  cron.schedule("0 * * * *", () => {
+  scheduleCron("0 * * * *", () => {
     runUsageCoverExpirySweep().catch(err =>
       logger.error(
         `[Cron] usageCoverExpirySweep rejected: ${err instanceof Error ? err.message : String(err)}`
