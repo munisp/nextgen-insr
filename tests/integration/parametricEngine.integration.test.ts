@@ -416,6 +416,69 @@ describe("STP tiers", () => {
   });
 });
 
+// ── 5b. STP tier audit trail (2026-09-26, Q24 fix) ───────────────────────────
+describe("STP tier audit trail", () => {
+  it("writes an audit_log row on tier CREATE with actor + new values", async () => {
+    const db = (await getDb())!;
+    const { id } = await admin().parametricEngine.upsertStpTier({
+      productId: productLowId,
+      tierName: "audit-create",
+      autoApproveCap: 275_000,
+      maxFraudScore: 40,
+    });
+    const rows = await db.select().from(auditLog)
+      .where(and(
+        eq(auditLog.action, "STP_TIER_CREATED"),
+        eq(auditLog.resourceId, String(id)),
+      ));
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    expect(row.agentId).toBe(adminUser.id);
+    const meta = row.metadata as Record<string, unknown>;
+    expect(meta.productId).toBe(productLowId);
+    expect(meta.tierName).toBe("audit-create");
+    expect(meta.oldAutoApproveCap).toBeNull();
+    expect(Number(meta.newAutoApproveCap)).toBe(275_000);
+    expect(meta.oldMaxFraudScore).toBeNull();
+    expect(Number(meta.newMaxFraudScore)).toBe(40);
+    expect(typeof meta.changedAt).toBe("string");
+    expect(Number.isFinite(new Date(meta.changedAt as string).getTime())).toBe(true);
+  });
+
+  it("writes an audit_log row on conflict-UPDATE with correct old → new values", async () => {
+    const db = (await getDb())!;
+    const created = await admin().parametricEngine.upsertStpTier({
+      productId: productLowId,
+      tierName: "audit-update",
+      autoApproveCap: 210_000,
+      maxFraudScore: 30,
+    });
+    // Escalate the cap above ₦200k via the conflict-update path.
+    const updated = await admin2().parametricEngine.upsertStpTier({
+      productId: productLowId,
+      tierName: "audit-update",
+      autoApproveCap: 350_000,
+      maxFraudScore: 55,
+    });
+    expect(updated.id).toBe(created.id);
+    const rows = await db.select().from(auditLog)
+      .where(and(
+        eq(auditLog.action, "STP_TIER_UPDATED"),
+        eq(auditLog.resourceId, String(created.id)),
+      ));
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    // Actor identity is captured on the update path (second staff admin).
+    expect(row.agentId).toBe(approverUser.id);
+    const meta = row.metadata as Record<string, unknown>;
+    expect(meta.actorId).toBe(approverUser.id);
+    expect(Number(meta.oldAutoApproveCap)).toBe(210_000);
+    expect(Number(meta.newAutoApproveCap)).toBe(350_000);
+    expect(Number(meta.oldMaxFraudScore)).toBe(30);
+    expect(Number(meta.newMaxFraudScore)).toBe(55);
+  });
+});
+
 // ── 6. Claims-paid-speed metrics ─────────────────────────────────────────────
 describe("claims-paid-speed metrics", () => {
   it("aggregates created→approved→paid p50/p95 from real timestamps", async () => {

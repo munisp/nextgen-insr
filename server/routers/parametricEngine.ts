@@ -8,7 +8,7 @@
  * claims timestamps (created → approved → paid), admin-gated.
  */
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -22,9 +22,9 @@ import {
   parametricTriggerDefinitions,
 } from "../../drizzle/schema";
 import { adminProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { evaluateTrigger } from "../lib/parametricEngine";
+import { getDb, writeAuditLog } from "../db";
 import { datasourceConfigSchema } from "../lib/parametricDatasources";
+import { evaluateTrigger } from "../lib/parametricEngine";
 
 async function db() {
   const d = await getDb();
@@ -198,6 +198,18 @@ export const parametricEngineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const d = await db();
+      // 2026-09-26 (Q24 fix): cap escalation above ₦200k is admin-gated but
+      // was under-trailed — the conflict-update path silently rewrote
+      // autoApproveCap/maxFraudScore with no actor identity and no audit_log
+      // row. Read the prior row first so BOTH the insert and the
+      // conflict-update paths write a hash-chained audit_log entry capturing
+      // actor, product/tier and old → new values.
+      const productCond = input.productId == null
+        ? isNull(claimStpTiers.productId)
+        : eq(claimStpTiers.productId, input.productId);
+      const [existing] = await d.select().from(claimStpTiers)
+        .where(and(productCond, eq(claimStpTiers.tierName, input.tierName)))
+        .limit(1);
       const [row] = await d.insert(claimStpTiers).values({
         productId: input.productId,
         tierName: input.tierName,
@@ -214,6 +226,25 @@ export const parametricEngineRouter = router({
           updatedAt: new Date(),
         },
       }).returning();
+      await writeAuditLog({
+        agentId: ctx.user?.id,
+        action: existing ? "STP_TIER_UPDATED" : "STP_TIER_CREATED",
+        resource: "claim_stp_tiers",
+        resourceId: String(row.id),
+        status: "success",
+        metadata: {
+          actorId: ctx.user?.id ?? null,
+          productId: input.productId,
+          tierName: input.tierName,
+          oldAutoApproveCap: existing?.autoApproveCap ?? null,
+          newAutoApproveCap: String(input.autoApproveCap),
+          oldMaxFraudScore: existing?.maxFraudScore ?? null,
+          newMaxFraudScore: input.maxFraudScore == null ? null : String(input.maxFraudScore),
+          oldIsActive: existing?.isActive ?? null,
+          newIsActive: input.isActive,
+          changedAt: new Date().toISOString(),
+        },
+      });
       return { id: row.id };
     }),
 
