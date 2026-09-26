@@ -6104,7 +6104,6 @@ export const scenarioTemplates = pgTable("scenario_templates", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type ScenarioTemplate = typeof scenarioTemplates.$inferSelect;
-=======
 // ─── Q-wave Q2 (2026-09-25): Parametric Trigger Engine + STP expansion ──────
 // Migration 0087. Append-only EOF tail. Naming disclosure: the brief's
 // `parametric_triggers` / `parametric_payouts` names are already taken by the
