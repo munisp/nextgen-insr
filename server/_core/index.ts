@@ -34,11 +34,11 @@ import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { SignJWT } from "jose";
-import cron from "node-cron";
-// 2026-09-26: named import for NEW schedules — `cron.schedule` trips
-// import/no-named-as-default-member (ESLint ratchet, baseline 24). Existing
-// pre-baseline call sites are untouched; new code must not add violations.
-import { schedule as scheduleCron } from "node-cron";
+// 2026-09-26: named `schedule` import merged into the existing statement —
+// `cron.schedule` on NEW schedules trips import/no-named-as-default-member,
+// while a second import line trips import/no-duplicates (ESLint ratchet).
+// Existing pre-baseline call sites are untouched.
+import cron, { schedule as scheduleCron } from "node-cron";
 import { RedisStore } from "rate-limit-redis";
 
 import { logger, requestLoggingMiddleware } from "./logger";
