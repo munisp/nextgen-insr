@@ -219,6 +219,9 @@ import { dynamicQrPaymentRouter } from "./routers/dynamicQrPayment";
 import { e2eTestFrameworkRouter } from "./routers/e2eTestFramework";
 import { emailDeliveryLogRouter } from "./routers/emailDeliveryLogCrud";
 import { emailNotificationsRouter } from "./routers/emailNotifications";
+// Q-wave Q1 (2026-09-25): embedded partner product factory + freemium ladder
+// + scenario builder (migration 0086).
+import { embeddedPartnerFactoryRouter } from "./routers/embeddedPartnerFactory";
 import { encryptedFieldsRouter } from "./routers/encryptedFieldsCrud";
 import { eodReconciliationRouter } from "./routers/eodReconciliation";
 import { erpRouter } from "./routers/erp";
@@ -1169,6 +1172,7 @@ export const appRouter = router({
   parametricEngine: parametricEngineRouter,
   groupInsurance: groupInsuranceRouter,
   bancassurance: bancassuranceRouter,
+  embeddedFactory: embeddedPartnerFactoryRouter,
   openInsurance: openInsuranceRouter,
   climateRisk: climateRiskRouter,
   renewalPrediction: renewalPredictionRouter,
