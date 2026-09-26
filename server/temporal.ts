@@ -181,9 +181,64 @@ export async function getSettlementStatus(date: string): Promise<{
   }
 }
 
+/**
+ * Q-wave Q1 (2026-09-25): start the freemium-upgrade reminder journey for a
+ * new freemium enrollment. Uses the same client pattern as triggerSettlement;
+ * returns null (graceful) when Temporal is unavailable — enrollment itself is
+ * committed to PostgreSQL first, so the reminder is best-effort notification,
+// never a funds/authz path.
+ */
+export async function startFreemiumUpgradeReminder(input: {
+  enrollmentId: number;
+  customerId: number;
+  reminderDelayDays?: number;
+}): Promise<string | null> {
+  const client = await getTemporalClient();
+  if (!client) {
+    logger.warn(
+      "[Temporal] Cannot start freemium-upgrade reminder — Temporal unavailable"
+    );
+    return null;
+  }
+  const workflowId = `freemium-upgrade-reminder-${input.enrollmentId}`;
+  try {
+    const handle = await client.workflow.start(
+      "FreemiumUpgradeReminderWorkflow",
+      {
+        taskQueue: SETTLEMENT_TASK_QUEUE,
+        workflowId,
+        args: [
+          {
+            enrollmentId: input.enrollmentId,
+            customerId: input.customerId,
+            reminderDelayDays: input.reminderDelayDays ?? 14,
+          },
+        ],
+      }
+    );
+    logger.info(
+      `[Temporal] Freemium upgrade reminder started: ${workflowId} (runId: ${handle.firstExecutionRunId})`
+    );
+    return handle.firstExecutionRunId;
+  } catch (err) {
+    if (
+      WorkflowExecutionAlreadyStartedErrorRef &&
+      err instanceof WorkflowExecutionAlreadyStartedErrorRef
+    ) {
+      return null; // already scheduled — idempotent
+    }
+    logger.error(
+      { err },
+      "[Temporal] Failed to start freemium-upgrade reminder workflow"
+    );
+    return null;
+  }
+}
+
 export default {
   getTemporalClient,
   triggerSettlement,
   scheduleSettlementCron,
   getSettlementStatus,
+  startFreemiumUpgradeReminder,
 };

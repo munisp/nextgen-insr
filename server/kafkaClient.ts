@@ -98,7 +98,14 @@ export type KafkaTopic =
   | "54link.kyc.rejected"
   | "54link.disputes.opened"
   | "54link.disputes.resolved"
-  | "54link.fraud.alert_raised";
+  | "54link.fraud.alert_raised"
+  // Q-wave Q1 (2026-09-25): embedded partner factory domain events. Published
+  // via the default enqueue-and-return path (no requireAck — notification
+  // semantics; the policy/claim/enrollment row is already committed to
+  // PostgreSQL before publish).
+  | "embedded.policy.bound"
+  | "embedded.claim.created"
+  | "freemium.upgraded";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;
