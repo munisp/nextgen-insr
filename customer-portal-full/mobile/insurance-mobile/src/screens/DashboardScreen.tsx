@@ -82,6 +82,9 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
             { label: 'Pay Premium', icon: '💳', screen: 'Payments' },
             { label: 'Find Agent', icon: '📍', screen: 'AgentLocator' },
             { label: 'Emergency', icon: '🆘', screen: 'Emergency' },
+            // Q-wave Q6 (2026-09-25): telematics + usage-cover entries
+            { label: 'Driving', icon: '🚗', screen: 'TelematicsTrips' },
+            { label: 'Usage Cover', icon: '⏱️', screen: 'UsageCover' },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

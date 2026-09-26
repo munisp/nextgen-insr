@@ -121,6 +121,15 @@ import NIIRACompulsoryInsurance from "./pages/NIIRACompulsoryInsurance";
 import InsuranceTechInnovations from "./pages/InsuranceTechInnovations";
 import AdminConfigCenter from "./pages/AdminConfigCenter";
 import IFRS17Dashboard from "./pages/IFRS17Dashboard";
+// Q-wave Q6 member innovation surfaces (2026-09-25)
+import ParametricCoverage from "./pages/ParametricCoverage";
+import PoolMembership from "./pages/PoolMembership";
+import DrivingScore from "./pages/DrivingScore";
+import UsageCoverActivation from "./pages/UsageCoverActivation";
+import WellnessFeed from "./pages/WellnessFeed";
+import PhotoReimbursement from "./pages/PhotoReimbursement";
+import FreemiumUpgrade from "./pages/FreemiumUpgrade";
+import InstallPrompt from "./components/InstallPrompt";
 
 function Router() {
   return (
@@ -719,6 +728,42 @@ function Router() {
           <IFRS17Dashboard />
         </UnifiedLayout>
       </Route>
+      {/* Q-wave Q6 member innovation surfaces (2026-09-25) */}
+      <Route path="/parametric-coverage">
+        <UnifiedLayout>
+          <ParametricCoverage />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/pool-membership">
+        <UnifiedLayout>
+          <PoolMembership />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/driving-score">
+        <UnifiedLayout>
+          <DrivingScore />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/usage-cover">
+        <UnifiedLayout>
+          <UsageCoverActivation />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/wellness">
+        <UnifiedLayout>
+          <WellnessFeed />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/photo-reimbursement">
+        <UnifiedLayout>
+          <PhotoReimbursement />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/plan-upgrade">
+        <UnifiedLayout>
+          <FreemiumUpgrade />
+        </UnifiedLayout>
+      </Route>
                         <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -733,6 +778,9 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <Router />
+            {/* Q6 PWA hardening (2026-09-25): additive install prompt; renders
+                nothing when beforeinstallprompt never fires. */}
+            <InstallPrompt />
           </TooltipProvider>
         </RoleProvider>
       </ThemeProvider>

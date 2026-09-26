@@ -97,6 +97,10 @@ export function AppNavigator() {
             <Stack.Screen name="InsuranceScore" getComponent={() => require('../screens/InsuranceScoreScreen').default} />
             <Stack.Screen name="NearbyHospitals" getComponent={() => require('../screens/NearbyHospitalsScreen').default} />
             <Stack.Screen name="Rewards" getComponent={() => require('../screens/RewardsScreen').default} />
+            {/* Q-wave Q6 (2026-09-25): new self-contained surfaces, lazily
+                required per the P-wave pattern (no eager cold-start cost). */}
+            <Stack.Screen name="TelematicsTrips" getComponent={() => require('../screens/TelematicsTripsScreen').default} />
+            <Stack.Screen name="UsageCover" getComponent={() => require('../screens/UsageCoverScreen').default} />
           </>
         ) : (
           <Stack.Screen name="KYC" getComponent={() => require('../screens/KYCScreen').KYCScreen} />

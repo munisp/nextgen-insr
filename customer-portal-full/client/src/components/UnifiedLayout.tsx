@@ -122,6 +122,13 @@ import {
   Server,
   FlaskConical,
   Activity as ActivityIcon,
+  // Q-wave Q6 innovation nav icons (2026-09-25)
+  CloudSun,
+  Gauge,
+  CarFront,
+  HeartPulse,
+  ReceiptText,
+  BadgePercent,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -162,6 +169,20 @@ const menuGroups: MenuGroup[] = [
       { icon: Bike, label: "Gig Economy Coverage", path: "/gig-economy", permission: "canViewPolicies" },
       { icon: Building, label: "SME Business Insurance", path: "/sme-business", permission: "canViewPolicies" },
       { icon: Smartphone, label: "Digital Consumer Products", path: "/digital-consumer-products", permission: "canViewPolicies" },
+    ],
+  },
+  {
+    // Q-wave Q6 member innovation surfaces (2026-09-25). Forward-looking
+    // backends feature-detect and render disclosed empty states.
+    label: "Innovation",
+    items: [
+      { icon: CloudSun, label: "Parametric Coverage", path: "/parametric-coverage", permission: "canViewPolicies" },
+      { icon: Coins, label: "Pool Membership & Surplus", path: "/pool-membership", permission: "canViewPolicies" },
+      { icon: Gauge, label: "Driving Score & Trips", path: "/driving-score", permission: "canViewPolicies" },
+      { icon: CarFront, label: "Usage-Based Cover", path: "/usage-cover", permission: "canViewPolicies" },
+      { icon: HeartPulse, label: "Wellness Feed", path: "/wellness", permission: "canViewPolicies" },
+      { icon: ReceiptText, label: "Photo Reimbursement", path: "/photo-reimbursement", permission: "canViewClaims" },
+      { icon: BadgePercent, label: "Plan & Upgrades", path: "/plan-upgrade", permission: "canViewPolicies" },
     ],
   },
   {

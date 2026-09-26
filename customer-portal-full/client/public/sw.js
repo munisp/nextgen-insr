@@ -1,10 +1,13 @@
 // Unified Insurance Platform - Service Worker
-const CACHE_NAME = 'uip-v1';
+// Bumped to v2 (Q6, 2026-09-25): the activate handler deletes v1 so the old
+// cache-first static entries are replaced under the new SWR + no-API policy.
+const CACHE_NAME = 'uip-v2';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.json',
+  OFFLINE_URL, // Q6 2026-09-25: precache the offline fallback so it works offline
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
 ];
@@ -33,9 +36,19 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests and API calls (always network-first for APIs)
+  // ── Caching policy disclosure (Q-wave Q6 hardening, 2026-09-25) ──────────
+  // NEVER cache: (1) non-GET requests — POST/PUT/DELETE carry mutations whose
+  // responses must never be replayed; (2) ANY API/tRPC traffic, including
+  // read-only queries — they are member-scoped and may carry Set-Cookie /
+  // Authorization headers, and auth tokens or session data must never persist
+  // in Cache Storage; (3) cross-origin responses (opaque). Only same-origin
+  // static assets and navigation shells are cacheable, via
+  // stale-while-revalidate below (read-only content ONLY).
   if (request.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/trpc/')) return;
+  // Defence in depth: never cache anything that carries credentials headers.
+  if (request.headers.get('Authorization') || request.headers.get('Cookie')) return;
 
   // For navigation requests, use network-first with cache fallback
   if (request.mode === 'navigate') {
@@ -51,18 +64,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For static assets, use cache-first strategy
+  // For static assets, use stale-while-revalidate (Q6 2026-09-25): serve the
+  // cached copy immediately and refresh it in the background. Applies ONLY to
+  // same-origin, unauthenticated, read-only GETs that passed the filters
+  // above — API responses, mutations and tokens are never cached.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.match(request).then((cached) => {
+        const networkFetch = fetch(request)
+          .then((response) => {
+            if (response.ok && response.type === 'basic') {
+              cache.put(request, response.clone());
+            }
+            return response;
+          })
+          .catch(() => cached);
+        return cached || networkFetch;
+      })
+    )
   );
 });
 
