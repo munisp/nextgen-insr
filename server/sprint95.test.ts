@@ -46,13 +46,14 @@ describe("Sprint 95: Router Implementation", () => {
   // before phone-match customer merges, audit finding #8); verified
   // legitimate (router({...}) present, registered as phoneOwnership in
   // server/routers.ts). Measured 467 in CI (job 105754628299).
-  // 2026-09-25 drift fix (Q-wave Q1, feat/innov-embedded): verified live
-  // count = 468 — the 468th file is server/routers/embeddedPartnerFactory.ts,
-  // a real tRPC router added by the embedded partner product factory wave
-  // (migration 0086), verified legitimate (router({...}) present, registered
-  // as embeddedFactory in server/routers.ts).
-  it("should have 468 router files", () => {
-    expect(routerFiles.length).toBe(468);
+  // 2026-09-26 drift fix (merge: Q-wave Q1+Q2): verified live count = 469.
+  // 468th file = server/routers/embeddedPartnerFactory.ts (Q1, migration
+  // 0086, registered as embeddedFactory); 469th file =
+  // server/routers/parametricEngine.ts (Q2, migration 0087, registered as
+  // parametricEngine). Both verified legitimate (router({...}) present,
+  // registered in server/routers.ts).
+  it("should have 469 router files", () => {
+    expect(routerFiles.length).toBe(469);
   });
 
   it("should have zero empty routers (router({}))", () => {

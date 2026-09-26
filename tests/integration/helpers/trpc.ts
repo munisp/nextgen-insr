@@ -79,6 +79,9 @@ import { agentOnboardingWizardRouter } from "../../../server/routers/agentOnboar
 // P-wave perf (2026-09-19): presigned-upload endpoint under the real
 // middleware chain — production mount path (server/routers.ts:832).
 import { documentManagementRouter } from "../../../server/routers/documentManagement";
+// Q-wave Q2 (2026-09-25): parametric engine under the real middleware chain,
+// production mount path (server/routers.ts).
+import { parametricEngineRouter } from "../../../server/routers/parametricEngine";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -162,6 +165,8 @@ export const integrationRouter = router({
   agentOnboardingWizard: agentOnboardingWizardRouter,
   // P-wave perf (2026-09-19): production mount path (routers.ts:832).
   documentManagement: documentManagementRouter,
+  // Q-wave Q2 (2026-09-25): production mount path (server/routers.ts).
+  parametricEngine: parametricEngineRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
