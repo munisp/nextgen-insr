@@ -317,6 +317,10 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 		return app.stateClaimStatusInput(sess, input)
 	case "claim_status_result":
 		return app.stateClaimStatusResult(sess, input)
+	case "usage_cover_days":
+		return app.stateUsageCoverDays(sess, input)
+	case "usage_cover_confirm":
+		return app.stateUsageCoverConfirm(sess, input)
 	case "end":
 		return models.USSDResponse{
 			Text:         "Thank you for using NGApp Insurance. Goodbye!",
@@ -371,6 +375,15 @@ func (app *Application) stateMainMenu(sess *models.SessionData, input string) (m
 		sess.State = "claim_status_input"
 		return models.USSDResponse{
 			Text:         "Enter your transaction reference ID (e.g. TXN-xxxxxxxx):",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	case "7":
+		// Q-wave Q3 (2026-09-25): per-day usage cover (motor) — Zego-style
+		// day cover activatable from a feature phone.
+		sess.State = "usage_cover_days"
+		return models.USSDResponse{
+			Text:         "DAILY MOTOR COVER\nEnter number of days (1-30):",
 			CloseSession: false,
 			Action:       "continue",
 		}, nil
@@ -2126,4 +2139,89 @@ func (app *Application) handlePendingTransaction(w http.ResponseWriter, r *http.
 		return
 	}
 	jsonOK(w, http.StatusOK, txn)
+}
+
+// -- State: usage cover (per-day motor) — Q-wave Q3 (2026-09-25) -------------
+
+// stateUsageCoverDays collects the number of cover days (1-30). The bounds
+// are server-validated here; the caller-supplied figure is never trusted
+// as-is.
+func (app *Application) stateUsageCoverDays(sess *models.SessionData, input string) (models.USSDResponse, error) {
+	input = strings.TrimSpace(input)
+	days, err := strconv.Atoi(input)
+	if err != nil || days < 1 || days > 30 {
+		return models.USSDResponse{
+			Text:         "Invalid number of days. Enter a value between 1 and 30:",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+	sess.Data["usage_cover_days"] = days
+	sess.State = "usage_cover_confirm"
+	return models.USSDResponse{
+		Text:         fmt.Sprintf("DAILY MOTOR COVER\nActivate cover for %d day(s)?\n1. Confirm\n0. Cancel", days),
+		CloseSession: false,
+		Action:       "menu",
+	}, nil
+}
+
+// stateUsageCoverConfirm persists the activation idempotently (session-bound
+// key dedups telco callback redelivery — a replay returns the ORIGINAL
+// activation, never a duplicate). Fail-closed: a DB failure ends the session
+// with an honest error; no phantom "active" cover is ever claimed.
+func (app *Application) stateUsageCoverConfirm(sess *models.SessionData, input string) (models.USSDResponse, error) {
+	if input != "1" {
+		sess.State = "main_menu"
+		resp, _ := app.stateMainMenu(sess, "")
+		return resp, nil
+	}
+	days, _ := sess.Data["usage_cover_days"].(int)
+	if days < 1 || days > 30 {
+		sess.State = "usage_cover_days"
+		return models.USSDResponse{
+			Text:         "DAILY MOTOR COVER\nEnter number of days (1-30):",
+			CloseSession: false,
+			Action:       "continue",
+		}, nil
+	}
+	if app.pg == nil {
+		app.log.Error("usage cover activation: postgres store unavailable")
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Service unavailable. Please try again later.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+
+	act := &models.UsageCoverActivation{
+		SessionID:   sess.SessionID,
+		PhoneNumber: sess.PhoneNumber,
+		ProductID:   "motor",
+		Days:        days,
+		Status:      models.UsageCoverStatusActive,
+		ExpiresAt:   time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour),
+	}
+	idemKey := fmt.Sprintf("usagecover:%s:%d", idempotencyBase(sess), days)
+	act, dup, err := app.pg.CreateUsageCoverActivationIdempotent(context.Background(), act, idemKey)
+	if err != nil {
+		app.log.Error("create usage cover activation", zap.Error(err))
+		sess.State = "end"
+		return models.USSDResponse{
+			Text:         "Processing failed. Please try again later.",
+			CloseSession: true,
+			Action:       "end",
+		}, nil
+	}
+	if dup {
+		app.log.Info("duplicate usage cover callback deduplicated",
+			zap.String("idempotency_key", idemKey), zap.String("reference", act.Reference))
+	}
+	sess.State = "end"
+	return models.USSDResponse{
+		Text: fmt.Sprintf("Daily motor cover ACTIVE for %d day(s).\nReference: %s\nExpires: %s",
+			act.Days, act.Reference, act.ExpiresAt.Format("02-Jan-2006 15:04")),
+		CloseSession: true,
+		Action:       "end",
+	}, nil
 }

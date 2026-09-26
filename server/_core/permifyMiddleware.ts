@@ -119,6 +119,13 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   "disputeRefund.processRefund": "refund",
   "disputeRefund.initiateRefund": "refund",
   "disputeRefund.approveRefund": "refund",
+  // 2026-09-25 (Q-wave Q3): P2P pool surplus distribution is a funds
+  // movement OUT of the pool to members — gated on "refund" (admin/
+  // supervisor), with maker-checker SoD enforced inside the router.
+  "p2pPools.proposeSurplusDistribution": "refund",
+  "p2pPools.approveSurplusDistribution": "refund",
+  "p2pPools.executeSurplusDistribution": "refund",
+  "p2pPools.closePoolPeriod": "claim_settle",
   // Commissions
   "commissionPayouts.process": "commission_pay",
   "commissionPayouts.approve": "commission_pay",
