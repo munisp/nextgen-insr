@@ -1,0 +1,53 @@
+{
+  "_comment": "Q-wave Q5 (2026-09-25) — OpenSearch index template for parametric events published by services/go/parametric-evaluator (bulk API, idempotent _id = event id). ADDITIVE alongside infrastructure/opensearch/index-templates.json; apply with: PUT _index_template/insureportal-parametric-events.",
+  "index_templates": [
+    {
+      "name": "insureportal-parametric-events",
+      "index_patterns": ["insureportal-parametric-events*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1
+        },
+        "mappings": {
+          "properties": {
+            "eventId": { "type": "long" },
+            "eventKey": { "type": "keyword" },
+            "triggerId": { "type": "long" },
+            "triggerName": { "type": "keyword" },
+            "status": { "type": "keyword" },
+            "measuredValue": { "type": "double" },
+            "payloadHash": { "type": "keyword" },
+            "datasourceType": { "type": "keyword" },
+            "fraudScore": { "type": "float" },
+            "source": { "type": "keyword" },
+            "evaluatedAt": { "type": "date" },
+            "payload": { "type": "object", "enabled": false }
+          }
+        }
+      }
+    },
+    {
+      "name": "insureportal-zone-features",
+      "index_patterns": ["insureportal-zone-features*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1
+        },
+        "mappings": {
+          "properties": {
+            "zone_id": { "type": "keyword" },
+            "zone_name": { "type": "text", "analyzer": "standard" },
+            "zone_kind": { "type": "keyword" },
+            "risk_score": { "type": "float" },
+            "source_url": { "type": "keyword" },
+            "ingested_at": { "type": "date" },
+            "properties": { "type": "object", "enabled": false },
+            "geom_geojson": { "type": "text", "index": false }
+          }
+        }
+      }
+    }
+  ]
+}

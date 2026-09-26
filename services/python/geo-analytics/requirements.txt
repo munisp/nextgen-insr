@@ -1,0 +1,8 @@
+# Q-wave Q5 (2026-09-25) — geo-analytics pinned deps.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+httpx==0.28.1
+psycopg[binary]==3.2.3
+pyarrow==18.1.0
+pytest==8.3.4
