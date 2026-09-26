@@ -9,5 +9,8 @@ RUN CGO_ENABLED=0 go build -o /server .
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /server /server
+# 2026-09-26 fix (Semgrep): run as non-root
+RUN adduser -D -u 10001 appuser
+USER appuser
 EXPOSE 8095
 CMD ["/server"]
