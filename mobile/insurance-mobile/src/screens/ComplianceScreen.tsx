@@ -1,65 +1,29 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '../store/authStore';
-import { useOfflineSync } from '../services/offlineSync';
 
-const API_BASE = 'http://localhost:3000/api/trpc';
-
+// 2026-10-01 (R1c): this screen called compliance.list on a hardcoded
+// localhost URL. No customer-facing compliance procedure exists in the
+// monolith (compliance* routers are NAICOM/regulator- and admin-facing), so
+// the screen always rendered fabricated emptiness. Replaced with an honest
+// unavailable state — no fake compliance data.
 export function ComplianceScreen() {
-  const { token } = useAuth();
-  const { getCachedData, setCachedData } = useOfflineSync();
   const [refreshing, setRefreshing] = React.useState(false);
 
-  const { data: reports, isLoading, refetch } = useQuery({
-    queryKey: ['compliance.list'],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`${API_BASE}/compliance.list`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        const data = json?.result?.data || json || [];
-        await setCachedData('compliance', data, 300000);
-        return Array.isArray(data) ? data : [];
-      } catch {
-        return (await getCachedData('compliance')) || [];
-      }
-    },
-  });
-
-  const onRefresh = async () => { setRefreshing(true); await refetch(); setRefreshing(false); };
-
-  const statusColors: Record<string, string> = { completed: '#10b981', in_progress: '#f59e0b', pending: '#94a3b8', overdue: '#ef4444' };
-
   return (
-    <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} />}
+    >
       <Text style={styles.title}>Compliance & Regulatory</Text>
       <Text style={styles.subtitle}>NAICOM compliance reports and filing status</Text>
 
-      {isLoading ? (
-        <View style={styles.card}><Text style={styles.empty}>Loading compliance data...</Text></View>
-      ) : reports?.length === 0 ? (
-        <View style={styles.card}><Text style={styles.empty}>No compliance reports</Text></View>
-      ) : (
-        reports?.map((r: any) => (
-          <View key={r.id} style={styles.card}>
-            <View style={styles.headerRow}>
-              <Text style={styles.reportType}>{r.reportType}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusColors[r.status] || '#94a3b8' }]}>
-                <Text style={styles.statusText}>{r.status}</Text>
-              </View>
-            </View>
-            <Text style={styles.period}>Period: {r.period}</Text>
-            <View style={styles.alertsRow}>
-              <View style={[styles.alertBadge, { backgroundColor: '#fee2e2' }]}><Text style={styles.alertCount}>{r.highAlerts || 0} High</Text></View>
-              <View style={[styles.alertBadge, { backgroundColor: '#fef3c7' }]}><Text style={styles.alertCount}>{r.mediumAlerts || 0} Medium</Text></View>
-              <View style={[styles.alertBadge, { backgroundColor: '#f0fdf4' }]}><Text style={styles.alertCount}>{r.lowAlerts || 0} Low</Text></View>
-            </View>
-          </View>
-        ))
-      )}
+      <View style={styles.card}>
+        <Text style={styles.empty}>
+          Regulatory compliance filings are managed by the company and are not
+          published to customer accounts. If you need a compliance certificate
+          or regulatory document for your policy, please contact support.
+        </Text>
+      </View>
     </ScrollView>
   );
 }

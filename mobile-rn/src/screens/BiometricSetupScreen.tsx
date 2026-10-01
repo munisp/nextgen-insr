@@ -1,4 +1,4 @@
-// SECURITY: SQL template literals in this file are for display/mock purposes only.
+// 2026-10-01 (R1b): removed stale 'display/mock' header comment; this screen uses real API paths only.
 import React, { useState, useEffect } from 'react';
 import {
   View,

@@ -1,14 +1,15 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, RefreshControl } from 'react-native';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
-const API_BASE = 'http://localhost:3000/api/trpc';
+// 2026-10-01 (R1c): was wallet.* (nonexistent) on hardcoded localhost —
+// rewired to the real mounted customerWalletSystem router.
+import { trpcQuery } from '../config';
 
 export function DigitalWalletScreen() {
   const { token } = useAuth();
-  const queryClient = useQueryClient();
   const { getCachedData, setCachedData } = useOfflineSync();
   const [topupAmount, setTopupAmount] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
@@ -17,12 +18,9 @@ export function DigitalWalletScreen() {
     queryKey: ['wallet.balance'],
     queryFn: async () => {
       try {
-        const res = await fetch(`${API_BASE}/wallet.balance`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        const data = json?.result?.data || json;
+        const data = await trpcQuery<{ balance: number; currency: string }>(
+          'customerWalletSystem.getBalance', null, token,
+        );
         await setCachedData('wallet', data, 60000);
         return data;
       } catch {
@@ -35,30 +33,30 @@ export function DigitalWalletScreen() {
     queryKey: ['wallet.transactions'],
     queryFn: async () => {
       try {
-        const res = await fetch(`${API_BASE}/wallet.history`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        return json?.result?.data || json || [];
+        const result = await trpcQuery<{ transactions: any[]; total: number }>(
+          'customerWalletSystem.getTransactions', { limit: 50 }, token,
+        );
+        return result?.transactions ?? [];
       } catch {
         return [];
       }
     },
   });
 
+  // 2026-10-01 (R1c): the monolith customerWalletSystem.topUp is fail-closed
+  // — it requires a railReference to an ALREADY-SETTLED inbound payment plus
+  // an idempotencyKey. A bare amount from the app can never legitimately
+  // credit a wallet, so the old wallet.topup call is replaced with an honest
+  // explanation instead of a fake/failing mutation.
   const topup = useMutation({
     mutationFn: async () => {
       const amt = parseFloat(topupAmount);
       if (isNaN(amt) || amt < 100) throw new Error('Minimum top-up is ₦100');
-      const res = await fetch(`${API_BASE}/wallet.topup`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ amount: amt }),
-      });
-      return res.json();
+      throw new Error(
+        'In-app wallet top-up is not available. Wallet credit requires a verified bank/payment-rail transfer — please use the payment link from your agent or the Payments tab.',
+      );
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['wallet.balance'] }); setTopupAmount(''); Alert.alert('Success', 'Wallet topped up'); },
-    onError: (e: any) => Alert.alert('Error', e.message),
+    onError: (e: any) => Alert.alert('Top-Up Unavailable', e.message),
   });
 
   const onRefresh = async () => { setRefreshing(true); await refetch(); setRefreshing(false); };

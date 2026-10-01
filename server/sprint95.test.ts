@@ -52,8 +52,15 @@ describe("Sprint 95: Router Implementation", () => {
   // added careRetention.ts + providerPortal.ts (careRetention /
   // providerPortal). 467 + 1 + 1 + 2 = 471. All verified legitimate
   // (router({...}) present, registered in server/routers.ts).
-  it("should have 471 router files", () => {
-    expect(routerFiles.length).toBe(471);
+  // 2026-10-01 drift fix (Q-wave Q6, R2): verified live count = 473. Q6 added
+  // parametricMember.ts (registered as parametricMember — member-scoped
+  // READ-ONLY views over the Q2 parametric tables; the admin engine stays on
+  // parametricEngine) and freemiumTiers.ts (registered as freemiumTiers —
+  // member freemium ladder delegating to embeddedFactory's Q1 procedures).
+  // 471 + 2 = 473. All verified legitimate (router({...}) present,
+  // registered in server/routers.ts).
+  it("should have 473 router files", () => {
+    expect(routerFiles.length).toBe(473);
   });
 
   it("should have zero empty routers (router({}))", () => {

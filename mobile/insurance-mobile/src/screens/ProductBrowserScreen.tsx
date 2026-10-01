@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
-const API_BASE = 'http://localhost:3000/api/trpc';
+// 2026-10-01 (R1c): was products.list (nonexistent) on hardcoded localhost —
+// rewired to the real mounted insuranceProductCatalog.listProducts.
+import { trpcQuery } from '../config';
 
 export function ProductBrowserScreen({ navigation }: { navigation: any }) {
   const { token } = useAuth();
@@ -16,14 +18,19 @@ export function ProductBrowserScreen({ navigation }: { navigation: any }) {
     queryKey: ['products'],
     queryFn: async () => {
       try {
-        const res = await fetch(`${API_BASE}/products.list`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        const data = json?.result?.data || json || [];
+        // listProducts returns {data, total}; normalize monolith field names
+        // (coverageType/maxCoverageAmount) to what the UI renders.
+        const result = await trpcQuery<{ data: any[]; total: number }>(
+          'insuranceProductCatalog.listProducts', { limit: 100, offset: 0, productType: 'all', isActive: true }, token,
+        );
+        const data = (result?.data ?? []).map((p: any) => ({
+          ...p,
+          category: p.coverageType ? String(p.coverageType).replace(/^\w/, (c: string) => c.toUpperCase()) : 'Other',
+          minPremium: Number(p.minPremium ?? 0),
+          coverageLimit: Number(p.maxCoverageAmount ?? 0),
+        }));
         await setCachedData('products', data, 3600000);
-        return Array.isArray(data) ? data : [];
+        return data;
       } catch {
         return (await getCachedData('products')) || [];
       }

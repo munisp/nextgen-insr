@@ -1,10 +1,10 @@
 /**
  * ParametricCoverage.tsx — Q-wave Q6 (2026-09-25)
  * Member view of parametric coverage status + payout history.
- * BINDING DISCLOSURE: the Q2 backend (parametricEngine router) currently
- * ships admin-only procedures; the member procedures bound here are
- * forward-looking and feature-detected — this page renders a disclosed
- * "not available yet" state until they are deployed. No data is fabricated.
+ * BINDING: REAL — parametricMember.myCoverage / myPayouts (Q6 member router,
+ * read-only views over the Q2 tables; parametricEngine stays admin-only).
+ * NOT_FOUND/FORBIDDEN → null remains only as a defensive fallback for older
+ * deployments (2026-10-01, R2b). No data is fabricated.
  */
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -152,11 +152,12 @@ export default function ParametricCoverage() {
                     <p className="text-sm font-medium text-stone-900">
                       {p.currency} {p.amount}
                     </p>
+                    {/* 2026-10-01 (R2b): ParametricPayoutItem has claimId and
+                        createdAt — no paidAt. Status distinguishes paid vs
+                        pending_adjudication. */}
                     <p className="text-xs text-stone-500">
-                      Policy #{p.policyId} ·{" "}
-                      {p.paidAt
-                        ? `Paid ${new Date(p.paidAt).toLocaleDateString()}`
-                        : `Initiated ${new Date(p.createdAt).toLocaleDateString()}`}
+                      Policy #{p.policyId} · claim #{p.claimId} ·{" "}
+                      {new Date(p.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                   <Badge

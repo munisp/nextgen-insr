@@ -90,6 +90,29 @@ export const protectedProcedure = t.procedure
   .use(requireUser)
   .use(requirePermify);
 
+// ── requireServiceOrUser (2026-10-01 R-fix2): additive gate for non-member
+//    catalog/marketing endpoints that must also be callable by trusted
+//    internal services (e.g. whatsapp-bot) presenting MONOLITH_SERVICE_TOKEN.
+//    Permits when an end-user session exists OR ctx.serviceAuth === true;
+//    rejects otherwise with the same UNAUTHORIZED error as protectedProcedure.
+//    NOTE: no Permify check — use ONLY for procedures that return no
+//    customer/policy/PII data.
+const requireServiceOrUser = t.middleware(async opts => {
+  const { ctx, next } = opts;
+
+  if (!ctx.user && ctx.serviceAuth !== true) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  }
+
+  return next({ ctx });
+});
+
+// ── serviceOrUserProcedure: end-user JWT OR internal service token ───────────
+export const serviceOrUserProcedure = t.procedure
+  .use(observability)
+  .use(sidecarMiddleware)
+  .use(requireServiceOrUser);
+
 // ── adminProcedure: JWT auth + role=admin + Permify admin check ───────────────
 // Chain: adminProcedure = t.procedure.use(observability).use(requireUser).use(requireAdmin)
 export const adminProcedure = t.procedure

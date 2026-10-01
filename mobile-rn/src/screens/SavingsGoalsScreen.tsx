@@ -54,14 +54,13 @@ const SavingsGoalsScreen = () => {
         const data = await response.json();
         setGoals(data);
       } else {
-        // Fallback for demo purposes if API is not ready
-        setGoals([
-          { id: '1', title: 'New Car', targetAmount: 5000000, currentAmount: 1200000, deadline: '2026-12-31', category: 'Transport' },
-          { id: '2', title: 'Emergency Fund', targetAmount: 1000000, currentAmount: 850000, deadline: '2026-06-30', category: 'Security' },
-          { id: '3', title: 'Vacation', targetAmount: 500000, currentAmount: 50000, deadline: '2026-08-15', category: 'Leisure' },
-        ]);
+        throw new Error('Failed to fetch savings goals');
       }
     } catch (error) {
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously displayed three
+      // hardcoded demo goals (New Car / Emergency Fund / Vacation) on API
+      // failure. Fail-closed: show empty list + honest error.
+      setGoals([]);
       Alert.alert('Error', 'Failed to fetch savings goals. Please try again later.');
     } finally {
       setLoading(false);
@@ -98,21 +97,11 @@ const SavingsGoalsScreen = () => {
         throw new Error('Failed to add goal');
       }
     } catch (error) {
-      // Mock success for demo if API fails
-      const mockNewGoal: SavingsGoal = {
-        id: Math.random().toString(),
-        title: newGoalTitle,
-        targetAmount: parseFloat(newGoalTarget),
-        currentAmount: 0,
-        deadline: newGoalDeadline,
-        category: 'General',
-      };
-      setGoals([...goals, mockNewGoal]);
-      setIsAdding(false);
-      setNewGoalTitle('');
-      setNewGoalTarget('');
-      setNewGoalDeadline('');
-      Alert.alert('Success', 'Savings goal created!');
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously injected a fake
+      // locally-created goal and showed "Savings goal created!" when the
+      // server rejected/unreachable. Fail-closed: propagate the real error,
+      // keep the form so the user can retry.
+      Alert.alert('Error', 'Could not create the savings goal. Nothing was saved. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,4 @@
-// SECURITY: SQL template literals in this file are for display/mock purposes only.
+// 2026-10-01 (R1b): removed stale 'display/mock' header comment; this screen uses real API paths only.
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -52,20 +52,15 @@ const SendMoneyScreen = () => {
       if (response.ok) {
         setBeneficiaries(data.beneficiaries || []);
       } else {
-        // Fallback for demo purposes if API is not reachable
-        setBeneficiaries([
-          { id: '1', name: 'John Doe', accountNumber: '0123456789', bankName: 'Access Bank' },
-          { id: '2', name: 'Jane Smith', accountNumber: '9876543210', bankName: 'GTBank' },
-          { id: '3', name: 'Michael Brown', accountNumber: '5544332211', bankName: 'Zenith Bank' },
-        ]);
+        throw new Error('Failed to load beneficiaries');
       }
     } catch (error) {
-      // Fallback for demo purposes
-      setBeneficiaries([
-        { id: '1', name: 'John Doe', accountNumber: '0123456789', bankName: 'Access Bank' },
-        { id: '2', name: 'Jane Smith', accountNumber: '9876543210', bankName: 'GTBank' },
-        { id: '3', name: 'Michael Brown', accountNumber: '5544332211', bankName: 'Zenith Bank' },
-      ]);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously injected three fake
+      // beneficiaries ("John Doe" / "Jane Smith" / "Michael Brown" with real-
+      // looking account numbers) on API failure; sending money to a fabricated
+      // account is a funds-loss risk. Fail-closed: empty list + honest error.
+      setBeneficiaries([]);
+      Alert.alert('Error', 'Could not load your beneficiaries. Please try again later.');
     } finally {
       setFetchingBeneficiaries(false);
     }

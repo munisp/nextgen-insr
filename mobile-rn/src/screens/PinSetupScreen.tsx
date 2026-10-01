@@ -13,6 +13,13 @@ import PinView from 'react-native-pin-view';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
+// 2026-10-01 (R1b): PIN must NEVER be stored plaintext in AsyncStorage.
+// We persist only a salted SHA-256 verifier hash, and store it in
+// expo-secure-store (Keychain/Keystore-backed), not AsyncStorage. Both
+// dependencies were added to mobile-rn/package.json as part of this fix
+// (the directory previously had no package.json at all).
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 import { APIClient } from '../api/APIClient';
 const apiClient = new APIClient();
 
@@ -28,10 +35,11 @@ const BIOMETRIC_KEY_ALIAS = 'userPinKey';
  * Define the structure for the navigation stack parameters.
  * Assuming a root stack with a 'Home' screen for navigation after setup.
  */
+// 2026-10-01 (R1b): PaymentGateway route type removed — the route does not
+// exist; it was only referenced by the deleted mock gateway launcher.
 type RootStackParamList = {
   PinSetup: undefined;
   Home: undefined;
-  PaymentGateway: { gateway: 'Paystack' | 'Flutterwave'; amount: number };
 };
 
 type PinSetupScreenProps = StackScreenProps<RootStackParamList, 'PinSetup'>;
@@ -79,41 +87,62 @@ const validatePinStrength = (pin: string): string => {
 };
 
 /**
- * Mock function to handle API integration for setting the PIN.
- * @param pin The PIN to send to the server.
+ * 2026-10-01 (R1b): compute a salted SHA-256 verifier hash of the PIN.
+ * The plaintext PIN is NEVER persisted — only this verifier is stored, and it
+ * lives in expo-secure-store (hardware-backed Keychain/Keystore), so a lost
+ * device or AsyncStorage dump does not expose the PIN. PIN verification
+ * happens server-side; the local verifier only supports offline re-auth UX.
  */
-const setPinOnServer = async (pin: string): Promise<PinSetupResponse> => {
-  try {
-    // Simulate API call with axios
-    const response = await axios.post<PinSetupResponse>(API_ENDPOINT, { pin });
+const PIN_VERIFIER_KEY = 'pin_verifier_hash';
+// Static app-level salt; per-user uniqueness comes from the server-side PIN
+// record. (A 4-digit PIN space is brute-forceable regardless — the verifier
+// exists only so the plaintext PIN is never at rest.)
+const PIN_VERIFIER_SALT = 'insureportal.pin-verifier.v1';
 
-    if (response.data.success) {
-      // On success, save the PIN locally for offline use (encrypted in a real app)
-      await AsyncStorage.setItem('@user_pin', pin);
-      return { success: true, message: 'PIN set successfully.' };
-    } else {
-      return { success: false, message: response.data.message || 'Failed to set PIN.' };
-    }
-  } catch (error) {
-    console.error('API Error:', error);
-    // Fallback to offline storage if API fails (for offline mode support)
-    await AsyncStorage.setItem('@user_pin_pending', pin);
-    return { success: false, message: 'Network error. PIN saved for later sync (Offline Mode).' };
-  }
+const hashPin = async (pin: string): Promise<string> => {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `${PIN_VERIFIER_SALT}:${pin}`,
+  );
+};
+
+const persistPinVerifier = async (pin: string): Promise<void> => {
+  const verifier = await hashPin(pin);
+  await SecureStore.setItemAsync(PIN_VERIFIER_KEY, verifier);
+  // Defence-in-depth: purge any legacy plaintext PIN written by older builds.
+  await AsyncStorage.removeItem('@user_pin');
+  await AsyncStorage.removeItem('@user_pin_pending');
 };
 
 /**
- * Mock function to initiate a payment gateway transaction.
- * @param gateway The payment gateway to use.
+ * Set the PIN on the server (real endpoint).
+ * 2026-10-01 (R1b): SECURITY FIX — previously stored the plaintext PIN in
+ * AsyncStorage ('@user_pin') on success, and on network failure stored the
+ * plaintext PIN in '@user_pin_pending' while telling the user it was "saved
+ * for later sync" — a fabricated success and a plaintext credential at rest.
+ * Now: plaintext is never persisted; only the secure-store verifier hash is
+ * kept, and only after the SERVER confirms. Network failure = fail-closed.
  */
-const initiatePayment = (
-  navigation: PinSetupScreenProps['navigation'],
-  gateway: 'Paystack' | 'Flutterwave',
-) => {
-  // In a real app, this would navigate to a dedicated payment screen
-  // or open a WebView for the payment gateway.
-  navigation.navigate('PaymentGateway', { gateway, amount: 1000 });
+const setPinOnServer = async (pin: string): Promise<PinSetupResponse> => {
+  try {
+    const response = await axios.post<PinSetupResponse>(API_ENDPOINT, { pin });
+
+    if (response.data.success) {
+      await persistPinVerifier(pin); // verifier hash only — never the PIN
+      return { success: true, message: 'PIN set successfully.' };
+    }
+    return { success: false, message: response.data.message || 'Failed to set PIN.' };
+  } catch (error) {
+    console.error('API Error:', error);
+    // Fail-closed: do NOT queue the PIN locally, do NOT claim offline success.
+    return { success: false, message: 'Network error. Your PIN was not set. Please try again when you are back online.' };
+  }
 };
+
+// 2026-10-01 (R1b): removed `initiatePayment` and the "Test Payment Gateways
+// (Mock)" buttons — they navigated to a nonexistent 'PaymentGateway' route
+// with a hardcoded ₦1000 demo amount. A mock payment launcher has no place on
+// a production PIN-setup screen.
 
 // --- BIOMETRICS SETUP ---
 const rnBiometrics = new ReactNativeBiometrics({ allowDeviceCredentials: true });
@@ -284,27 +313,8 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ navigation }) => {
     );
   };
 
-  const renderPaymentGatewayButtons = () => (
-    <View style={styles.paymentContainer}>
-      <Text style={styles.paymentHeader}>Test Payment Gateways (Mock)</Text>
-      <View style={styles.paymentButtons}>
-        <TouchableOpacity
-          style={[styles.button, styles.paystackButton]}
-          onPress={() => initiatePayment(navigation, 'Paystack')}
-          accessibilityLabel="Test Paystack Payment"
-          accessibilityRole="button">
-          <Text style={styles.buttonText}>Paystack</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, styles.flutterwaveButton]}
-          onPress={() => initiatePayment(navigation, 'Flutterwave')}
-          accessibilityLabel="Test Flutterwave Payment"
-          accessibilityRole="button">
-          <Text style={styles.buttonText}>Flutterwave</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  // 2026-10-01 (R1b): renderPaymentGatewayButtons removed (mock gateway
+  // launcher targeting a nonexistent route).
 
   // --- MAIN RENDER ---
 
@@ -369,7 +379,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({ navigation }) => {
         </Text>
       )}
 
-      {renderPaymentGatewayButtons()}
+      {/* 2026-10-01 (R1b): mock payment gateway buttons removed. */}
     </View>
   );
 };

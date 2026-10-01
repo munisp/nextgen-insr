@@ -52,6 +52,7 @@ import {
 } from "../lib/poolSurplus";
 import {
   scoreTrip, rollingScore, ratingFactorFromScore, TELEMATICS_WINDOW_DAYS_DEFAULT,
+  RATING_FACTOR_DEFAULT,
 } from "../lib/telematicsScoring";
 import { tbCreateTransfer, TB_SYSTEM_ACCOUNTS } from "../tbClient";
 
@@ -338,6 +339,78 @@ export const telematicsRouter = router({
         await getRedisClient().set(cacheKey, JSON.stringify(payload), "EX", 60);
       } catch { /* best-effort cache write */ }
       return { ...payload, source: "postgresql" as const };
+    }),
+
+  // ── Q-wave Q6 member views (2026-10-01, R2) ──────────────────────────────
+  // Caller-scoped (customerId = ctx.user.id) reads over the Q3 UBI tables for
+  // the PWA telematicsApi bindings. Read-only; scoring logic stays in
+  // lib/telematicsScoring.ts and the ingest path above — nothing duplicated.
+
+  /** Latest rolling score across the caller's policies (null-safe). */
+  myScore: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const [row] = await db.select().from(telematicsScores)
+      .where(eq(telematicsScores.customerId, ctx.user.id))
+      .orderBy(desc(telematicsScores.computedAt))
+      .limit(1);
+    if (!row) {
+      // Honest empty state: no trips ingested yet — NOT a fabricated score.
+      return {
+        policyId: null, score: null, ratingFactor: RATING_FACTOR_DEFAULT,
+        tripsScored: 0, windowDays: TELEMATICS_WINDOW_DAYS_DEFAULT,
+        periodStart: null, periodEnd: null,
+      };
+    }
+    const periodEnd = row.computedAt;
+    const periodStart = new Date(new Date(row.computedAt).getTime() - row.windowDays * 24 * 3600 * 1000);
+    return {
+      policyId: row.policyId,
+      score: parseFloat(row.score),
+      ratingFactor: parseFloat(row.ratingFactor),
+      tripsScored: row.tripsCounted,
+      windowDays: row.windowDays,
+      periodStart,
+      periodEnd,
+    };
+  }),
+
+  /** Caller's ingested trips (newest first), paginated. */
+  myTrips: protectedProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(100).default(20),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const scope = eq(telematicsTrips.customerId, ctx.user.id);
+      const rows = await db.select().from(telematicsTrips)
+        .where(scope)
+        .orderBy(desc(telematicsTrips.startedAt))
+        .limit(limit)
+        .offset(offset);
+      const [countRow] = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(telematicsTrips).where(scope);
+      return {
+        trips: rows.map((t) => ({
+          id: t.id,
+          policyId: t.policyId,
+          startedAt: t.startedAt,
+          endedAt: t.endedAt,
+          distanceKm: parseFloat(t.distanceKm),
+          durationSeconds: t.durationSeconds,
+          score: t.tripScore != null ? parseFloat(t.tripScore) : null,
+          events: {
+            hardBrakes: t.hardBrakes,
+            speedingEvents: t.speedingEvents,
+            corneringEvents: t.corneringEvents,
+          },
+        })),
+        count: countRow?.count ?? 0,
+      };
     }),
 });
 
@@ -1624,6 +1697,106 @@ export const p2pPoolsRouter = router({
         .where(eq(poolSurplusDistributions.periodId, input.periodId))
         .orderBy(desc(poolSurplusDistributions.amount));
     }),
+
+  // ── Q-wave Q6 member views (2026-10-01, R2) ──────────────────────────────
+  // Caller-scoped reads for the PWA poolSurplusApi bindings. Read-only;
+  // surplus math stays in lib/poolSurplus.ts and the financialProcedure
+  // mutations above — nothing re-implemented here.
+
+  /** Pools the caller belongs to (any member status), newest first. */
+  myMemberships: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select({
+      memberId: p2pPoolMembers.id,
+      poolId: p2pPoolMembers.poolId,
+      memberStatus: p2pPoolMembers.status,
+      contributionPaid: p2pPoolMembers.contributionPaid,
+      joinedAt: p2pPoolMembers.joinedAt, // 2026-10-01 (R-fix3): p2p_pool_members column is joined_at
+      poolName: p2pPools.poolName,
+      poolType: p2pPools.poolType,
+      productType: p2pPools.productType,
+      poolStatus: p2pPools.status,
+      organiserId: p2pPools.organiserId,
+    }).from(p2pPoolMembers)
+      .innerJoin(p2pPools, eq(p2pPools.id, p2pPoolMembers.poolId))
+      .where(eq(p2pPoolMembers.customerId, ctx.user.id))
+      .orderBy(desc(p2pPoolMembers.id))
+      .limit(50);
+    return {
+      memberships: rows.map((r) => ({
+        memberId: r.memberId,
+        poolId: r.poolId,
+        poolName: r.poolName,
+        poolType: r.poolType,
+        productType: r.productType,
+        poolStatus: r.poolStatus,
+        status: r.memberStatus,
+        contributionPaid: r.contributionPaid,
+        role: r.organiserId === ctx.user.id ? "organiser" as const : "member" as const,
+        joinedAt: r.joinedAt,
+      })),
+    };
+  }),
+
+  /**
+   * Caller's surplus distribution statements across all their pools,
+   * newest period first. Each line joins the period (accounting window) and
+   * the member row (contribution basis) — the same pro-rata shares computed
+   * by lib/poolSurplus.computeDistributionShares, read back as recorded.
+   */
+  myStatements: protectedProcedure
+    .input(z.object({
+      limit: z.number().int().min(1).max(100).default(20),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const scope = eq(poolSurplusDistributions.customerId, ctx.user.id);
+      const rows = await db.select({
+        distributionId: poolSurplusDistributions.id,
+        periodId: poolSurplusDistributions.periodId,
+        surplusShare: poolSurplusDistributions.amount,
+        shareBps: poolSurplusDistributions.shareBps,
+        distributionStatus: poolSurplusDistributions.status,
+        periodStart: poolPeriods.periodStart,
+        periodEnd: poolPeriods.periodEnd,
+        distributionMode: poolPeriods.distributionMode,
+        periodStatus: poolPeriods.status,
+        poolName: p2pPools.poolName,
+        contributed: p2pPoolMembers.contributionPaid,
+      }).from(poolSurplusDistributions)
+        .innerJoin(poolPeriods, eq(poolPeriods.id, poolSurplusDistributions.periodId))
+        .innerJoin(p2pPools, eq(p2pPools.id, poolPeriods.poolId))
+        .innerJoin(p2pPoolMembers, eq(p2pPoolMembers.id, poolSurplusDistributions.memberId))
+        .where(scope)
+        .orderBy(desc(poolSurplusDistributions.id))
+        .limit(limit)
+        .offset(offset);
+      const [countRow] = await db.select({ count: sql<number>`COUNT(*)::int` })
+        .from(poolSurplusDistributions).where(scope);
+      return {
+        statements: rows.map((r) => ({
+          distributionId: r.distributionId,
+          periodId: r.periodId,
+          poolName: r.poolName,
+          periodStart: r.periodStart,
+          periodEnd: r.periodEnd,
+          distributionMode: r.distributionMode,
+          periodStatus: r.periodStatus,
+          contributed: r.contributed,
+          surplusShare: r.surplusShare,
+          shareBps: r.shareBps,
+          distributionStatus: r.distributionStatus,
+          // Platform settlement currency (Q3 TB settlement convention — NGN).
+          currency: "NGN",
+        })),
+        count: countRow?.count ?? 0,
+      };
+    }),
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2557,10 +2730,26 @@ export const usageCoverRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      // 2026-10-01 (R-fix, finding 3): AUTHORIZATION — a caller may only
+      // activate cover on a policy they OWN (staff admin/supervisor may act
+      // for any policy). Fail-closed and non-enumerating: unknown or
+      // foreign-owned policy → NOT_FOUND so existence is never leaked.
+      const [policy] = await db.select({ id: policies.id, customerId: policies.customerId })
+        .from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      const isStaff = ctx.user.role === "admin" || ctx.user.role === "supervisor";
+      if (!policy || (policy.customerId !== ctx.user.id && !isStaff)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      }
+
       // Idempotent replay first — same client key returns the stored row.
       const [existing] = await db.select().from(usageCoverActivations)
         .where(eq(usageCoverActivations.clientActivationId, input.clientActivationId)).limit(1);
       if (existing) {
+        // 2026-10-01 (R-fix, finding 3): a replay key belonging to ANOTHER
+        // user must not return their row — same non-enumerating NOT_FOUND.
+        if (existing.customerId !== ctx.user.id && !isStaff) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Activation not found" });
+        }
         return {
           success: true as const, idempotent: true as const,
           activationId: existing.id, status: existing.status, expiresAt: existing.expiresAt,
@@ -2648,8 +2837,13 @@ export const usageCoverRouter = router({
         if (raceMsg.includes("uq_usage_cover_client_activation")) {
           const [winner] = await db.select().from(usageCoverActivations)
             .where(eq(usageCoverActivations.clientActivationId, input.clientActivationId)).limit(1);
-          if (winner) {
+          // 2026-10-01 (R-fix, finding 3): ownership re-checked on the
+          // race-replay path — never return another user's winning row.
+          if (winner && (winner.customerId === ctx.user.id || isStaff)) {
             return { success: true as const, idempotent: true as const, activationId: winner.id, status: winner.status, expiresAt: winner.expiresAt };
+          }
+          if (winner) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Activation not found" });
           }
         }
         throw err;
@@ -2714,6 +2908,33 @@ export const usageCoverRouter = router({
         .orderBy(desc(usageCoverActivations.activatedAt))
         .limit(20);
     }),
+
+  /**
+   * Q-wave Q6 member view (2026-10-01, R2): ALL of the caller's cover
+   * activations across policies (getCoverStatus above is per-policy).
+   * Caller-scoped (customerId = ctx.user.id), read-only, newest first.
+   */
+  myActivations: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select().from(usageCoverActivations)
+      .where(eq(usageCoverActivations.customerId, ctx.user.id))
+      .orderBy(desc(usageCoverActivations.activatedAt))
+      .limit(50);
+    return {
+      activations: rows.map((a) => ({
+        id: a.id,
+        policyId: a.policyId,
+        coverType: a.coverType, // "trip" | "day" — server contract of record
+        status: a.status,
+        activatedAt: a.activatedAt,
+        expiresAt: a.expiresAt,
+        premiumAmount: a.premiumAmount, // recorded-not-collected estimate (see activateCover docstring)
+        tripId: a.tripId,
+        days: a.days,
+      })),
+    };
+  }),
 });
 
 /**

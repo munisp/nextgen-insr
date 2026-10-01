@@ -1,0 +1,25 @@
+{
+  "name": "insureportal-mobile-rn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InsurePortal Nigerian Remittance — React Native app. 2026-10-01 (R1b): this package.json was created during the security audit (the directory previously had none). expo-secure-store and expo-crypto were added for the PIN-storage fix in src/screens/PinSetupScreen.tsx: the plaintext PIN is no longer stored in AsyncStorage; only a salted SHA-256 verifier hash is kept in hardware-backed secure storage. Pinning versions loosely ('*') because this workspace has no lockfile/network guarantee — pin exact versions before shipping.",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "*",
+    "@react-navigation/native": "*",
+    "@react-navigation/stack": "*",
+    "axios": "*",
+    "expo-crypto": "*",
+    "expo-secure-store": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-biometrics": "*",
+    "react-native-image-picker": "*",
+    "react-native-pin-view": "*"
+  }
+}

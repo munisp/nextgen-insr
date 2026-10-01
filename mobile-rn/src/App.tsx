@@ -22,6 +22,19 @@
  *    until then the app boots into MissingModuleScreen (honest placeholder,
  *    not a fabricated feature). Only the 19 screens that exist are
  *    registered below.
+ *
+ * 2026-10-01 (R1b audit re-verification): confirmed that NONE of the 25
+ * missing-screen routes (LoginScreen, RegisterScreen, OnboardingScreen,
+ * DashboardScreen, WalletScreen, TransactionsScreen, TransactionDetailScreen,
+ * ProfileScreen, NotificationsScreen, HelpScreen, SupportScreen,
+ * ReceiveMoneyScreen, ExchangeRatesScreen, RateCalculatorScreen,
+ * BeneficiariesScreen, BeneficiaryListScreen, BeneficiaryManagementScreen,
+ * CardsScreen, KYCScreen, AgentPerformanceScreen, CustomerWalletScreen,
+ * NotificationPreferencesScreen, MultiCurrencyScreen,
+ * ComplianceSchedulingScreen, AuditExportScreen) are registered — any
+ * reference, even a lazy require, fails the Metro bundle. Only the 19
+ * existing screens (+ the honest Boot/MissingModuleScreen placeholder) are
+ * registered. Do NOT re-add routes until the screen files actually exist.
  */
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';

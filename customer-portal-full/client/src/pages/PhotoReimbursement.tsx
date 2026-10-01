@@ -6,6 +6,9 @@
  * then careRetention.photoReimbursementSubmit / photoReimbursementList.
  * The server's OCR disclosure (manual-entry fallback) is surfaced verbatim —
  * no OCR result is ever implied client-side.
+ * 2026-10-01 (R2b): reviewed against the corrected innovationApi contracts —
+ * all referenced fields (amount, currency, description, status, ocrStatus,
+ * claimId, createdAt, ocrDisclosure, documentRefs) exist; no change needed.
  */
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

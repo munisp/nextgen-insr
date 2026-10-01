@@ -14,6 +14,30 @@ import {
   RefreshControl,
   Alert,
 } from "react-native";
+// 2026-10-01 (R1c): was relative fetch("/api/trpc/...") with a HARDCODED
+// policyId:1 (cross-customer data leak / wrong policy). Now uses the
+// centralized tRPC base URL and derives the policy from the user's REAL
+// policy list; shows an honest empty state when no policy exists.
+import { trpcQuery, trpcMutation } from "../config";
+import { policyApi } from "../services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const TOKEN_KEY = '@insureportal/auth_token';
+
+async function getToken(): Promise<string | null> {
+  return AsyncStorage.getItem(TOKEN_KEY);
+}
+
+/** Resolve the user's first active policy ID via the BFF policy passthrough.
+ *  Returns null when the user has no policies (honest empty state). */
+async function resolvePolicyId(): Promise<number | null> {
+  const res = await policyApi.list();
+  const policies: any[] = res.data?.policies ?? res.data ?? [];
+  if (!Array.isArray(policies) || policies.length === 0) return null;
+  const active = policies.find((p) => p.status === 'active') ?? policies[0];
+  const id = Number(active?.id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
 
 interface TripEvent {
   id: number;
@@ -38,24 +62,28 @@ const TelematicsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tracking, setTracking] = useState(false);
+  const [policyId, setPolicyId] = useState<number | null>(null);
 
   const fetchData = async () => {
     try {
-      // Fetch driving score from tRPC
-      const scoreRes = await fetch("/api/trpc/telematics.getDrivingScore?input=" +
-        encodeURIComponent(JSON.stringify({ policyId: 1, periodDays: 30 })));
-      if (scoreRes.ok) {
-        const data = await scoreRes.json();
-        setScoreData(data.result?.data ?? null);
+      // 2026-10-01 (R1c): derive the REAL policy — never hardcode policyId.
+      const pid = await resolvePolicyId();
+      setPolicyId(pid);
+      if (pid == null) {
+        setScoreData(null);
+        setTrips([]);
+        return;
       }
+      const token = await getToken();
+      const score = await trpcQuery<DrivingScoreData>(
+        "telematics.getDrivingScore", { policyId: pid, periodDays: 30 }, token,
+      ).catch(() => null);
+      setScoreData(score);
 
-      // Fetch trip history
-      const historyRes = await fetch("/api/trpc/telematics.getHistory?input=" +
-        encodeURIComponent(JSON.stringify({ policyId: 1, limit: 20 })));
-      if (historyRes.ok) {
-        const data = await historyRes.json();
-        setTrips(data.result?.data ?? []);
-      }
+      const history = await trpcQuery<TripEvent[]>(
+        "telematics.getHistory", { policyId: pid, limit: 20 }, token,
+      ).catch(() => []);
+      setTrips(Array.isArray(history) ? history : []);
     } catch (err) {
       console.error("Failed to fetch telematics data:", err);
     } finally {
@@ -90,19 +118,16 @@ const TelematicsScreen: React.FC = () => {
 
   const stopTracking = async () => {
     setTracking(false);
-    // Record a simulated trip event
+    if (policyId == null) return;
     try {
-      await fetch("/api/trpc/telematics.recordEvent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          policyId: 1,
-          deviceId: "mobile-gps",
-          eventType: "trip_end",
-          distanceKm: 12.5,
-          durationSeconds: 1800,
-        }),
-      });
+      const token = await getToken();
+      await trpcMutation("telematics.recordEvent", {
+        policyId,
+        deviceId: "mobile-gps",
+        eventType: "trip_end",
+        // TODO(2026-10-01, R1c): wire real GPS trip metrics; distance/duration
+        // omitted rather than fabricated.
+      }, token);
       fetchData();
     } catch {}
   };
@@ -112,6 +137,18 @@ const TelematicsScreen: React.FC = () => {
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#3b82f6" />
         <Text style={styles.loadingText}>Loading telematics data...</Text>
+      </View>
+    );
+  }
+
+  // 2026-10-01 (R1c): honest empty state — no policy, no telematics.
+  if (policyId == null) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.loadingText}>
+          No insurance policy found on your account. Telematics requires an
+          active policy — once you have one, your driving score appears here.
+        </Text>
       </View>
     );
   }

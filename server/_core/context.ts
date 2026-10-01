@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./keycloakAuth";
+import { verifyKeycloakToken } from "./keycloak";
 import type { User } from "../../drizzle/schema";
 import { getUserByKeycloakSub } from "../db";
 import { logger } from './logger';
@@ -57,6 +58,15 @@ export type TrpcContext = {
    * including direct context creation in tests — always has one.
    */
   requestId: string;
+  /**
+   * 2026-10-01 (R-fix, finding 1): true when the request was authenticated
+   * with the monolith service token (Authorization: Bearer <MONOLITH_SERVICE_TOKEN>),
+   * e.g. whatsapp-bot catalog reads or the Go BFF insurance-mobile-app sync
+   * forward. Does NOT imply an end user — ctx.user is only set when an
+   * end-user identity was verified (X-End-User-Authorization JWT or a
+   * direct end-user Bearer token).
+   */
+  serviceAuth?: boolean; // 2026-10-01 (R-fix3): optional — testHelpers builds partial contexts; readers use `=== true` so undefined == false
 };
 
 /**
@@ -115,10 +125,46 @@ function createDevFallbackUser(session: {
   } as User;
 }
 
+/**
+ * 2026-10-01 (R-fix, finding 1): constant-time equality for the monolith
+ * service token. Never logs or returns the compared values.
+ */
+function serviceTokenEquals(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * 2026-10-01 (R-fix, finding 1): resolve a DB user from a Keycloak end-user
+ * JWT (same shape as the cookie path). Fail-closed: any verification or
+ * lookup failure yields null — header values are never trusted raw.
+ */
+async function resolveUserFromKeycloakJwt(token: string): Promise<User | null> {
+  try {
+    const payload = await verifyKeycloakToken(token);
+    if (!payload?.sub) return null;
+    const dbUser = await getUserByKeycloakSub(payload.sub);
+    return dbUser ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function bearerToken(req: CreateExpressContextOptions["req"]): string | null {
+  const header = req.headers?.authorization;
+  const value = Array.isArray(header) ? header[0] : header;
+  if (typeof value !== "string") return null;
+  const match = /^Bearer\s+(.+)$/i.exec(value.trim());
+  return match ? match[1].trim() : null;
+}
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
+  let serviceAuth = false;
 
   try {
     const cookies = parseCookies(opts.req.headers.cookie ?? "");
@@ -152,6 +198,37 @@ export async function createContext(
         role: "admin",
       });
     }
+
+    // 2026-10-01 (R-fix, finding 1): Bearer-token auth paths. The cookie
+    // path above is untouched; these run only when no cookie session
+    // resolved a user. Fail-closed throughout: no token is ever logged,
+    // and any verification failure yields user=null.
+    if (!user) {
+      const token = bearerToken(opts.req);
+      if (token) {
+        const serviceToken = process.env.MONOLITH_SERVICE_TOKEN;
+        if (serviceToken && serviceTokenEquals(token, serviceToken)) {
+          // Service-to-service caller (e.g. Go BFF insurance-mobile-app
+          // sync, whatsapp-bot). Marks serviceAuth; public procs work.
+          serviceAuth = true;
+          // Optional end-user identity forwarded by the BFF:
+          // X-End-User-Authorization carries the end user's Keycloak JWT.
+          // Verified via the existing JWKS verifier — never trusted raw.
+          const fwd = opts.req.headers?.["x-end-user-authorization"];
+          const fwdValue = Array.isArray(fwd) ? fwd[0] : fwd;
+          if (typeof fwdValue === "string" && fwdValue.trim().length > 0) {
+            const fwdToken =
+              /^Bearer\s+(.+)$/i.exec(fwdValue.trim())?.[1].trim() ??
+              fwdValue.trim();
+            user = await resolveUserFromKeycloakJwt(fwdToken);
+          }
+        } else {
+          // RN app path: the Bearer token is an end-user Keycloak JWT.
+          // Failure leaves user=null (unchanged cookie-less behavior).
+          user = await resolveUserFromKeycloakJwt(token);
+        }
+      }
+    }
   } catch {
     user = null;
   }
@@ -160,6 +237,7 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    serviceAuth,
     requestId: resolveRequestId(opts.req, opts.res),
   };
 }

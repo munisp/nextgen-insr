@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+// 2026-10-01 (R1b): useEffect import removed — its only use was the fake
+// camera-permission timer.
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -25,16 +27,14 @@ const SCAN_AREA_SIZE = width * 0.7;
 const QRCodeScannerScreen: React.FC = () => {
   const navigation = useNavigation();
   const [manualCode, setManualCode] = useState('');
-  const [isScanning, setIsScanning] = useState(true);
+  // 2026-10-01 (R1b): FABRICATION REMOVED — the old `isScanning` state drove a
+  // fake camera viewfinder (static corners + decorative "scan line") that
+  // never opened a camera or decoded anything. No camera/QR decoding library
+  // (e.g. react-native-vision-camera, expo-camera) is a dependency of this
+  // app, so camera scanning is honestly reported as UNAVAILABLE; the manual
+  // code entry path below hits the real resolve-qr endpoint and remains.
+  const cameraAvailable = false;
   const [isLoading, setIsLoading] = useState(false);
-
-  // Simulate camera permission and initialization
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // In a real app, we would check permissions here
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleManualSubmit = async () => {
     if (!manualCode.trim()) {
@@ -68,9 +68,8 @@ const QRCodeScannerScreen: React.FC = () => {
     }
   };
 
-  const toggleScanner = () => {
-    setIsScanning(!isScanning);
-  };
+  // 2026-10-01 (R1b): toggleScanner deleted — it only flipped the fake
+  // viewfinder on/off without any real camera behind it.
 
   return (
     <SafeAreaView style={styles.container}>
@@ -93,27 +92,19 @@ const QRCodeScannerScreen: React.FC = () => {
         style={styles.content}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Scanner Viewfinder Placeholder */}
+          {/* 2026-10-01 (R1b): honest camera state. The previous fake
+              viewfinder (corners + decorative scan line, no camera) was
+              deleted. Until a real camera/decoder dependency is added, we say
+              so and route the user to manual entry. */}
           <View style={styles.scannerContainer}>
-            {isScanning ? (
-              <View style={styles.viewfinderWrapper}>
-                <View style={styles.viewfinder}>
-                  <View style={[styles.corner, styles.topLeft]} />
-                  <View style={[styles.corner, styles.topRight]} />
-                  <View style={[styles.corner, styles.bottomLeft]} />
-                  <View style={[styles.corner, styles.bottomRight]} />
-                  
-                  {/* Animated Scan Line Placeholder */}
-                  <View style={styles.scanLine} />
-                </View>
-                <Text style={styles.hintText}>Align QR code within the frame</Text>
-              </View>
-            ) : (
+            {cameraAvailable ? null : (
               <View style={styles.disabledScanner}>
-                <Text style={styles.disabledText}>Camera is paused</Text>
-                <TouchableOpacity style={styles.resumeButton} onPress={toggleScanner}>
-                  <Text style={styles.resumeButtonText}>Resume Camera</Text>
-                </TouchableOpacity>
+                <Text style={styles.disabledText}>
+                  Camera scanning is unavailable in this build.
+                </Text>
+                <Text style={styles.disabledText}>
+                  Please enter the merchant or transaction code manually below.
+                </Text>
               </View>
             )}
           </View>

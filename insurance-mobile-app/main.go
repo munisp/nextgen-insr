@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -107,6 +108,328 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 var db *sql.DB
+
+// 2026-10-01 (R1c): monolith upstream config for the offline-sync forwarder.
+// CRITICAL data-loss fix: /api/v1/sync previously returned {synced:true}
+// without persisting anything, silently dropping filed claims. Both values
+// are REQUIRED at startup (fail-closed); if they are missing the process
+// refuses to boot rather than pretend to sync.
+var (
+	monolithAPIURL       string
+	monolithServiceToken string
+)
+
+// initMonolithConfig loads and validates monolith upstream configuration.
+// Fail-fast: unset config is a fatal deployment error, never a silent skip.
+func initMonolithConfig() {
+	monolithAPIURL = strings.TrimRight(os.Getenv("MONOLITH_API_URL"), "/")
+	monolithServiceToken = os.Getenv("MONOLITH_SERVICE_TOKEN")
+	if monolithAPIURL == "" {
+		log.Fatal("FATAL: MONOLITH_API_URL environment variable is required (offline sync forwarder)")
+	}
+	if monolithServiceToken == "" {
+		log.Fatal("FATAL: MONOLITH_SERVICE_TOKEN environment variable is required (offline sync forwarder)")
+	}
+}
+
+// monolithHTTPClient is used for all BFF→monolith sync forwarding calls.
+var monolithHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+// monolithTRPCCall invokes a monolith tRPC procedure via its HTTP endpoint.
+// 2026-10-01 (R1c): authenticated with the service token; the original
+// end-user Authorization header (when present) is forwarded as
+// X-End-User-Authorization so the monolith can attribute/authorize the
+// underlying user. Returns an error with the upstream reason on any
+// non-2xx response — callers MUST surface it per item (fail-closed).
+func monolithTRPCCall(ctx context.Context, procedure string, input interface{}, endUserAuth string) (json.RawMessage, error) {
+	if monolithAPIURL == "" || monolithServiceToken == "" {
+		return nil, fmt.Errorf("monolith upstream not configured")
+	}
+	if !cb.allow() {
+		return nil, fmt.Errorf("monolith upstream circuit breaker open")
+	}
+	body, err := json.Marshal(map[string]interface{}{"json": input})
+	if err != nil {
+		return nil, fmt.Errorf("marshal input: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		monolithAPIURL+"/api/trpc/"+procedure, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+monolithServiceToken)
+	if endUserAuth != "" {
+		req.Header.Set("X-End-User-Authorization", endUserAuth)
+	}
+	resp, err := monolithHTTPClient.Do(req)
+	if err != nil {
+		cb.recordFailure()
+		return nil, fmt.Errorf("upstream unreachable: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var trpcResp struct {
+		Result struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"result"`
+		Error struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&trpcResp); err != nil {
+		cb.recordFailure()
+		return nil, fmt.Errorf("decode upstream response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || trpcResp.Error.Message != "" {
+		cb.recordFailure()
+		reason := trpcResp.Error.Message
+		if reason == "" {
+			reason = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("monolith rejected %s: %s", procedure, reason)
+	}
+	cb.recordSuccess()
+	return trpcResp.Result.Data, nil
+}
+
+// monolithTRPCQuery invokes a monolith tRPC query procedure over HTTP GET.
+// 2026-10-01 (R1c): used for user-scoped read passthroughs (e.g. policy
+// list). The caller's own Authorization header is forwarded so the monolith
+// authorizes the real end user; the service token identifies this BFF.
+func monolithTRPCQuery(ctx context.Context, procedure string, input interface{}, endUserAuth string) (json.RawMessage, error) {
+	if monolithAPIURL == "" || monolithServiceToken == "" {
+		return nil, fmt.Errorf("monolith upstream not configured")
+	}
+	if !cb.allow() {
+		return nil, fmt.Errorf("monolith upstream circuit breaker open")
+	}
+	encoded, err := json.Marshal(map[string]interface{}{"json": input})
+	if err != nil {
+		return nil, fmt.Errorf("marshal input: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		monolithAPIURL+"/api/trpc/"+procedure+"?input="+url.QueryEscape(string(encoded)), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+monolithServiceToken)
+	if endUserAuth != "" {
+		req.Header.Set("X-End-User-Authorization", endUserAuth)
+	}
+	resp, err := monolithHTTPClient.Do(req)
+	if err != nil {
+		cb.recordFailure()
+		return nil, fmt.Errorf("upstream unreachable: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var trpcResp struct {
+		Result struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"result"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&trpcResp); err != nil {
+		cb.recordFailure()
+		return nil, fmt.Errorf("decode upstream response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || trpcResp.Error.Message != "" {
+		cb.recordFailure()
+		reason := trpcResp.Error.Message
+		if reason == "" {
+			reason = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("monolith rejected %s: %s", procedure, reason)
+	}
+	cb.recordSuccess()
+	return trpcResp.Result.Data, nil
+}
+
+// ── Offline sync forwarder (2026-10-01, R1c) ────────────────────────────────
+// CRITICAL data-loss fix: this endpoint previously answered {synced:true}
+// unconditionally, so every offline-queued claim filing was acknowledged and
+// deleted client-side while nothing was ever persisted. Now each queued
+// operation is forwarded to the monolith for real persistence and the
+// response carries HONEST per-item statuses; any item that fails returns
+// synced:false with the upstream reason so the client keeps it queued.
+
+type syncOperation struct {
+	OperationID      string                 `json:"operationId"`
+	Type             string                 `json:"type"` // CREATE | UPDATE | DELETE
+	Entity           string                 `json:"entity"`
+	Payload          map[string]interface{} `json:"payload"`
+	ConflictStrategy string                 `json:"conflictStrategy"`
+	ClientTimestamp  interface{}            `json:"clientTimestamp"`
+}
+
+type syncItemResult struct {
+	OperationID string `json:"operationId"`
+	Synced      bool   `json:"synced"`
+	Error       string `json:"error,omitempty"`
+}
+
+// forwardSyncOperation persists one queued operation against the monolith.
+// Unknown entity/type combinations are REJECTED (fail-closed) — we never
+// acknowledge an operation we do not know how to persist.
+func forwardSyncOperation(ctx context.Context, op syncOperation, endUserAuth string) error {
+	switch {
+	case op.Entity == "claim" && op.Type == "CREATE":
+		// insuranceWorkflows.fileClaim input:
+		//   {policyId:number, claimType, incidentDate, claimedAmount,
+		//    incidentDescription, documents?}
+		policyID, ok := toFloat64(op.Payload["policyId"])
+		if !ok || policyID <= 0 {
+			return fmt.Errorf("claim payload missing numeric policyId")
+		}
+		claimType, _ := op.Payload["type"].(string)
+		if claimType == "" {
+			claimType, _ = op.Payload["claimType"].(string)
+		}
+		description, _ := op.Payload["description"].(string)
+		if description == "" {
+			description, _ = op.Payload["incidentDescription"].(string)
+		}
+		if claimType == "" || description == "" {
+			return fmt.Errorf("claim payload missing claim type or description")
+		}
+		var claimedAmount float64
+		switch a := op.Payload["amount"].(type) {
+		case string:
+			v, err := strconv.ParseFloat(strings.TrimSpace(a), 64)
+			if err != nil {
+				return fmt.Errorf("claim amount %q is not a number", a)
+			}
+			claimedAmount = v
+		default:
+			v, ok := toFloat64(op.Payload["amount"])
+			if !ok {
+				return fmt.Errorf("claim payload missing claimed amount")
+			}
+			claimedAmount = v
+		}
+		incidentDate, _ := op.Payload["filedAt"].(string)
+		if incidentDate == "" {
+			incidentDate = time.Now().UTC().Format(time.RFC3339)
+		}
+		var documents []string
+		if ev, ok := op.Payload["evidence"].([]interface{}); ok {
+			for _, e := range ev {
+				if s, ok := e.(string); ok {
+					documents = append(documents, s)
+				}
+			}
+		}
+		input := map[string]interface{}{
+			"policyId":            int64(policyID),
+			"claimType":           claimType,
+			"incidentDate":        incidentDate,
+			"claimedAmount":       claimedAmount,
+			"incidentDescription": description,
+		}
+		if len(documents) > 0 {
+			input["documents"] = documents
+		}
+		_, err := monolithTRPCCall(ctx, "insuranceWorkflows.fileClaim", input, endUserAuth)
+		return err
+	default:
+		return fmt.Errorf("unsupported sync operation %s %s — cannot persist", op.Type, op.Entity)
+	}
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// handleSyncBatch processes the offline sync queue. Accepts either a single
+// operation ({operationId, type, entity, payload, ...}) or a batch
+// ({items:[...]}). Responds with per-item honest statuses; the overall
+// "synced" flag is true ONLY when every item persisted.
+func handleSyncBatch(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if monolithAPIURL == "" || monolithServiceToken == "" {
+		// Fail-closed: misconfigured deployment must NOT acknowledge syncs.
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"synced": false, "error": "sync upstream not configured",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+		return
+	}
+	var raw struct {
+		syncOperation
+		Items []syncOperation `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, `{"error":"invalid request","synced":false}`, 400)
+		return
+	}
+	ops := raw.Items
+	if len(ops) == 0 && raw.OperationID != "" {
+		ops = []syncOperation{raw.syncOperation}
+	}
+	if len(ops) == 0 {
+		http.Error(w, `{"error":"no operations provided","synced":false}`, 400)
+		return
+	}
+	endUserAuth := r.Header.Get("Authorization")
+	results := make([]syncItemResult, 0, len(ops))
+	allSynced := true
+	for _, op := range ops {
+		res := syncItemResult{OperationID: op.OperationID}
+		if err := forwardSyncOperation(r.Context(), op, endUserAuth); err != nil {
+			res.Synced = false
+			res.Error = err.Error()
+			allSynced = false
+			jsonLog("warn", "sync item failed", "operation_id", op.OperationID, "entity", op.Entity, "error", err.Error())
+		} else {
+			res.Synced = true
+		}
+		results = append(results, res)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"synced":    allSynced,
+		"results":   results,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+}
+
+// handleListPolicies proxies the caller's policy list from the monolith
+// (insuranceWorkflows.listPolicies). 2026-10-01 (R1c): needed so the app can
+// derive real policyIds (telematics, claim filing) instead of hardcoding.
+func handleListPolicies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	data, err := monolithTRPCQuery(r.Context(), "insuranceWorkflows.listPolicies",
+		map[string]interface{}{"limit": 100, "offset": 0}, r.Header.Get("Authorization"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	var parsed struct {
+		Policies json.RawMessage `json:"policies"`
+		Total    int             `json:"total"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "malformed upstream response"})
+		return
+	}
+	if len(parsed.Policies) == 0 {
+		parsed.Policies = json.RawMessage("[]")
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"policies": parsed.Policies, "total": parsed.Total})
+}
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -964,9 +1287,11 @@ func newRouter() *chi.Mux {
 	r.Post("/api/v1/device/register", func(w http.ResponseWriter, r *http.Request) { handleDeviceRegister(w, r) })
 	r.Get("/api/v1/sync/pull", func(w http.ResponseWriter, r *http.Request) { handleSyncPull(w, r) })
 	r.Post("/api/v1/sync/push", handleSyncPush)
-	r.Post("/api/v1/sync", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"synced": true, "timestamp": time.Now().Format(time.RFC3339), "pending_transactions": 0})
-	})
+	// 2026-10-01 (R1c): real persistence — each queued op is forwarded to the
+	// monolith; per-item honest statuses replace the old blanket synced:true.
+	r.Post("/api/v1/sync", handleSyncBatch)
+	// 2026-10-01 (R1c): user-scoped policy list passthrough (real policyIds).
+	r.Get("/api/v1/policies", handleListPolicies)
 	return r
 }
 
@@ -1029,6 +1354,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	initDB()
+	initMonolithConfig() // 2026-10-01 (R1c): fail-fast if sync upstream unset
 	if db != nil {
 		defer func() { _ = db.Close() }()
 	}

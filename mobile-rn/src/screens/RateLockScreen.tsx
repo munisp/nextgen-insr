@@ -41,10 +41,14 @@ const RateLockScreen = () => {
   const [lockedRate, setLockedRate] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isLocked, setIsLocked] = useState(false);
+  // 2026-10-01 (R1b): error state replaces the fabricated hardcoded rate
+  // (USD-NGN 1450.50) previously shown when the rates API failed.
+  const [rateError, setRateError] = useState<string | null>(null);
 
   const fetchCurrentRate = useCallback(async () => {
     try {
       setLoading(true);
+      setRateError(null);
       const response = await fetch(`${API_BASE_URL}/rates/USD-NGN`);
       const data = await response.json();
       if (response.ok) {
@@ -53,13 +57,9 @@ const RateLockScreen = () => {
         throw new Error(data.message || 'Failed to fetch rates');
       }
     } catch (error) {
-      // Fallback for demo/development
-      setRate({
-        pair: 'USD-NGN',
-        rate: 1450.50,
-        inverseRate: 0.00069,
-        timestamp: new Date().toISOString(),
-      });
+      // Fail-closed: never display an invented exchange rate. (2026-10-01, R1b)
+      setRate(null);
+      setRateError('Live exchange rate is unavailable right now. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,9 @@ const RateLockScreen = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setLockedRate(rate.rate);
+        // 2026-10-01 (R1b): use the server-confirmed lock when provided;
+        // fall back to the quoted rate only on a confirmed success.
+        setLockedRate(typeof data.lockedRate === 'number' ? data.lockedRate : rate.rate);
         setSelectedDuration(durationMinutes);
         setTimeLeft(durationMinutes * 60);
         setIsLocked(true);
@@ -119,12 +121,15 @@ const RateLockScreen = () => {
         throw new Error(data.message || 'Failed to lock rate');
       }
     } catch (error) {
-      // For demo purposes, if API fails, we simulate a successful lock
-      setLockedRate(rate.rate);
-      setSelectedDuration(durationMinutes);
-      setTimeLeft(durationMinutes * 60);
-      setIsLocked(true);
-      Alert.alert('Rate Locked', `Exchange rate of ₦${rate.rate.toLocaleString()} locked for ${durationMinutes} minutes.`);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously this simulated a
+      // successful rate lock on API failure, showing a "Rate Locked" success
+      // alert for a lock the server never recorded (a funds-affecting lie).
+      // Fail-closed: propagate the real error, no lock state is entered.
+      setIsLocked(false);
+      setLockedRate(null);
+      setSelectedDuration(null);
+      const message = error instanceof Error ? error.message : 'Failed to lock rate';
+      Alert.alert('Rate Lock Failed', `${message} No rate was locked.`);
     } finally {
       setLocking(false);
     }
@@ -184,11 +189,18 @@ const RateLockScreen = () => {
 
         <View style={styles.rateCard}>
           <Text style={styles.rateLabel}>Current Market Rate</Text>
-          <View style={styles.rateRow}>
-            <Text style={styles.currencySymbol}>$1.00 = </Text>
-            <Text style={styles.rateValue}>₦{rate?.rate.toLocaleString() || '0.00'}</Text>
-          </View>
-          <Text style={styles.lastUpdated}>Last updated: {new Date().toLocaleTimeString()}</Text>
+          {rate ? (
+            <>
+              <View style={styles.rateRow}>
+                <Text style={styles.currencySymbol}>$1.00 = </Text>
+                <Text style={styles.rateValue}>₦{rate.rate.toLocaleString()}</Text>
+              </View>
+              <Text style={styles.lastUpdated}>Last updated: {new Date(rate.timestamp).toLocaleTimeString()}</Text>
+            </>
+          ) : (
+            // 2026-10-01 (R1b): honest unavailable state instead of a fake rate
+            <Text style={styles.lastUpdated}>{rateError ?? 'Rate unavailable.'}</Text>
+          )}
         </View>
 
         {isLocked ? (
@@ -211,7 +223,8 @@ const RateLockScreen = () => {
               <Text style={styles.actionButtonText}>Use Locked Rate Now</Text>
             </TouchableOpacity>
           </View>
-        ) : (
+        ) : rate ? (
+          // 2026-10-01 (R1b): lock options only render with a real fetched rate
           <View style={styles.optionsContainer}>
             <Text style={styles.sectionTitle}>Select Lock Duration</Text>
             <View style={styles.durationGrid}>
@@ -225,7 +238,7 @@ const RateLockScreen = () => {
               </Text>
             </View>
           </View>
-        )}
+        ) : null}
 
         {!isLocked && (
           <TouchableOpacity 

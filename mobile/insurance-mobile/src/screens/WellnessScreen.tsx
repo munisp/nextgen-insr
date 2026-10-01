@@ -15,6 +15,13 @@ import {
   TextInput,
   Alert,
 } from "react-native";
+// 2026-10-01 (R1c): was relative fetch("/api/trpc/...") which can never
+// resolve in a native app — rewired to the centralized tRPC base URL with
+// the user's auth token. Procedures (healthWearables.*) are real and mounted.
+import { trpcQuery, trpcMutation } from "../config";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const TOKEN_KEY = '@insureportal/auth_token';
 
 interface WellnessSummary {
   score: number;
@@ -46,12 +53,11 @@ const WellnessScreen: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const res = await fetch("/api/trpc/healthWearables.getWellnessSummary?input=" +
-        encodeURIComponent(JSON.stringify({ periodDays: 30 })));
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data.result?.data ?? null);
-      }
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const data = await trpcQuery<WellnessSummary>(
+        "healthWearables.getWellnessSummary", { periodDays: 30 }, token,
+      );
+      setSummary(data ?? null);
     } catch (err) {
       console.error("Failed to fetch wellness data:", err);
     } finally {
@@ -64,10 +70,10 @@ const WellnessScreen: React.FC = () => {
 
   const submitManualReading = async () => {
     try {
-      const res = await fetch("/api/trpc/healthWearables.ingestReading", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const result = await trpcMutation<{ wellnessScore?: number; rewardPoints?: number }>(
+        "healthWearables.ingestReading",
+        {
           deviceType: "manual",
           readingDate: new Date().toISOString().split("T")[0],
           steps: manualData.steps ? parseInt(manualData.steps) : undefined,
@@ -75,20 +81,17 @@ const WellnessScreen: React.FC = () => {
           sleepHours: manualData.sleepHours ? parseFloat(manualData.sleepHours) : undefined,
           heartRateAvg: manualData.heartRateAvg ? parseInt(manualData.heartRateAvg) : undefined,
           bmi: manualData.bmi ? parseFloat(manualData.bmi) : undefined,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const result = data.result?.data;
-        Alert.alert(
-          "Reading Submitted",
-          `Wellness score: ${result?.wellnessScore}/100\nReward points earned: ${result?.rewardPoints}`,
-          [{ text: "OK" }]
-        );
-        setShowManualEntry(false);
-        setManualData({ steps: "", activeMinutes: "", sleepHours: "", heartRateAvg: "", bmi: "" });
-        fetchData();
-      }
+        },
+        token,
+      );
+      Alert.alert(
+        "Reading Submitted",
+        `Wellness score: ${result?.wellnessScore}/100\nReward points earned: ${result?.rewardPoints}`,
+        [{ text: "OK" }]
+      );
+      setShowManualEntry(false);
+      setManualData({ steps: "", activeMinutes: "", sleepHours: "", heartRateAvg: "", bmi: "" });
+      fetchData();
     } catch (err) {
       Alert.alert("Error", "Failed to submit reading. Please try again.");
     }

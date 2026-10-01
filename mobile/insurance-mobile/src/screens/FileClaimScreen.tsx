@@ -50,8 +50,23 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
           ))}
         </View>
 
-        <Text style={styles.label}>Policy Number</Text>
-        <TextInput style={styles.input} value={form.policyNumber} onChangeText={(v) => setForm({ ...form, policyNumber: v })} placeholder="INS-XXXXX" placeholderTextColor="#94a3b8" />
+        <Text style={styles.label}>Policy *</Text>
+        {policiesLoading ? (
+          <ActivityIndicator color="#2563eb" />
+        ) : !policies || policies.length === 0 ? (
+          /* 2026-10-01 (R1c): honest empty state — cannot file without a policy */
+          <View style={styles.offlineNote}><Text style={styles.offlineNoteText}>No policies found on your account — a claim must be filed against an existing policy.</Text></View>
+        ) : (
+          <View style={styles.typeGrid}>
+            {policies.map((p: any) => (
+              <TouchableOpacity key={p.id} style={[styles.typeChip, selectedPolicyId === Number(p.id) && styles.typeActive]} onPress={() => setSelectedPolicyId(Number(p.id))}>
+                <Text style={[styles.typeText, selectedPolicyId === Number(p.id) && { color: '#fff' }]}>
+                  {p.policyNumber || `Policy #${p.id}`}{p.status ? ` (${p.status})` : ''}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <Text style={styles.label}>Description *</Text>
         <TextInput style={[styles.input, styles.textarea]} value={form.description} onChangeText={(v) => setForm({ ...form, description: v })} multiline numberOfLines={4} placeholder="Describe the incident..." placeholderTextColor="#94a3b8" />

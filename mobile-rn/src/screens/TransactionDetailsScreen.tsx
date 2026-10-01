@@ -42,7 +42,10 @@ type TransactionDetailsRouteProp = RouteProp<RootStackParamList, 'TransactionDet
 export const TransactionDetailsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<TransactionDetailsRouteProp>();
-  const { transactionId } = route.params || { transactionId: 'TXN-782910442' }; // Fallback for demo
+  // 2026-10-01 (R1b): FABRICATION REMOVED — previously defaulted to a
+  // hardcoded demo transaction ID 'TXN-782910442' when the route param was
+  // missing, fetching/displaying an arbitrary transaction. Fail-closed.
+  const transactionId = route.params?.transactionId;
 
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +55,12 @@ export const TransactionDetailsScreen = () => {
   }, [transactionId]);
 
   const fetchTransactionDetails = async () => {
+    // 2026-10-01 (R1b): no param = no fetch; the null-transaction error UI
+    // below renders instead of a fabricated demo receipt.
+    if (!transactionId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const response = await apiClient.get(`/transactions/${transactionId}`);

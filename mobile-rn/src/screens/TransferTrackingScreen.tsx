@@ -44,9 +44,12 @@ const TransferTrackingScreen = () => {
   const [loading, setLoading] = useState(true);
   const [transfer, setTransfer] = useState<TransferDetails | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // 2026-10-01 (R1b): error state replaces the fabricated transfer fallback.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchTransferStatus = async () => {
     try {
+      setLoadError(null);
       const response = await fetch(`https://api.insureportal.io/v1/transfers/${transferId || 'latest'}`);
       if (!response.ok) {
         throw new Error('Failed to fetch transfer details');
@@ -54,47 +57,12 @@ const TransferTrackingScreen = () => {
       const data = await response.json();
       setTransfer(data);
     } catch (error) {
-      // Fallback for demo/development if API is not reachable
-      setTransfer({
-        id: transferId || 'TRX-992837465',
-        amount: '25,000.00',
-        currency: 'NGN',
-        recipientName: 'John Doe',
-        recipientBank: 'Access Bank',
-        recipientAccount: '0123456789',
-        reference: 'Rent Payment - April',
-        status: 'In Progress',
-        createdAt: '2024-04-01 10:30 AM',
-        steps: [
-          {
-            id: '1',
-            title: 'Transfer Initiated',
-            description: 'Your transfer request has been received.',
-            status: 'completed',
-            timestamp: '10:30 AM',
-          },
-          {
-            id: '2',
-            title: 'Payment Confirmed',
-            description: 'Funds have been secured for this transaction.',
-            status: 'completed',
-            timestamp: '10:31 AM',
-          },
-          {
-            id: '3',
-            title: 'Processing with Bank',
-            description: 'We are communicating with the recipient\'s bank.',
-            status: 'processing',
-            timestamp: '10:32 AM',
-          },
-          {
-            id: '4',
-            title: 'Funds Delivered',
-            description: 'Recipient bank confirms receipt of funds.',
-            status: 'pending',
-          },
-        ],
-      });
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously rendered a fully
+      // fabricated transfer ("John Doe", fake tracking steps showing funds
+      // "secured"/"processing") on API failure. Fail-closed: no fake
+      // tracking state; user sees an honest error and can retry.
+      setTransfer(null);
+      setLoadError('Could not load the transfer status. Please check your connection and retry.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -126,6 +94,20 @@ const TransferTrackingScreen = () => {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#6C63FF" />
+      </View>
+    );
+  }
+
+  // 2026-10-01 (R1b): honest unavailable state instead of a fabricated transfer.
+  if (!transfer) {
+    return (
+      <View style={styles.centered}>
+        <Text style={{ color: '#fff', fontSize: 16, textAlign: 'center', marginBottom: 20, paddingHorizontal: 24 }}>
+          {loadError ?? 'Transfer status is unavailable.'}
+        </Text>
+        <TouchableOpacity onPress={fetchTransferStatus}>
+          <Text style={{ color: '#6C63FF', fontSize: 16, fontWeight: '600' }}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }

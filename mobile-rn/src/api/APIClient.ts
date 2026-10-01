@@ -1,8 +1,36 @@
 // React Native API Client with Security
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AnalyticsService } from '../services/AnalyticsService';
+
+// 2026-10-01 (R1b): removed `import { AnalyticsService } from '../services/
+// AnalyticsService'` — that module does not exist in mobile-rn and broke the
+// Metro bundle. Analytics is now an OPTIONAL injectable delegate: when no
+// delegate is installed, calls are silently skipped; a throwing delegate can
+// never break an API request (fail-safe, never fabricated telemetry).
+export interface AnalyticsDelegate {
+  trackPerformance(event: string, value: number, unit: string): void;
+  trackError(event: string, error: unknown): void;
+}
 
 export class APIClient {
+  private analyticsDelegate?: AnalyticsDelegate;
+
+  /** Install an analytics delegate (optional). Pass undefined to disable. */
+  public setAnalyticsDelegate(delegate?: AnalyticsDelegate): void {
+    this.analyticsDelegate = delegate;
+  }
+
+  private trackPerformance(event: string, value: number, unit: string): void {
+    try {
+      this.analyticsDelegate?.trackPerformance(event, value, unit);
+    } catch { /* analytics must never break requests */ }
+  }
+
+  private trackError(event: string, error: unknown): void {
+    try {
+      this.analyticsDelegate?.trackError(event, error);
+    } catch { /* analytics must never break requests */ }
+  }
+
   // Base URL points to the InsurePortal platform-shell backend REST bridge.
   // Development: http://10.0.2.2:3000/api/v1  (Android emulator)
   //              http://localhost:3000/api/v1   (iOS simulator)
@@ -86,7 +114,7 @@ export class APIClient {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
       const endTime = Date.now();
 
-      AnalyticsService.trackPerformance(`api_${method.toLowerCase()}_${endpoint}`, endTime - startTime, 'ms');
+      this.trackPerformance(`api_${method.toLowerCase()}_${endpoint}`, endTime - startTime, 'ms');
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -95,7 +123,7 @@ export class APIClient {
       const responseData = await response.json();
       return { data: responseData, status: response.status };
     } catch (error) {
-      AnalyticsService.trackError('api_request_failed', error);
+      this.trackError('api_request_failed', error);
       throw error;
     }
   }

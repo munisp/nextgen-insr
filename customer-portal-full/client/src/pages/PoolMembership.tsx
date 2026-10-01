@@ -1,9 +1,11 @@
 /**
  * PoolMembership.tsx — Q-wave Q6 (2026-09-25)
  * Member view of P2P / takaful pool membership + surplus statements.
- * BINDING DISCLOSURE: Q3 (poolSurplus router) is planned in plan-q.md but not
- * deployed yet; bindings feature-detect and this page renders a disclosed
- * "not available yet" state until the backend lands. No data is fabricated.
+ * BINDING: REAL — p2pPools.myMemberships / myStatements (Q3 router).
+ * NOT_FOUND/FORBIDDEN → null remains only as a defensive fallback for older
+ * deployments (2026-10-01, R2b). No data is fabricated.
+ * 2026-10-01 (R2b): updated to the corrected PoolMembershipItem contract —
+ * poolType/productType/contributionPaid exist; there is no `mode` field.
  */
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,12 +79,21 @@ export default function PoolMembership() {
                     </Badge>
                   </div>
                   <dl className="mt-3 space-y-1 text-sm text-stone-600">
+                    {/* 2026-10-01 (R2b): membership exposes poolType
+                        (family/cooperative/employer/community) and
+                        contributionPaid — no `mode` field exists. */}
                     <div className="flex justify-between">
-                      <dt>Mode</dt>
-                      <dd>
-                        {m.mode === "takaful_surplus"
-                          ? "Takaful surplus"
-                          : "P2P refund"}
+                      <dt>Pool type</dt>
+                      <dd className="capitalize">{m.poolType}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>Product</dt>
+                      <dd>{m.productType}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>Contribution paid</dt>
+                      <dd className="font-medium text-stone-900">
+                        {m.contributionPaid}
                       </dd>
                     </div>
                     <div className="flex justify-between">

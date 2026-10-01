@@ -50,42 +50,12 @@ export const PaymentRetryScreen = () => {
       const data = await response.json();
       setFailedPayments(data.failed_payments || []);
     } catch (error) {
-      // Fallback to mock data for production-ready UI demonstration if API fails
-      setFailedPayments([
-        {
-          id: '1',
-          amount: '25,000.00',
-          currency: 'NGN',
-          recipientName: 'John Doe',
-          recipientAccount: '0123456789',
-          bankName: 'Access Bank',
-          date: '2024-03-28 14:30',
-          reason: 'Network Timeout',
-          reference: 'TRX-982341',
-        },
-        {
-          id: '2',
-          amount: '12,500.00',
-          currency: 'NGN',
-          recipientName: 'Sarah Smith',
-          recipientAccount: '9876543210',
-          bankName: 'GTBank',
-          date: '2024-03-27 09:15',
-          reason: 'Insufficient Funds',
-          reference: 'TRX-982342',
-        },
-        {
-          id: '3',
-          amount: '5,000.00',
-          currency: 'NGN',
-          recipientName: 'Michael Brown',
-          recipientAccount: '5544332211',
-          bankName: 'Zenith Bank',
-          date: '2024-03-26 18:45',
-          reason: 'Bank Server Down',
-          reference: 'TRX-982343',
-        },
-      ]);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously displayed three
+      // hardcoded fake "failed payments" (John Doe / Sarah Smith / Michael
+      // Brown) on API failure; retrying a fabricated payment is a funds risk.
+      // Fail-closed: empty list + honest error.
+      setFailedPayments([]);
+      Alert.alert('Error', 'Could not load failed payments. Please try again later.');
     } finally {
       setLoading(false);
       setRefreshing(false);

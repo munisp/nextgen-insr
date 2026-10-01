@@ -22,6 +22,10 @@ import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SupportScreen } from '../screens/SupportScreen';
 import GeospatialMapScreen from '../screens/GeospatialMapScreen';
+// 2026-10-01 (R1c): Telematics/Wellness called real monolith procedures but
+// were unreachable — now registered.
+import TelematicsScreen from '../screens/TelematicsScreen';
+import WellnessScreen from '../screens/WellnessScreen';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { View } from 'react-native';
 
@@ -105,6 +109,8 @@ export function AppNavigator() {
           <Stack.Screen name="Emergency" component={EmergencyScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="GeospatialMap" component={GeospatialMapScreen} />
+          <Stack.Screen name="Telematics" component={TelematicsScreen} />
+          <Stack.Screen name="Wellness" component={WellnessScreen} />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthStack} />

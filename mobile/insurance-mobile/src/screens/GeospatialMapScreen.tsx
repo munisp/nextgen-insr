@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  Platform,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
@@ -30,31 +29,48 @@ interface Region {
   lat: number;
   lng: number;
   policies: number;
-  claims: number;
-  lossRatio: number;
+  // 2026-10-01 (R1c): claims/lossRatio are NOT provided by the real
+  // worldView.getPolicyDensity procedure — optional, rendered only when present.
+  claims?: number;
+  lossRatio?: number;
 }
 
 interface RiskZone {
   name: string;
   level: string;
-  affectedPolicies: number;
+  affectedPolicies?: number;
 }
 
-const API_BASE = __DEV__
-  ? Platform.OS === 'android'
-    ? 'http://10.0.2.2:5002'
-    : 'http://localhost:5002'
-  : 'https://api.insureportal.ng';
+// 2026-10-01 (R1c): was /trpc/geospatial.data (nonexistent) on a hardcoded
+// :5002 URL with a wrong token key ('@auth_token'). Rewired to the real
+// mounted worldView router: getPolicyDensity (regions) + getFloodRiskZones
+// (risk zones), via centralized config and the correct auth token key.
+import { trpcQuery } from '../config';
+
+const TOKEN_KEY = '@insureportal/auth_token';
 
 async function fetchGeoData(): Promise<{ regions: Region[]; riskZones: RiskZone[] } | null> {
   try {
-    const token = await AsyncStorage.getItem('@auth_token');
-    const res = await fetch(`${API_BASE}/trpc/geospatial.data`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json.result?.data || json;
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    const [density, flood] = await Promise.all([
+      trpcQuery<{ densities: any[] }>('worldView.getPolicyDensity', {}, token).catch(() => null),
+      trpcQuery<{ zones: any[] }>('worldView.getFloodRiskZones', { minRisk: 50 }, token).catch(() => null),
+    ]);
+    if (!density && !flood) return null;
+    return {
+      regions: (density?.densities ?? [])
+        .filter((d: any) => Number.isFinite(d.centroidLat) && Number.isFinite(d.centroidLon))
+        .map((d: any) => ({
+          name: d.lgaName,
+          lat: Number(d.centroidLat),
+          lng: Number(d.centroidLon),
+          policies: Number(d.policyCount ?? 0),
+        })),
+      riskZones: (flood?.zones ?? []).map((z: any) => ({
+        name: z.name,
+        level: z.riskLevel,
+      })),
+    };
   } catch {
     return null;
   }
@@ -231,31 +247,33 @@ export default function GeospatialMapScreen() {
         mapType="standard"
       >
         {regions.map((region, i) => {
-          const risk = getRiskLevel(region.lossRatio);
+          // 2026-10-01 (R1c): risk color only when a real lossRatio exists;
+          // otherwise a neutral density color (no fabricated risk level).
+          const riskColor = region.lossRatio != null ? RISK_COLORS[getRiskLevel(region.lossRatio)] : '#3b82f6';
           return (
             <React.Fragment key={i}>
               <Marker
                 coordinate={{ latitude: region.lat, longitude: region.lng }}
-                pinColor={RISK_COLORS[risk]}
+                pinColor={riskColor}
                 onPress={() => setSelectedRegion(region)}
               >
-                <View style={[styles.markerDot, { backgroundColor: RISK_COLORS[risk] }]}>
+                <View style={[styles.markerDot, { backgroundColor: riskColor }]}>
                   <Text style={styles.markerText}>{region.policies}</Text>
                 </View>
                 <Callout>
                   <View style={styles.callout}>
                     <Text style={styles.calloutTitle}>{region.name}</Text>
                     <Text>Policies: {region.policies.toLocaleString()}</Text>
-                    <Text>Claims: {region.claims.toLocaleString()}</Text>
-                    <Text>Loss Ratio: {region.lossRatio}%</Text>
+                    {region.claims != null && <Text>Claims: {region.claims.toLocaleString()}</Text>}
+                    {region.lossRatio != null && <Text>Loss Ratio: {region.lossRatio}%</Text>}
                   </View>
                 </Callout>
               </Marker>
               <Circle
                 center={{ latitude: region.lat, longitude: region.lng }}
                 radius={region.policies * 5}
-                fillColor={`${RISK_COLORS[risk]}30`}
-                strokeColor={RISK_COLORS[risk]}
+                fillColor={`${riskColor}30`}
+                strokeColor={riskColor}
                 strokeWidth={1}
               />
             </React.Fragment>
@@ -278,7 +296,8 @@ export default function GeospatialMapScreen() {
         <View style={styles.listPanel}>
           <ScrollView style={styles.listScroll}>
             {filteredRegions.map((region, i) => {
-              const risk = getRiskLevel(region.lossRatio);
+              // 2026-10-01 (R1c): neutral color when no real lossRatio.
+              const riskColor = region.lossRatio != null ? RISK_COLORS[getRiskLevel(region.lossRatio)] : '#3b82f6';
               return (
                 <TouchableOpacity
                   key={i}
@@ -289,12 +308,12 @@ export default function GeospatialMapScreen() {
                   onPress={() => flyToRegion(region)}
                 >
                   <View style={styles.listItemLeft}>
-                    <View style={[styles.riskDot, { backgroundColor: RISK_COLORS[risk] }]} />
+                    <View style={[styles.riskDot, { backgroundColor: riskColor }]} />
                     <Text style={styles.listItemName}>{region.name}</Text>
                   </View>
                   <View style={styles.listItemRight}>
                     <Text style={styles.listItemStat}>{region.policies} pol</Text>
-                    <Text style={styles.listItemStat}>{region.lossRatio}%</Text>
+                    {region.lossRatio != null && <Text style={styles.listItemStat}>{region.lossRatio}%</Text>}
                   </View>
                 </TouchableOpacity>
               );
@@ -317,27 +336,33 @@ export default function GeospatialMapScreen() {
               <Text style={styles.detailLabel}>Policies</Text>
               <Text style={styles.detailValue}>{selectedRegion.policies.toLocaleString()}</Text>
             </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Claims</Text>
-              <Text style={styles.detailValue}>{selectedRegion.claims.toLocaleString()}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Loss Ratio</Text>
-              <Text style={styles.detailValue}>{selectedRegion.lossRatio}%</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Risk Level</Text>
-              <View
-                style={[
-                  styles.riskBadge,
-                  { backgroundColor: RISK_COLORS[getRiskLevel(selectedRegion.lossRatio)] },
-                ]}
-              >
-                <Text style={styles.riskBadgeText}>
-                  {getRiskLevel(selectedRegion.lossRatio).toUpperCase()}
-                </Text>
+            {selectedRegion.claims != null && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Claims</Text>
+                <Text style={styles.detailValue}>{selectedRegion.claims.toLocaleString()}</Text>
               </View>
-            </View>
+            )}
+            {selectedRegion.lossRatio != null && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Loss Ratio</Text>
+                <Text style={styles.detailValue}>{selectedRegion.lossRatio}%</Text>
+              </View>
+            )}
+            {selectedRegion.lossRatio != null && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Risk Level</Text>
+                <View
+                  style={[
+                    styles.riskBadge,
+                    { backgroundColor: RISK_COLORS[getRiskLevel(selectedRegion.lossRatio)] },
+                  ]}
+                >
+                  <Text style={styles.riskBadgeText}>
+                    {getRiskLevel(selectedRegion.lossRatio).toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         </View>
       )}
