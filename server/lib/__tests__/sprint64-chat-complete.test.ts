@@ -608,8 +608,11 @@ describe("Sprint 64 — Chat Security (F24)", () => {
     expect(headers["X-Frame-Options"]).toBe("DENY");
   });
 
-  it("trackChatAbuse allows normal traffic", () => {
-    const result = trackChatAbuse("192.168.1.100");
+  it("trackChatAbuse allows normal traffic", async () => {
+    // 2026-10-01 (C2-mw-followup): trackChatAbuse is now async — the abuse
+    // tracker moved from an in-memory Map to the Redis-backed distributed
+    // secState store (B13 persistence fix). Awaiting the real signature.
+    const result = await trackChatAbuse("192.168.1.100");
     expect(result.blocked).toBe(false);
   });
 

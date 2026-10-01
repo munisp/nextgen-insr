@@ -98,7 +98,7 @@ export const kycRouter = router({
   checkCooldown: protectedProcedure.query(async ({ ctx }) => {
     try {
       const agent = await requireAgent(ctx.req);
-      return isLockedOut(`agent-${agent.id}`);
+      return await isLockedOut(`agent-${agent.id}`);
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -114,7 +114,7 @@ export const kycRouter = router({
     .input(z.object({ userId: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const cleared = clearCooldown(input.userId);
+        const cleared = await clearCooldown(input.userId);
         return { cleared, userId: input.userId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -128,7 +128,7 @@ export const kycRouter = router({
 
   /** Admin: get all active cooldowns */
   adminGetCooldowns: adminProcedure.query(async () => {
-    return { cooldowns: getCooldownStatus() };
+    return { cooldowns: await getCooldownStatus() };
   }),
 
   // ─── Server-side Passive Liveness ────────────────────────────────────────────
@@ -147,7 +147,7 @@ export const kycRouter = router({
         const userId = `agent-${agent.id}`;
 
         // Check cooldown
-        const cooldown = isLockedOut(userId);
+        const cooldown = await isLockedOut(userId);
         if (cooldown.locked) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -160,9 +160,9 @@ export const kycRouter = router({
 
         // Record success/failure
         if (result.isLive) {
-          recordLivenessSuccess(userId);
+          await recordLivenessSuccess(userId);
         } else {
-          recordLivenessFailure(userId);
+          await recordLivenessFailure(userId);
         }
 
         // Update KYC session if provided
@@ -211,7 +211,7 @@ export const kycRouter = router({
       try {
         const fingerprint = createDeviceFingerprint(input);
         const thresholds = getDeviceThresholds(fingerprint);
-        const history = getDeviceLivenessHistory(fingerprint.fingerprintHash);
+        const history = await getDeviceLivenessHistory(fingerprint.fingerprintHash);
 
         return {
           fingerprint,
@@ -259,7 +259,7 @@ export const kycRouter = router({
           screenHeight: input.screenHeight,
           pixelRatio: input.pixelRatio,
         });
-        recordDeviceLivenessAttempt(
+        await recordDeviceLivenessAttempt(
           fingerprint,
           input.passed,
           input.method,
@@ -278,7 +278,7 @@ export const kycRouter = router({
 
   /** Admin: get all device histories for analytics dashboard */
   adminDeviceHistories: adminProcedure.query(async () => {
-    return { devices: getAllDeviceHistories() };
+    return { devices: await getAllDeviceHistories() };
   }),
 
   /** Admin: get problematic devices that consistently fail */
@@ -292,7 +292,7 @@ export const kycRouter = router({
     .query(async ({ input }) => {
       try {
         return {
-          devices: getProblematicDevices(
+          devices: await getProblematicDevices(
             input.minAttempts,
             input.maxSuccessRate
           ),
@@ -330,7 +330,7 @@ export const kycRouter = router({
         const userId = `agent-${agent.id}`;
 
         // Check cooldown before starting
-        const cooldown = isLockedOut(userId);
+        const cooldown = await isLockedOut(userId);
         if (cooldown.locked) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -426,7 +426,7 @@ export const kycRouter = router({
 
         // Check cooldown
         const userId = `agent-${agent.id}`;
-        const cooldown = isLockedOut(userId);
+        const cooldown = await isLockedOut(userId);
         if (cooldown.locked) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -448,9 +448,9 @@ export const kycRouter = router({
 
         // Record success/failure for cooldown tracking
         if (result?.passed) {
-          recordLivenessSuccess(userId);
+          await recordLivenessSuccess(userId);
         } else {
-          recordLivenessFailure(userId);
+          await recordLivenessFailure(userId);
         }
 
         await db
@@ -803,7 +803,7 @@ export const kycRouter = router({
           ctx.req?.socket?.remoteAddress ||
           "127.0.0.1";
         const geo = await resolveGeoIp(ip);
-        const correlation = correlateGeoIp(
+        const correlation = await correlateGeoIp(
           ctx.user.id.toString(),
           input.deviceFingerprint,
           geo
@@ -844,22 +844,22 @@ export const kycRouter = router({
     }),
 
   /** Admin: Get all geo-IP correlations */
-  adminGeoCorrelations: adminProcedure.query(() => {
-    return { correlations: getAllGeoCorrelations() };
+  adminGeoCorrelations: adminProcedure.query(async () => {
+    return { correlations: await getAllGeoCorrelations() };
   }),
 
   /** Admin: Get high-risk correlations */
   adminHighRiskGeo: adminProcedure
     .input(z.object({ minRiskScore: z.number().min(0).max(100).default(50) }))
-    .query(({ input }) => {
-      return { correlations: getHighRiskCorrelations(input.minRiskScore) };
+    .query(async ({ input }) => {
+      return { correlations: await getHighRiskCorrelations(input.minRiskScore) };
     }),
 
   /** Admin: Clear geo-IP data for a user (GDPR compliance) */
   adminClearGeoData: adminProcedure
     .input(z.object({ userId: z.string() }))
-    .mutation(({ input }) => {
-      const cleared = clearGeoIpData(input.userId);
+    .mutation(async ({ input }) => {
+      const cleared = await clearGeoIpData(input.userId);
       return {
         cleared,
         message: `Cleared ${cleared} geo-IP record(s) for user ${input.userId}`,

@@ -112,22 +112,29 @@ interface AbuseRecord {
   blocked: boolean;
 }
 
-const abuseTracker = new Map<string, AbuseRecord>();
+// 2026-10-01 (C2-mw, B13): the abuse tracker moved from a module-level Map
+// to Redis via distributedState secState* (namespace "chat-abuse") — a
+// restart used to unblock abusive IPs mid-block. On Redis outage the store
+// falls back to in-memory (logged loudly); availability is prioritized, and
+// a WRITE that fails on all backends throws to the caller.
+import { secStateGet, secStateSet } from "./distributedState";
+import { logger } from "../_core/logger";
+
+const ABUSE_NS = "chat-abuse";
 const ABUSE_THRESHOLD = 100; // messages per 5 minutes
 const ABUSE_WINDOW_MS = 5 * 60 * 1000;
 const BLOCK_DURATION_MS = 30 * 60 * 1000; // 30 min block
+const ABUSE_TTL_SECONDS = Math.ceil(BLOCK_DURATION_MS / 1000) + 300;
 
-export function trackChatAbuse(ipAddress: string): {
+export async function trackChatAbuse(ipAddress: string): Promise<{
   blocked: boolean;
   reason?: string;
-} {
+}> {
   const now = Date.now();
-  let record = abuseTracker.get(ipAddress);
-
-  if (!record) {
-    record = { count: 0, firstSeen: now, lastSeen: now, blocked: false };
-    abuseTracker.set(ipAddress, record);
-  }
+  const raw = await secStateGet(ABUSE_NS, ipAddress);
+  let record: AbuseRecord = raw
+    ? (JSON.parse(raw) as AbuseRecord)
+    : { count: 0, firstSeen: now, lastSeen: now, blocked: false };
 
   // Check if block has expired
   if (record.blocked && now - record.lastSeen > BLOCK_DURATION_MS) {
@@ -137,6 +144,13 @@ export function trackChatAbuse(ipAddress: string): {
   }
 
   if (record.blocked) {
+    try {
+      await secStateSet(ABUSE_NS, ipAddress, JSON.stringify(record), ABUSE_TTL_SECONDS);
+    } catch (err) {
+      logger.error(
+        `[ChatAbuse] Block-state write failed for ${ipAddress}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
     return {
       blocked: true,
       reason: "IP temporarily blocked due to excessive chat activity",
@@ -154,7 +168,18 @@ export function trackChatAbuse(ipAddress: string): {
 
   if (record.count > ABUSE_THRESHOLD) {
     record.blocked = true;
+    // Persist the block BEFORE returning — a write failure surfaces loudly
+    // (C2-mw: restart must not unblock abusive IPs).
+    await secStateSet(ABUSE_NS, ipAddress, JSON.stringify(record), ABUSE_TTL_SECONDS);
     return { blocked: true, reason: "Rate limit exceeded — too many messages" };
+  }
+
+  try {
+    await secStateSet(ABUSE_NS, ipAddress, JSON.stringify(record), ABUSE_TTL_SECONDS);
+  } catch (err) {
+    logger.error(
+      `[ChatAbuse] Counter write failed for ${ipAddress}: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
   return { blocked: false };

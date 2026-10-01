@@ -118,19 +118,29 @@ export async function csrfStore(
 
 export async function csrfValidate(
   sessionId: string,
-  token: string
+  token: string,
+  opts?: { consume?: boolean }
 ): Promise<boolean> {
+  // 2026-10-01 (C2-mw): `consume` option added for inputSanitizer
+  // consolidation (B6). Default true preserves the original one-time-token
+  // semantics for existing callers; inputSanitizer.validateCsrfToken passes
+  // { consume: false } because its CSRF contract is session-long, not
+  // single-use.
+  const consume = opts?.consume ?? true;
   const redis = await getRedis();
   if (redis) {
     try {
       const stored = await redis.get(`csrf:${sessionId}`);
       if (stored === token) {
-        await redis.del(`csrf:${sessionId}`);
+        if (consume) await redis.del(`csrf:${sessionId}`);
         return true;
       }
       return false;
-    } catch {
-      // Fall through
+    } catch (err) {
+      logger.error(
+        { err, sessionId },
+        "[DistributedState] Redis CSRF validate failed — falling back to IN-MEMORY store (2026-10-01, C2-mw). State is NOT shared across instances/restarts while Redis is down."
+      );
     }
   }
   const entry = memoryCsrf.get(sessionId);
@@ -140,7 +150,7 @@ export async function csrfValidate(
     return false;
   }
   if (entry.token === token) {
-    memoryCsrf.delete(sessionId);
+    if (consume) memoryCsrf.delete(sessionId);
     return true;
   }
   return false;
@@ -365,6 +375,247 @@ export async function cacheSet(
   // No-op for memory — hot path caching only meaningful with Redis
 }
 
+// ── Generic Security-State JSON Store ────────────────────────────────────────
+// 2026-10-01 (C2-mw): added for the Class-B persistence fixes (audit rows
+// B1, B4, B7, B13). Security middleware state (liveness lockouts, login
+// attempt lockouts, card-testing windows, chat abuse blocks, sanitizer rate
+// limits) MUST survive process restarts — a restart that clears a lockout is
+// a brute-force bypass. State is stored in Redis under `sec:<ns>:<key>` with
+// a TTL.
+//
+// Fallback semantics (disclosed, deliberate):
+//  - Availability is prioritized over fail-closed for these stores: when
+//    Redis is unavailable the store falls back to a per-process in-memory
+//    Map. This re-introduces the restart-clears-state risk ONLY for the
+//    duration of the Redis outage, and every fallback is logged loudly
+//    (error level on writes) so operators can alert on it.
+//  - WRITE failures surface to the caller: secStateSet throws if BOTH the
+//    Redis write and the in-memory fallback write fail, so lockout writers
+//    (e.g. recordLivenessFailure) never silently drop a security state
+//    transition.
+
+interface SecStateMemoryEntry {
+  value: string;
+  expiresAt: number;
+}
+
+const memorySecState = new Map<string, SecStateMemoryEntry>();
+
+function secStateFullKey(ns: string, key: string): string {
+  return `sec:${ns}:${key}`;
+}
+
+let secStateFallbackWarnedAt = 0;
+
+function logSecStateFallback(op: string, ns: string, err: unknown): void {
+  // Throttle identical fallback logs to one per 30s to avoid log floods
+  // during a Redis outage, but never swallow the first occurrence.
+  const now = Date.now();
+  const level = now - secStateFallbackWarnedAt > 30_000 ? "error" : "warn";
+  secStateFallbackWarnedAt = now;
+  logger[level](
+    { err, op, ns },
+    `[DistributedState] Redis ${op} failed for security-state namespace '${ns}' — using IN-MEMORY fallback; security state is NOT durable/shared until Redis recovers (2026-10-01, C2-mw)`
+  );
+}
+
+export async function secStateGet(
+  ns: string,
+  key: string
+): Promise<string | null> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      return await redis.get(secStateFullKey(ns, key));
+    } catch (err) {
+      logSecStateFallback("GET", ns, err);
+    }
+  }
+  const entry = memorySecState.get(secStateFullKey(ns, key));
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    memorySecState.delete(secStateFullKey(ns, key));
+    return null;
+  }
+  return entry.value;
+}
+
+export async function secStateSet(
+  ns: string,
+  key: string,
+  value: string,
+  ttlSeconds: number
+): Promise<void> {
+  const redis = await getRedis();
+  let redisError: unknown = null;
+  if (redis) {
+    try {
+      await redis.set(secStateFullKey(ns, key), value, "EX", ttlSeconds);
+      return;
+    } catch (err) {
+      redisError = err;
+      logSecStateFallback("SET", ns, err);
+    }
+  } else if (process.env.REDIS_URL) {
+    // Redis is configured but unreachable — this is the dangerous case.
+    logSecStateFallback("SET", ns, new Error("Redis client unavailable"));
+  }
+  try {
+    memorySecState.set(secStateFullKey(ns, key), {
+      value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
+  } catch (memErr) {
+    // Both backends failed — surface the write failure to the caller.
+    logger.error(
+      { redisError, memErr, ns, key },
+      "[DistributedState] Security-state WRITE failed on ALL backends — lockout state lost (2026-10-01, C2-mw)"
+    );
+    throw memErr instanceof Error ? memErr : new Error(String(memErr));
+  }
+}
+
+export async function secStateDelete(
+  ns: string,
+  key: string
+): Promise<boolean> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      const removed = await redis.del(secStateFullKey(ns, key));
+      return removed > 0;
+    } catch (err) {
+      logSecStateFallback("DEL", ns, err);
+    }
+  }
+  return memorySecState.delete(secStateFullKey(ns, key));
+}
+
+/** List all entries in a namespace (admin dashboards). */
+export async function secStateList(
+  ns: string
+): Promise<Array<{ key: string; value: string }>> {
+  const prefix = secStateFullKey(ns, "");
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      const out: Array<{ key: string; value: string }> = [];
+      let cursor = "0";
+      do {
+        const [next, keys] = await redis.scan(
+          cursor,
+          "MATCH",
+          `${prefix}*`,
+          "COUNT",
+          200
+        );
+        cursor = next;
+        for (const k of keys) {
+          const v = await redis.get(k);
+          if (v !== null) out.push({ key: k.slice(prefix.length), value: v });
+        }
+      } while (cursor !== "0");
+      return out;
+    } catch (err) {
+      logSecStateFallback("LIST", ns, err);
+    }
+  }
+  const now = Date.now();
+  const out: Array<{ key: string; value: string }> = [];
+  for (const [k, entry] of memorySecState) {
+    if (!k.startsWith(prefix)) continue;
+    if (entry.expiresAt < now) {
+      memorySecState.delete(k);
+      continue;
+    }
+    out.push({ key: k.slice(prefix.length), value: entry.value });
+  }
+  return out;
+}
+
+// ── Durable Priority Queue (sorted-set) ─────────────────────────────────────
+// 2026-10-01 (C2-lib, A6): generic queue semantics used by agentOperations to
+// persist the live-chat waiting queue. Redis ZSET (score = priority+timestamp)
+// is the durable store; the memory fallback follows this module's existing
+// pattern (development/single-instance only — log line below warns loudly in
+// that mode). Members are unique strings (JSON payloads); score ordering is
+// ascending (lowest score = head of queue).
+
+interface RedisSortedSetClient {
+  zadd(key: string, score: number, member: string): Promise<unknown>;
+  zrange(key: string, start: number, stop: number, ...withScores: string[]): Promise<unknown>;
+  zrem(key: string, member: string): Promise<unknown>;
+  zcard(key: string): Promise<unknown>;
+}
+
+const memorySortedSets = new Map<string, Map<string, number>>();
+
+export async function sortedSetAdd(key: string, score: number, member: string): Promise<void> {
+  const redis = (await getRedis()) as RedisSortedSetClient | null;
+  if (redis) {
+    try {
+      await redis.zadd(`sq:${key}`, score, member);
+      return;
+    } catch (err) {
+      logger.warn(`[DistributedState] Redis ZADD failed for sq:${key}, using memory fallback:: ${String(err)}`);
+    }
+  }
+  let set = memorySortedSets.get(key);
+  if (!set) {
+    set = new Map<string, number>();
+    memorySortedSets.set(key, set);
+  }
+  set.set(member, score);
+}
+
+/** Read all members ascending by score (queue head first). */
+export async function sortedSetRange(key: string): Promise<Array<{ member: string; score: number }>> {
+  const redis = (await getRedis()) as RedisSortedSetClient | null;
+  if (redis) {
+    try {
+      const raw = await redis.zrange(`sq:${key}`, 0, -1, "WITHSCORES");
+      const flat = raw as string[];
+      const out: Array<{ member: string; score: number }> = [];
+      for (let i = 0; i < flat.length; i += 2) {
+        out.push({ member: flat[i], score: Number(flat[i + 1]) });
+      }
+      return out;
+    } catch (err) {
+      logger.warn(`[DistributedState] Redis ZRANGE failed for sq:${key}, using memory fallback:: ${String(err)}`);
+    }
+  }
+  const set = memorySortedSets.get(key);
+  if (!set) return [];
+  return Array.from(set.entries())
+    .map(([member, score]) => ({ member, score }))
+    .sort((a, b) => a.score - b.score);
+}
+
+export async function sortedSetRemove(key: string, member: string): Promise<void> {
+  const redis = (await getRedis()) as RedisSortedSetClient | null;
+  if (redis) {
+    try {
+      await redis.zrem(`sq:${key}`, member);
+      return;
+    } catch (err) {
+      logger.warn(`[DistributedState] Redis ZREM failed for sq:${key}, using memory fallback:: ${String(err)}`);
+    }
+  }
+  memorySortedSets.get(key)?.delete(member);
+}
+
+export async function sortedSetSize(key: string): Promise<number> {
+  const redis = (await getRedis()) as RedisSortedSetClient | null;
+  if (redis) {
+    try {
+      return Number(await redis.zcard(`sq:${key}`));
+    } catch (err) {
+      logger.warn(`[DistributedState] Redis ZCARD failed for sq:${key}, using memory fallback:: ${String(err)}`);
+    }
+  }
+  return memorySortedSets.get(key)?.size ?? 0;
+}
+
 // ── Periodic cleanup for memory fallback maps ────────────────────────────────
 
 function cleanupMemoryStores(): void {
@@ -388,6 +639,13 @@ function cleanupMemoryStores(): void {
   for (const [key, timestamp] of memoryNonce) {
     if (typeof timestamp === "number" && timestamp < now) {
       memoryNonce.delete(key);
+    }
+  }
+
+  // Clean expired security-state entries (2026-10-01, C2-mw)
+  for (const [key, entry] of memorySecState) {
+    if (entry.expiresAt < now) {
+      memorySecState.delete(key);
     }
   }
 

@@ -1,4 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
+import { logger } from "../_core/logger";
+import { sortedSetAdd, sortedSetRange, sortedSetRemove } from "./distributedState";
+
 /**
  * Sprint 64 — Agent Operations Module
  * F11: Agent availability/presence tracking
@@ -113,6 +116,57 @@ const PRIORITY_ORDER: Record<QueuePriority, number> = {
   low: 3,
 };
 
+// ─── 2026-10-01 (C2-lib, A6): Redis-backed durability for the waiting queue ──
+// chatQueue stays the synchronous hot read path (public API unchanged), but
+// every mutation is write-through persisted to a Redis sorted set
+// ("sq:chatq:waiting" via distributedState) and hydrateChatQueue() restores it
+// after a restart — waiting customers are no longer silently dequeued on boot.
+// Score = priorityRank * 1e13 + enqueuedAt (epoch ms < 1e13 until year 2286),
+// so ascending ZRANGE order matches recomputeQueuePositions() ordering.
+const CHAT_QUEUE_STORE_KEY = "chatq:waiting";
+const PRIORITY_SCORE_BASE = 10_000_000_000_000; // 1e13
+
+// Tracks in-flight persistence ops so tests (and shutdown hooks) can flush.
+const pendingPersistOps = new Set<Promise<void>>();
+
+function trackPersist(op: Promise<void>): void {
+  pendingPersistOps.add(op);
+  op.catch(err => {
+    // Persistence failure is logged loudly; the entry remains in-memory only
+    // (same degraded mode as the rest of distributedState's memory fallback).
+    logger.error(`[AgentOps] Failed to persist chat queue entry to Redis:: ${String(err)}`);
+  }).finally(() => pendingPersistOps.delete(op));
+}
+
+function queueScore(entry: Pick<QueueEntry, "priority" | "enqueuedAt">): number {
+  return PRIORITY_ORDER[entry.priority] * PRIORITY_SCORE_BASE + entry.enqueuedAt;
+}
+
+/**
+ * Canonical persisted form of a queue entry. position/estimatedWaitMs are
+ * volatile derived fields (recomputed on every mutation) and MUST be excluded
+ * so the member string is stable between ZADD (enqueue) and ZREM (dequeue);
+ * positions are recomputed by hydrateChatQueue() on restore anyway.
+ */
+function canonicalQueueMember(entry: QueueEntry): string {
+  return JSON.stringify({
+    sessionId: entry.sessionId,
+    userId: entry.userId,
+    userName: entry.userName,
+    subject: entry.subject,
+    category: entry.category,
+    priority: entry.priority,
+    enqueuedAt: entry.enqueuedAt,
+    requiredSkill: entry.requiredSkill,
+    language: entry.language,
+  });
+}
+
+/** Await all in-flight queue persistence writes (test/shutdown hook). */
+export async function flushChatQueuePersistence(): Promise<void> {
+  await Promise.all(Array.from(pendingPersistOps));
+}
+
 export function enqueueChat(
   entry: Omit<QueueEntry, "position" | "estimatedWaitMs">
 ): QueueEntry {
@@ -123,6 +177,7 @@ export function enqueueChat(
   };
   chatQueue.push(queueEntry);
   recomputeQueuePositions();
+  trackPersist(sortedSetAdd(CHAT_QUEUE_STORE_KEY, queueScore(queueEntry), canonicalQueueMember(queueEntry)));
   return queueEntry;
 }
 
@@ -131,7 +186,39 @@ export function dequeueChat(sessionId: number): QueueEntry | undefined {
   if (idx === -1) return undefined;
   const [entry] = chatQueue.splice(idx, 1);
   recomputeQueuePositions();
+  trackPersist(sortedSetRemove(CHAT_QUEUE_STORE_KEY, canonicalQueueMember(entry)));
   return entry;
+}
+
+/**
+ * Restore the waiting queue from the durable store after a restart.
+ * Merges (dedup by sessionId) into the in-memory queue and recomputes
+ * positions. Returns the number of entries restored from the store.
+ * 2026-10-01 (C2-lib, A6): call this at server startup before accepting chats.
+ */
+export async function hydrateChatQueue(): Promise<number> {
+  const stored = await sortedSetRange(CHAT_QUEUE_STORE_KEY);
+  let restored = 0;
+  for (const { member } of stored) {
+    let entry: QueueEntry;
+    try {
+      // Persisted form excludes volatile derived fields; restore with zeros
+      // and let recomputeQueuePositions() assign real values below.
+      entry = { position: 0, estimatedWaitMs: 0, ...(JSON.parse(member) as QueueEntry) };
+    } catch {
+      logger.error("[AgentOps] Corrupt persisted chat queue entry — skipping (fail-closed, not fabricated)");
+      continue;
+    }
+    if (typeof entry.sessionId !== "number") continue;
+    if (chatQueue.some(e => e.sessionId === entry.sessionId)) continue;
+    chatQueue.push(entry);
+    restored++;
+  }
+  if (restored > 0) {
+    recomputeQueuePositions();
+    logger.info(`[AgentOps] Restored ${restored} waiting chat queue entries from durable store`);
+  }
+  return restored;
 }
 
 export function getQueueStatus(): {
@@ -182,6 +269,9 @@ export interface SurveyResponse {
   submittedAt: number;
 }
 
+// 2026-10-01 (C2-lib): DEFERRED — surveyStore is persistence-audit row A5,
+// still in-memory. Fix requires a NEW drizzle table (csat_surveys) and
+// drizzle/schema.ts is owned by a concurrent agent this round; scheduled next round.
 const surveyStore: SurveyResponse[] = [];
 
 export function submitSurvey(

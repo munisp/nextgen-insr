@@ -194,22 +194,37 @@ export const zodSchemas = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Rate Limiting Helper
 // ═══════════════════════════════════════════════════════════════════════════════
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+// 2026-10-01 (C2-mw, B7): the per-key rate-limit counters moved from a
+// module-level Map to Redis via distributedState secState* (namespace
+// "sanitizer-rl") — limits used to reset on every restart. On Redis outage
+// the store falls back to in-memory (logged loudly); availability is
+// prioritized over fail-closed for rate limiting.
+import { secStateGet, secStateSet } from "./distributedState";
 
-export function checkRateLimit(
+const RL_NS = "sanitizer-rl";
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+export async function checkRateLimit(
   key: string,
   maxRequests: number,
   windowMs: number
-): { allowed: boolean; remaining: number; resetAt: number } {
+): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
   const now = Date.now();
-  const entry = rateLimitStore.get(key);
+  const raw = await secStateGet(RL_NS, key);
+  const stored = raw ? (JSON.parse(raw) as RateLimitEntry) : null;
+  const entry = stored && now < stored.resetAt ? stored : null;
 
-  if (!entry || now >= entry.resetAt) {
-    rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+  if (!entry) {
+    const fresh: RateLimitEntry = { count: 1, resetAt: now + windowMs };
+    await secStateSet(RL_NS, key, JSON.stringify(fresh), Math.ceil(windowMs / 1000) + 30);
     return {
       allowed: true,
       remaining: maxRequests - 1,
-      resetAt: now + windowMs,
+      resetAt: fresh.resetAt,
     };
   }
 
@@ -218,6 +233,12 @@ export function checkRateLimit(
   }
 
   entry.count++;
+  await secStateSet(
+    RL_NS,
+    key,
+    JSON.stringify(entry),
+    Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) + 30
+  );
   return {
     allowed: true,
     remaining: maxRequests - entry.count,
@@ -225,40 +246,31 @@ export function checkRateLimit(
   };
 }
 
-// Cleanup expired entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of Array.from(rateLimitStore)) {
-    if (now >= entry.resetAt) rateLimitStore.delete(key);
-  }
-}, 60000);
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CSRF Token Management
 // ═══════════════════════════════════════════════════════════════════════════════
+// 2026-10-01 (C2-mw, B6): CSRF tokens consolidated onto the Redis-backed
+// store in distributedState (csrfStore/csrfValidate, memoryCsrf fallback at
+// distributedState.ts:100) — the duplicate module-level Map here was deleted
+// rather than duplicated. Active sessions no longer fail CSRF validation
+// after a restart when Redis is up. validateCsrfToken keeps its session-long
+// (non-consuming) semantics via csrfValidate's { consume: false } option.
+import { csrfStore, csrfValidate } from "./distributedState";
 
-const csrfTokens = new Map<string, { token: string; expiresAt: number }>();
+const CSRF_TTL_MS = 3_600_000; // 1 hour
 
-export function generateCsrfToken(sessionId: string): string {
+export async function generateCsrfToken(sessionId: string): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
-  csrfTokens.set(sessionId, { token, expiresAt: Date.now() + 3600000 }); // 1 hour
+  await csrfStore(sessionId, token, CSRF_TTL_MS);
   return token;
 }
 
-export function validateCsrfToken(sessionId: string, token: string): boolean {
-  const entry = csrfTokens.get(sessionId);
-  if (!entry) return false;
-  if (Date.now() >= entry.expiresAt) {
-    csrfTokens.delete(sessionId);
-    return false;
-  }
-  return crypto.timingSafeEqual(Buffer.from(entry.token), Buffer.from(token));
+export async function validateCsrfToken(
+  sessionId: string,
+  token: string
+): Promise<boolean> {
+  // Lengths must match for timingSafeEqual semantics; the store compare is
+  // exact-match. Session-long tokens are NOT consumed on use.
+  if (token.length !== 64) return false;
+  return csrfValidate(sessionId, token, { consume: false });
 }
-
-// Cleanup expired CSRF tokens
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of Array.from(csrfTokens)) {
-    if (now >= entry.expiresAt) csrfTokens.delete(key);
-  }
-}, 300000);

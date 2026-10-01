@@ -6451,3 +6451,119 @@ export const ratingFactors = pgTable(
   })
 );
 export type RatingFactor = typeof ratingFactors.$inferSelect;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Class-B security-state persistence fixes (2026-10-01, C2-mw) — see
+// persistence-audit.md rows B2, B3, B5. These tables replace module-level
+// in-memory Maps that silently lost liveness fraud evidence, geo-IP
+// correlation risk signals, and the trusted-device registry on every process
+// restart.
+
+/**
+ * B2: Rolling liveness-attempt history per device fingerprint (fraud
+ * evidence). One row per device fingerprint; `attempts` holds the last 50
+ * attempts (rolling window enforced by
+ * server/middleware/livenessSecurityEnhancements.ts).
+ */
+export const deviceLivenessAttempts = pgTable(
+  "device_liveness_attempts",
+  {
+    id: serial("id").primaryKey(),
+    fingerprintHash: varchar("fingerprintHash", { length: 64 }).notNull(),
+    deviceModel: varchar("deviceModel", { length: 256 }).notNull(),
+    attempts: jsonb("attempts")
+      .$type<
+        Array<{
+          timestamp: number;
+          passed: boolean;
+          method: string;
+          score: number;
+        }>
+      >()
+      .notNull(),
+    successRate: numeric("successRate", { precision: 7, scale: 4 }).notNull(),
+    avgScore: numeric("avgScore", { precision: 7, scale: 4 }).notNull(),
+    lastSeen: timestamp("lastSeen").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    fingerprintUnique: uniqueIndex("dla_fingerprint_unique").on(
+      t.fingerprintHash
+    ),
+    lastSeenIdx: index("dla_last_seen_idx").on(t.lastSeen),
+  })
+);
+export type DeviceLivenessAttempt = typeof deviceLivenessAttempts.$inferSelect;
+
+/**
+ * B3: Geo-IP correlation per (userId, deviceFingerprint) — compliance/fraud
+ * signal. One row per pair; `locations` holds the last 20 observed
+ * geo-locations (rolling window enforced by the middleware).
+ */
+export const geoIpCorrelations = pgTable(
+  "geo_ip_correlations",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("userId", { length: 128 }).notNull(),
+    deviceFingerprint: varchar("deviceFingerprint", { length: 256 }).notNull(),
+    locations: jsonb("locations")
+      .$type<
+        Array<{
+          geo: {
+            ip: string;
+            country: string;
+            region: string;
+            city: string;
+            lat: number;
+            lon: number;
+            isp: string;
+            isVpn: boolean;
+            isProxy: boolean;
+            isTor: boolean;
+            isDatacenter: boolean;
+          };
+          timestamp: number;
+        }>
+      >()
+      .notNull(),
+    riskScore: integer("riskScore").notNull(),
+    flags: jsonb("flags").$type<string[]>().notNull(),
+    lastChecked: timestamp("lastChecked").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    userDeviceUnique: uniqueIndex("gic_user_device_unique").on(
+      t.userId,
+      t.deviceFingerprint
+    ),
+    riskIdx: index("gic_risk_idx").on(t.riskScore),
+    userIdx: index("gic_user_idx").on(t.userId),
+  })
+);
+export type GeoIpCorrelationRow = typeof geoIpCorrelations.$inferSelect;
+
+/**
+ * B5: Trusted-device registry (trust data, not cache). A restart that
+ * forgets known devices turns every trusted device into a "new device"
+ * fraud signal.
+ */
+export const knownDevices = pgTable(
+  "known_devices",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("userId", { length: 128 }).notNull(),
+    fingerprint: varchar("fingerprint", { length: 256 }).notNull(),
+    firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+    lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  },
+  t => ({
+    userDeviceUnique: uniqueIndex("kd_user_device_unique").on(
+      t.userId,
+      t.fingerprint
+    ),
+    userIdx: index("kd_user_idx").on(t.userId),
+  })
+);
+export type KnownDevice = typeof knownDevices.$inferSelect;

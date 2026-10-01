@@ -79,14 +79,14 @@ type StoredCredential struct {
 	LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
 }
 
-// ─── In-memory stores (replace with PostgreSQL in production) ─────────────────
-
-var (
-	mu           sync.RWMutex
-	userStore    = map[string]*User{}
-	sessionStore = map[string]*webauthn.SessionData{}
-	credStore    = map[string]*StoredCredential{}
-)
+// ─── Persistence ────────────────────────────────────────────────────────────
+//
+// 2026-10-01 (C2-fido2, audit item A8): the former in-memory
+// userStore/sessionStore/credStore maps are REMOVED. Postgres (see store.go)
+// is the authoritative store for users, credentials and ceremony sessions;
+// restart no longer destroys registered passkeys. Fail-closed: boot aborts if
+// PG is unreachable, and ceremony handlers return explicit 5xx errors on any
+// store failure — there is no silent memory-only fallback.
 
 // ─── WebAuthn instance ────────────────────────────────────────────────────────
 
@@ -135,29 +135,30 @@ func randomID() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
+// requireAdminKey gates admin endpoints. Fail-CLOSED (2026-10-02,
+// C2-fido2-fix): when FIDO2_ADMIN_KEY is unset/empty every admin request is
+// DENIED — the previous "allow in dev" behaviour was a fail-open authz check
+// and is removed. A loud warning is emitted at boot (see warnIfAdminKeyUnset).
 func requireAdminKey(r *http.Request) bool {
 	adminKey := os.Getenv("FIDO2_ADMIN_KEY")
 	if adminKey == "" {
-		return true // allow in dev
+		return false // fail-closed: no key configured → no admin access
 	}
 	return r.Header.Get("X-Admin-Key") == adminKey
 }
 
-// getOrCreateUser finds or creates a user in the in-memory store.
-func getOrCreateUser(userID, userName, displayName string) *User {
-	mu.Lock()
-	defer mu.Unlock()
-	if u, ok := userStore[userID]; ok {
-		return u
+// warnIfAdminKeyUnset logs a loud boot warning when the admin key is not
+// configured, since all admin-gated endpoints will deny every request.
+func warnIfAdminKeyUnset() {
+	if os.Getenv("FIDO2_ADMIN_KEY") == "" {
+		log.Printf("[FIDO2] WARNING: FIDO2_ADMIN_KEY is not set — all admin endpoints (credential revocation, legacy CRUD, stats) will DENY every request (fail-closed). Set FIDO2_ADMIN_KEY to enable them.")
 	}
-	u := &User{
-		ID:          []byte(userID),
-		Name:        userName,
-		DisplayName: displayName,
-		Credentials: []webauthn.Credential{},
-	}
-	userStore[userID] = u
-	return u
+}
+
+// getOrCreateUser finds or creates a user in Postgres (authoritative store;
+// credentials loaded from PG). Fail-closed: returns error on DB failure.
+func getOrCreateUser(ctx context.Context, userID, userName, displayName string) (*User, error) {
+	return store.ensureUser(ctx, userID, userName, displayName)
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -276,10 +277,37 @@ func isPQClientError(err error) bool {
 	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
 }
 
+// writeDBError logs the raw DB error server-side and returns a GENERIC
+// message to the client — raw pq error text (schema details, constraint
+// names) must not leak over the wire. 2026-10-02 (C2-fido2-fix): wires the
+// previously unused isPQClientError helper.
+func writeDBError(w http.ResponseWriter, op string, err error) {
+	log.Printf("[FIDO2] %s DB error: %v", op, err)
+	if isPQClientError(err) {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	http.Error(w, `{"error":"internal database error"}`, http.StatusInternalServerError)
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	rpID := os.Getenv("FIDO2_RP_ID")
 	if rpID == "" {
 		rpID = "localhost"
+	}
+	// Fail-closed liveness (2026-10-01, C2-fido2): PG is the authoritative
+	// store; report unhealthy when it is unreachable so orchestrators drain
+	// this instance instead of serving ceremonies that cannot persist.
+	// 2026-10-02 (C2-fido2-fix): bounded 5s ping timeout.
+	pingCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":  "unavailable",
+			"service": "insureportal-fido2",
+			"error":   "database unreachable",
+		})
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    "ok",
@@ -310,7 +338,12 @@ func handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := getOrCreateUser(req.UserID, req.UserName, req.DisplayName)
+	user, err := getOrCreateUser(r.Context(), req.UserID, req.UserName, req.DisplayName)
+	if err != nil {
+		log.Printf("[FIDO2] ensure user error: %v", err)
+		writeError(w, http.StatusInternalServerError, "user store unavailable")
+		return
+	}
 
 	// Use registration options with resident key preference
 	options, sessionData, err := wauth.BeginRegistration(
@@ -327,9 +360,13 @@ func handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := randomID()
-	mu.Lock()
-	sessionStore[sessionID] = sessionData
-	mu.Unlock()
+	// Fail-closed (2026-10-01, C2-fido2): the ceremony challenge MUST be
+	// durably stored before we answer; otherwise finish would be impossible.
+	if err := store.saveSession(r.Context(), sessionID, sessionData); err != nil {
+		log.Printf("[FIDO2] saveSession error: %v", err)
+		writeError(w, http.StatusInternalServerError, "session store unavailable")
+		return
+	}
 
 	w.Header().Set("X-Session-ID", sessionID)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -352,10 +389,13 @@ func handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mu.RLock()
-	sessionData, ok := sessionStore[sessionID]
-	mu.RUnlock()
-	if !ok {
+	sessionData, err := store.getSession(r.Context(), sessionID)
+	if err != nil {
+		log.Printf("[FIDO2] getSession error: %v", err)
+		writeError(w, http.StatusInternalServerError, "session store unavailable")
+		return
+	}
+	if sessionData == nil {
 		writeError(w, http.StatusBadRequest, "session not found or expired")
 		return
 	}
@@ -366,10 +406,13 @@ func handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mu.RLock()
-	user, exists := userStore[userID]
-	mu.RUnlock()
-	if !exists {
+	user, err := store.getUser(r.Context(), userID)
+	if err != nil {
+		log.Printf("[FIDO2] getUser error: %v", err)
+		writeError(w, http.StatusInternalServerError, "user store unavailable")
+		return
+	}
+	if user == nil {
 		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
@@ -387,22 +430,13 @@ func handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		transports[i] = string(t)
 	}
 
-	stored := &StoredCredential{
-		ID:           randomID(),
-		UserID:       userID,
-		CredentialID: credID,
-		PublicKey:    base64.URLEncoding.EncodeToString(credential.PublicKey),
-		Counter:      credential.Authenticator.SignCount,
-		DeviceType:   "platform",
-		Transports:   transports,
-		CreatedAt:    time.Now(),
+	createdAt := time.Now()
+	// Write-through to PG (authoritative). Fail-closed: no 201 unless durable.
+	if err := store.saveCredential(r.Context(), userID, credential, "platform", createdAt); err != nil {
+		log.Printf("[FIDO2] saveCredential error: %v", err)
+		writeError(w, http.StatusInternalServerError, "credential store unavailable")
+		return
 	}
-
-	mu.Lock()
-	user.Credentials = append(user.Credentials, *credential)
-	credStore[credID] = stored
-	delete(sessionStore, sessionID)
-	mu.Unlock()
 
 	log.Printf("[FIDO2] Registered credential for user %s: %s...", userID, credID[:min(12, len(credID))])
 
@@ -410,7 +444,7 @@ func handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		"success":      true,
 		"credentialId": credID,
 		"transports":   transports,
-		"createdAt":    stored.CreatedAt,
+		"createdAt":    createdAt,
 	})
 }
 
@@ -431,10 +465,13 @@ func handleAuthBegin(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if req.UserID != "" {
-		mu.RLock()
-		user, exists := userStore[req.UserID]
-		mu.RUnlock()
-		if !exists {
+		user, uerr := store.getUser(r.Context(), req.UserID)
+		if uerr != nil {
+			log.Printf("[FIDO2] getUser error: %v", uerr)
+			writeError(w, http.StatusInternalServerError, "user store unavailable")
+			return
+		}
+		if user == nil {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
@@ -451,9 +488,12 @@ func handleAuthBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := randomID()
-	mu.Lock()
-	sessionStore[sessionID] = sessionData
-	mu.Unlock()
+	// Fail-closed (2026-10-01, C2-fido2): challenge must be durable before reply.
+	if err := store.saveSession(r.Context(), sessionID, sessionData); err != nil {
+		log.Printf("[FIDO2] saveSession error: %v", err)
+		writeError(w, http.StatusInternalServerError, "session store unavailable")
+		return
+	}
 
 	w.Header().Set("X-Session-ID", sessionID)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -476,10 +516,13 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mu.RLock()
-	sessionData, ok := sessionStore[sessionID]
-	mu.RUnlock()
-	if !ok {
+	sessionData, err := store.getSession(r.Context(), sessionID)
+	if err != nil {
+		log.Printf("[FIDO2] getSession error: %v", err)
+		writeError(w, http.StatusInternalServerError, "session store unavailable")
+		return
+	}
+	if sessionData == nil {
 		writeError(w, http.StatusBadRequest, "session not found or expired")
 		return
 	}
@@ -487,13 +530,15 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("userId")
 
 	var credential *webauthn.Credential
-	var err error
 
 	if userID != "" {
-		mu.RLock()
-		user, exists := userStore[userID]
-		mu.RUnlock()
-		if !exists {
+		user, uerr := store.getUser(r.Context(), userID)
+		if uerr != nil {
+			log.Printf("[FIDO2] getUser error: %v", uerr)
+			writeError(w, http.StatusInternalServerError, "user store unavailable")
+			return
+		}
+		if user == nil {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
@@ -502,18 +547,13 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 		// Discoverable flow
 		credential, err = wauth.FinishDiscoverableLogin(
 			func(rawID, userHandle []byte) (webauthn.User, error) {
-				credID := base64.URLEncoding.EncodeToString(rawID)
-				mu.RLock()
-				stored, ok := credStore[credID]
-				mu.RUnlock()
-				if !ok {
-					return nil, fmt.Errorf("credential not found")
+				// PG is authoritative (2026-10-01, C2-fido2).
+				user, uerr := store.getUserByCredentialID(r.Context(), rawID)
+				if uerr != nil {
+					return nil, uerr
 				}
-				mu.RLock()
-				user, exists := userStore[stored.UserID]
-				mu.RUnlock()
-				if !exists {
-					return nil, fmt.Errorf("user not found")
+				if user == nil {
+					return nil, fmt.Errorf("credential not found")
 				}
 				return user, nil
 			},
@@ -530,16 +570,18 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 
 	credID := base64.URLEncoding.EncodeToString(credential.ID)
 	now := time.Now()
-	mu.Lock()
-	if stored, ok := credStore[credID]; ok {
-		stored.Counter = credential.Authenticator.SignCount
-		stored.LastUsedAt = &now
-		if userID == "" {
-			userID = stored.UserID
-		}
+	// Fail-closed counter update: the durable sign_count/last_used_at must be
+	// written before we report success, else cloned-authenticator detection
+	// silently degrades after restart.
+	ownerID, terr := store.touchCredential(r.Context(), credential.ID, credential.Authenticator.SignCount, credential.Authenticator.CloneWarning, now)
+	if terr != nil {
+		log.Printf("[FIDO2] touchCredential error: %v", terr)
+		writeError(w, http.StatusInternalServerError, "credential store unavailable")
+		return
 	}
-	delete(sessionStore, sessionID)
-	mu.Unlock()
+	if userID == "" {
+		userID = ownerID
+	}
 
 	log.Printf("[FIDO2] Authenticated user %s via credential %s...", userID, credID[:min(12, len(credID))])
 
@@ -561,17 +603,11 @@ func handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
 	userID := parts[len(parts)-1]
 
-	mu.RLock()
-	defer mu.RUnlock()
-
-	var creds []*StoredCredential
-	for _, c := range credStore {
-		if c.UserID == userID {
-			creds = append(creds, c)
-		}
-	}
-	if creds == nil {
-		creds = []*StoredCredential{}
+	creds, err := store.listCredentials(r.Context(), userID)
+	if err != nil {
+		log.Printf("[FIDO2] listCredentials error: %v", err)
+		writeError(w, http.StatusInternalServerError, "credential store unavailable")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -595,49 +631,60 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
 	credID := parts[len(parts)-1]
 
-	mu.Lock()
-	defer mu.Unlock()
-
-	stored, ok := credStore[credID]
-	if !ok {
+	// PG delete is authoritative (2026-10-01, C2-fido2).
+	ownerID, found, err := store.deleteCredential(r.Context(), credID)
+	if err != nil {
+		log.Printf("[FIDO2] deleteCredential error: %v", err)
+		writeError(w, http.StatusInternalServerError, "credential store unavailable")
+		return
+	}
+	if !found {
 		writeError(w, http.StatusNotFound, "credential not found")
 		return
 	}
 
-	// Remove from user's credential list
-	if user, exists := userStore[stored.UserID]; exists {
-		newCreds := make([]webauthn.Credential, 0, len(user.Credentials))
-		for _, c := range user.Credentials {
-			if base64.URLEncoding.EncodeToString(c.ID) != credID {
-				newCreds = append(newCreds, c)
-			}
-		}
-		user.Credentials = newCreds
-	}
-
-	delete(credStore, credID)
-	log.Printf("[FIDO2] Revoked credential %s... for user %s", credID[:min(12, len(credID))], stored.UserID)
+	log.Printf("[FIDO2] Revoked credential %s... for user %s", credID[:min(12, len(credID))], ownerID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
 		"credentialId": credID,
-		"userId":       stored.UserID,
+		"userId":       ownerID,
 	})
 }
 
 // ─── Session cleanup goroutine ────────────────────────────────────────────────
 
+// startSessionCleaner sweeps expired ceremony sessions from PG every minute.
+// Expired rows are also rejected at read time (getSession filters on
+// expires_at), so a missed sweep never extends a challenge's lifetime.
+// 2026-10-01 (C2-fido2): previously this only logged the in-memory map size.
 func startSessionCleaner() {
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
+		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			mu.RLock()
-			n := len(sessionStore)
-			mu.RUnlock()
-			log.Printf("[FIDO2] Session store size: %d", n)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			n, err := store.cleanupExpiredSessions(ctx)
+			cancel()
+			if err != nil {
+				log.Printf("[FIDO2] session cleanup error: %v", err)
+			} else if n > 0 {
+				log.Printf("[FIDO2] session cleanup: removed %d expired sessions", n)
+			}
 		}
 	}()
+}
+
+// adminGate wraps an admin endpoint with the (fail-closed) admin-key check.
+// 2026-10-02 (C2-fido2-fix).
+func adminGate(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminKey(r) {
+			writeError(w, http.StatusUnauthorized, "admin key required")
+			return
+		}
+		next(w, r)
+	}
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -652,12 +699,6 @@ func newRouter() http.Handler {
 	mux.HandleFunc("/api/v1/fido2/authenticate/finish", handleAuthFinish)
 	mux.HandleFunc("/api/v1/fido2/credentials/", func(w http.ResponseWriter, r *http.Request) {
 
-		mux.HandleFunc("/api/v1/fido2_credentials", handleListEntities)
-		mux.HandleFunc("/api/v1/fido2_credential", handleGetEntity)
-		mux.HandleFunc("/api/v1/fido2_credentials/create", handleCreateEntity)
-		mux.HandleFunc("/api/v1/fido2_credentials/delete", handleDeleteEntity)
-		mux.HandleFunc("/stats", handleStats)
-
 		switch r.Method {
 		case http.MethodGet:
 			handleListCredentials(w, r)
@@ -667,6 +708,17 @@ func newRouter() http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})
+
+	// Debug/admin CRUD endpoints. 2026-10-01 (C2-fido2): registered at router
+	// construction — previously these were registered inside the credentials
+	// closure on every request, panicking with duplicate-pattern registration.
+	// 2026-10-02 (C2-fido2-fix): ALL of these are admin-gated — they read and
+	// DELETE credential rows and previously had no authentication at all.
+	mux.HandleFunc("/api/v1/fido2_credentials", adminGate(handleListEntities))
+	mux.HandleFunc("/api/v1/fido2_credential", adminGate(handleGetEntity))
+	mux.HandleFunc("/api/v1/fido2_credentials/create", adminGate(handleCreateEntity))
+	mux.HandleFunc("/api/v1/fido2_credentials/delete", adminGate(handleDeleteEntity))
+	mux.HandleFunc("/stats", adminGate(handleStats))
 
 	return mux
 }
@@ -759,6 +811,9 @@ func (c *circuitBreaker) recordFailure() {
 	}
 }
 
+// initDB connects to Postgres, verifies connectivity, and runs the store DDL.
+// Fail-closed (2026-10-01, C2-fido2): any failure is fatal — the service must
+// never run with credentials/sessions in volatile process memory again.
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -767,27 +822,22 @@ func initDB() {
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Printf("database connection failed: %s", err.Error())
-		return
+		log.Fatalf("FATAL: database connection failed: %s", err.Error())
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fido2_credentials (
-		id SERIAL PRIMARY KEY,
-		name TEXT,
-		status TEXT DEFAULT 'active',
-		data JSONB DEFAULT '{}',
-		created_at TIMESTAMPTZ DEFAULT NOW()
-	)`); err != nil {
-		log.Printf("create table failed: %s", err.Error())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("FATAL: database ping failed (fail-closed, refusing to start): %s", err.Error())
 	}
-	if err := db.Ping(); err != nil {
-		log.Printf("database ping failed: %s", err.Error())
-	} else {
-		log.Printf("database connected: fido2-service")
+	if err := initStore(ctx); err != nil {
+		log.Fatalf("FATAL: store init failed (fail-closed, refusing to start): %s", err.Error())
 	}
+	log.Printf("database connected: fido2-service (Postgres authoritative store)")
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
@@ -806,12 +856,12 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 
 	var total int
 	if err := db.QueryRow("SELECT COUNT(*) FROM fido2_credentials").Scan(&total); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "list credentials(count)", err)
 		return
 	}
-	rows, err := db.Query(fmt.Sprintf("SELECT id, name, status, data, created_at FROM fido2_credentials ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, name, status, data, created_at FROM fido2_credentials ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "list credentials", err)
 		return
 	}
 	defer func() { _ = rows.Close() }()
@@ -852,7 +902,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := db.Query("SELECT id, name, status, data, created_at FROM fido2_credentials WHERE id = $1", idStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "get credential", err)
 		return
 	}
 	defer func() { _ = rows.Close() }()
@@ -867,7 +917,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		ptrs[i] = &vals[i]
 	}
 	if err := rows.Scan(ptrs...); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "get credential(scan)", err)
 		return
 	}
 	row := make(map[string]interface{})
@@ -923,7 +973,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 	var newID interface{}
 	if err := db.QueryRow(query, vals...).Scan(&newID); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "create credential", err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -943,7 +993,7 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := db.Exec("DELETE FROM fido2_credentials WHERE id = $1", idStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		writeDBError(w, "delete credential", err)
 		return
 	}
 	n, _ := result.RowsAffected()
@@ -964,6 +1014,12 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Fail-closed boot (2026-10-01, C2-fido2): PG must be reachable and the
+	// schema installed BEFORE we accept any ceremony traffic. initDB was
+	// previously never called, leaving db=nil.
+	initDB()
+	warnIfAdminKeyUnset() // 2026-10-02 (C2-fido2-fix): loud fail-closed notice
+
 	if err := initWebAuthn(); err != nil {
 		log.Fatalf("[FIDO2] WebAuthn init error: %v", err)
 	}

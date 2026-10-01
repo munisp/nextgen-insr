@@ -8,7 +8,52 @@
  * 5. Geo-IP Correlation: Cross-reference device fingerprint + IP for fraud detection
  */
 
+import { and, eq } from "drizzle-orm";
+
 import { notifyOwner } from "../_core/notification.js";
+import { getDb } from "../db.js";
+import {
+  deviceLivenessAttempts,
+  geoIpCorrelations,
+} from "../../drizzle/schema";
+import {
+  secStateDelete,
+  secStateGet,
+  secStateList,
+  secStateSet,
+} from "../lib/distributedState";
+
+// 2026-10-01 (C2-mw): Class-B persistence fixes (audit rows B1/B2/B3).
+// The module-level Maps that used to hold lockouts, device liveness history,
+// and geo-IP correlations lost all security state on restart (a brute-force
+// bypass for lockouts; evidence loss for the fraud/compliance stores).
+//  - B1 cooldowns   -> Redis via server/lib/distributedState.ts secState*
+//  - B2 device hist -> PG table device_liveness_attempts
+//  - B3 geo corr    -> PG table geo_ip_correlations
+// PG-backed stores are FAIL-CLOSED: if the database is unavailable the
+// functions throw instead of silently dropping fraud evidence.
+//
+// Test hook: PGlite harnesses inject a real (in-process Postgres) drizzle
+// instance via __setLivenessPersistenceDbForTesting. This is NOT a mock —
+// queries execute against a real database.
+type LivenessDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+let testDbOverride: LivenessDb | null = null;
+
+export function __setLivenessPersistenceDbForTesting(db: unknown): void {
+  testDbOverride = (db as LivenessDb | null) ?? null;
+}
+
+async function resolveDb(): Promise<LivenessDb> {
+  if (testDbOverride) return testDbOverride;
+  const db = await getDb();
+  if (!db) {
+    // Fail-closed (2026-10-01, C2-mw): never silently drop security evidence.
+    throw new Error(
+      "Liveness security persistence unavailable: database connection required"
+    );
+  }
+  return db;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. RETRY COOLDOWN
@@ -22,18 +67,33 @@ interface CooldownEntry {
 
 const COOLDOWN_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_FAILURES_BEFORE_LOCK = 3;
+const FAILURE_STALENESS_MS = 30 * 60 * 1000; // failures older than this reset
 
-// In-memory store (production: use Redis)
-const cooldownStore = new Map<string, CooldownEntry>();
+// 2026-10-01 (C2-mw, B1): cooldowns are stored in Redis (namespace
+// "liveness-cooldown") via distributedState secState* primitives so lockouts
+// survive restarts and are shared across instances. If Redis is unavailable
+// the store falls back to in-memory (logged loudly) — availability is
+// prioritized, but a lockout WRITE that fails on all backends throws.
+const COOLDOWN_NS = "liveness-cooldown";
+
+function cooldownTtlSeconds(entry: CooldownEntry): number {
+  const now = Date.now();
+  if (entry.lockedUntil && entry.lockedUntil > now) {
+    return Math.ceil((entry.lockedUntil - now) / 1000) + 60;
+  }
+  // Unlocked entries only matter while failures are fresh
+  return Math.ceil(FAILURE_STALENESS_MS / 1000) + 60;
+}
 
 /** Check if a user/agent is currently locked out */
-export function isLockedOut(userId: string): {
+export async function isLockedOut(userId: string): Promise<{
   locked: boolean;
   remainingMs: number;
   failures: number;
-} {
-  const entry = cooldownStore.get(userId);
-  if (!entry) return { locked: false, remainingMs: 0, failures: 0 };
+}> {
+  const raw = await secStateGet(COOLDOWN_NS, userId);
+  if (!raw) return { locked: false, remainingMs: 0, failures: 0 };
+  const entry = JSON.parse(raw) as CooldownEntry;
 
   if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
     return {
@@ -45,7 +105,7 @@ export function isLockedOut(userId: string): {
 
   // Lock expired — reset
   if (entry.lockedUntil && Date.now() >= entry.lockedUntil) {
-    cooldownStore.delete(userId);
+    await secStateDelete(COOLDOWN_NS, userId);
     return { locked: false, remainingMs: 0, failures: 0 };
   }
 
@@ -53,21 +113,20 @@ export function isLockedOut(userId: string): {
 }
 
 /** Record a liveness failure and potentially trigger lockout */
-export function recordLivenessFailure(userId: string): {
+export async function recordLivenessFailure(userId: string): Promise<{
   locked: boolean;
   remainingMs: number;
   failures: number;
-} {
-  const entry = cooldownStore.get(userId) ?? {
-    failures: 0,
-    lastFailureAt: 0,
-    lockedUntil: null,
-  };
+}> {
+  const raw = await secStateGet(COOLDOWN_NS, userId);
+  const entry: CooldownEntry = raw
+    ? (JSON.parse(raw) as CooldownEntry)
+    : { failures: 0, lastFailureAt: 0, lockedUntil: null };
 
   // If previous failures are stale (>30 minutes old), reset
   if (
     entry.lastFailureAt &&
-    Date.now() - entry.lastFailureAt > 30 * 60 * 1000
+    Date.now() - entry.lastFailureAt > FAILURE_STALENESS_MS
   ) {
     entry.failures = 0;
   }
@@ -77,6 +136,15 @@ export function recordLivenessFailure(userId: string): {
 
   if (entry.failures >= MAX_FAILURES_BEFORE_LOCK) {
     entry.lockedUntil = Date.now() + COOLDOWN_DURATION_MS;
+
+    // Persist BEFORE returning — a write failure surfaces as a thrown error
+    // so callers never treat an unpersisted lockout as enforced (C2-mw).
+    await secStateSet(
+      COOLDOWN_NS,
+      userId,
+      JSON.stringify(entry),
+      cooldownTtlSeconds(entry)
+    );
 
     // Phase 4: Notify admin of lockout (fire-and-forget)
     notifyOwner({
@@ -89,7 +157,6 @@ export function recordLivenessFailure(userId: string): {
     }).catch(() => {
       /* notification failure is non-critical */
     });
-    cooldownStore.set(userId, entry);
     return {
       locked: true,
       remainingMs: COOLDOWN_DURATION_MS,
@@ -97,39 +164,42 @@ export function recordLivenessFailure(userId: string): {
     };
   }
 
-  cooldownStore.set(userId, entry);
+  await secStateSet(
+    COOLDOWN_NS,
+    userId,
+    JSON.stringify(entry),
+    cooldownTtlSeconds(entry)
+  );
   return { locked: false, remainingMs: 0, failures: entry.failures };
 }
 
 /** Record a successful liveness check — resets the failure counter */
-export function recordLivenessSuccess(userId: string): void {
-  cooldownStore.delete(userId);
+export async function recordLivenessSuccess(userId: string): Promise<void> {
+  await secStateDelete(COOLDOWN_NS, userId);
 }
 
 /** Get cooldown status for admin monitoring */
-export function getCooldownStatus(): {
-  userId: string;
-  failures: number;
-  lockedUntil: number | null;
-}[] {
-  const results: {
+export async function getCooldownStatus(): Promise<
+  {
     userId: string;
     failures: number;
     lockedUntil: number | null;
-  }[] = [];
-  for (const [userId, entry] of cooldownStore.entries()) {
-    results.push({
-      userId,
+  }[]
+> {
+  const entries = await secStateList(COOLDOWN_NS);
+  return entries.map(({ key, value }) => {
+    const entry = JSON.parse(value) as CooldownEntry;
+    return {
+      userId: key,
       failures: entry.failures,
       lockedUntil: entry.lockedUntil,
-    });
-  }
-  return results;
+    };
+  });
 }
 
 /** Clear cooldown for a specific user (admin action) */
-export function clearCooldown(userId: string): boolean {
-  return cooldownStore.delete(userId);
+export async function clearCooldown(userId: string): Promise<boolean> {
+  return secStateDelete(COOLDOWN_NS, userId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -452,7 +522,8 @@ const DEVICE_PROFILES: Record<string, Partial<DeviceThresholdProfile>> = {
   },
 };
 
-// Device liveness history for adaptive learning
+// 2026-10-01 (C2-mw, B2): replaced by PG-backed functions below; the
+// DeviceLivenessHistory interface is retained as the public read model.
 interface DeviceLivenessHistory {
   fingerprint: string;
   deviceModel: string;
@@ -467,7 +538,114 @@ interface DeviceLivenessHistory {
   lastSeen: number;
 }
 
-const deviceHistoryStore = new Map<string, DeviceLivenessHistory>();
+// 2026-10-01 (C2-mw, B2): device liveness history is fraud evidence and is
+// now durable in the PG table `device_liveness_attempts` (one row per device
+// fingerprint, rolling 50-attempt window preserved). FAIL-CLOSED: a missing
+// database throws instead of silently dropping evidence.
+interface DeviceAttempt {
+  timestamp: number;
+  passed: boolean;
+  method: string;
+  score: number;
+}
+
+function rowToDeviceHistory(row: {
+  fingerprintHash: string;
+  deviceModel: string;
+  attempts: DeviceAttempt[];
+  successRate: string;
+  avgScore: string;
+  lastSeen: Date;
+}): DeviceLivenessHistory {
+  return {
+    fingerprint: row.fingerprintHash,
+    deviceModel: row.deviceModel,
+    attempts: row.attempts,
+    successRate: parseFloat(row.successRate),
+    avgScore: parseFloat(row.avgScore),
+    lastSeen: row.lastSeen.getTime(),
+  };
+}
+
+/** Record a liveness attempt for a device (for adaptive learning) */
+export async function recordDeviceLivenessAttempt(
+  fingerprint: DeviceFingerprint,
+  passed: boolean,
+  method: string,
+  score: number
+): Promise<void> {
+  const db = await resolveDb();
+  const existingRows = await db
+    .select()
+    .from(deviceLivenessAttempts)
+    .where(eq(deviceLivenessAttempts.fingerprintHash, fingerprint.fingerprintHash))
+    .limit(1);
+  const existing = existingRows[0];
+  const attempt: DeviceAttempt = {
+    timestamp: Date.now(),
+    passed,
+    method,
+    score,
+  };
+
+  if (existing) {
+    const attempts = [...existing.attempts, attempt].slice(-50);
+    const successRate =
+      attempts.filter(a => a.passed).length / attempts.length;
+    const avgScore =
+      attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length;
+    await db
+      .update(deviceLivenessAttempts)
+      .set({
+        attempts,
+        successRate: successRate.toFixed(4),
+        avgScore: avgScore.toFixed(4),
+        lastSeen: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deviceLivenessAttempts.fingerprintHash, fingerprint.fingerprintHash));
+  } else {
+    await db.insert(deviceLivenessAttempts).values({
+      fingerprintHash: fingerprint.fingerprintHash,
+      deviceModel: fingerprint.deviceModel,
+      attempts: [attempt],
+      successRate: (passed ? 1 : 0).toFixed(4),
+      avgScore: score.toFixed(4),
+      lastSeen: new Date(),
+    });
+  }
+}
+
+/** Get device liveness history for analytics */
+export async function getDeviceLivenessHistory(
+  fingerprintHash: string
+): Promise<DeviceLivenessHistory | null> {
+  const db = await resolveDb();
+  const rows = await db
+    .select()
+    .from(deviceLivenessAttempts)
+    .where(eq(deviceLivenessAttempts.fingerprintHash, fingerprintHash))
+    .limit(1);
+  return rows[0] ? rowToDeviceHistory(rows[0]) : null;
+}
+
+/** Get all device histories for admin dashboard */
+export async function getAllDeviceHistories(): Promise<DeviceLivenessHistory[]> {
+  const db = await resolveDb();
+  const rows = await db.select().from(deviceLivenessAttempts);
+  return rows.map(rowToDeviceHistory);
+}
+
+/** Get devices with consistently low success rates (for threshold tuning) */
+export async function getProblematicDevices(
+  minAttempts = 5,
+  maxSuccessRate = 0.5
+): Promise<DeviceLivenessHistory[]> {
+  const all = await getAllDeviceHistories();
+  return all.filter(
+    d => d.attempts.length >= minAttempts && d.successRate <= maxSuccessRate
+  );
+}
 
 /** Parse user-agent and device info into a fingerprint */
 export function createDeviceFingerprint(params: {
@@ -573,63 +751,6 @@ export function getDeviceThresholds(
   };
 }
 
-/** Record a liveness attempt for a device (for adaptive learning) */
-export function recordDeviceLivenessAttempt(
-  fingerprint: DeviceFingerprint,
-  passed: boolean,
-  method: string,
-  score: number
-): void {
-  const existing = deviceHistoryStore.get(fingerprint.fingerprintHash);
-  const attempt = { timestamp: Date.now(), passed, method, score };
-
-  if (existing) {
-    existing.attempts.push(attempt);
-    // Keep last 50 attempts
-    if (existing.attempts.length > 50) {
-      existing.attempts = existing.attempts.slice(-50);
-    }
-    existing.successRate =
-      existing.attempts.filter(a => a.passed).length / existing.attempts.length;
-    existing.avgScore =
-      existing.attempts.reduce((sum, a) => sum + a.score, 0) /
-      existing.attempts.length;
-    existing.lastSeen = Date.now();
-    deviceHistoryStore.set(fingerprint.fingerprintHash, existing);
-  } else {
-    deviceHistoryStore.set(fingerprint.fingerprintHash, {
-      fingerprint: fingerprint.fingerprintHash,
-      deviceModel: fingerprint.deviceModel,
-      attempts: [attempt],
-      successRate: passed ? 1 : 0,
-      avgScore: score,
-      lastSeen: Date.now(),
-    });
-  }
-}
-
-/** Get device liveness history for analytics */
-export function getDeviceLivenessHistory(
-  fingerprintHash: string
-): DeviceLivenessHistory | null {
-  return deviceHistoryStore.get(fingerprintHash) ?? null;
-}
-
-/** Get all device histories for admin dashboard */
-export function getAllDeviceHistories(): DeviceLivenessHistory[] {
-  return Array.from(deviceHistoryStore.values());
-}
-
-/** Get devices with consistently low success rates (for threshold tuning) */
-export function getProblematicDevices(
-  minAttempts = 5,
-  maxSuccessRate = 0.5
-): DeviceLivenessHistory[] {
-  return Array.from(deviceHistoryStore.values()).filter(
-    d => d.attempts.length >= minAttempts && d.successRate <= maxSuccessRate
-  );
-}
-
 // ─── Utility Helpers ─────────────────────────────────────────────────────────
 
 function parseDeviceModel(userAgent: string): string {
@@ -703,8 +824,28 @@ export interface GeoIpCorrelation {
   lastChecked: number;
 }
 
-// In-memory geo-IP correlation store (production: use Redis/DB)
-const geoCorrelationStore = new Map<string, GeoIpCorrelation>();
+// 2026-10-01 (C2-mw, B3): geo-IP correlations are a compliance/fraud signal
+// and are now durable in the PG table `geo_ip_correlations` (one row per
+// userId+deviceFingerprint, rolling 20-location window preserved).
+// FAIL-CLOSED: a missing database throws instead of silently dropping the
+// compliance signal.
+function rowToCorrelation(row: {
+  userId: string;
+  deviceFingerprint: string;
+  locations: { geo: GeoLocation; timestamp: number }[];
+  riskScore: number;
+  flags: string[];
+  lastChecked: Date;
+}): GeoIpCorrelation {
+  return {
+    userId: row.userId,
+    deviceFingerprint: row.deviceFingerprint,
+    locations: row.locations,
+    riskScore: row.riskScore,
+    flags: row.flags,
+    lastChecked: row.lastChecked.getTime(),
+  };
+}
 
 // Known Nigerian ISPs and mobile carriers (legitimate for POS agents)
 const NIGERIAN_ISPS = [
@@ -816,37 +957,72 @@ function createUnknownGeo(ip: string): GeoLocation {
 }
 
 /** Correlate a liveness attempt with geo-IP data and detect anomalies */
-export function correlateGeoIp(
+export async function correlateGeoIp(
   userId: string,
   deviceFingerprint: string,
   geo: GeoLocation
-): GeoIpCorrelation {
-  const key = `${userId}:${deviceFingerprint}`;
-  const existing = geoCorrelationStore.get(key) ?? {
-    userId,
-    deviceFingerprint,
-    locations: [],
-    riskScore: 0,
-    flags: [],
-    lastChecked: 0,
-  };
+): Promise<GeoIpCorrelation> {
+  const db = await resolveDb();
+  const existingRows = await db
+    .select()
+    .from(geoIpCorrelations)
+    .where(
+      and(
+        eq(geoIpCorrelations.userId, userId),
+        eq(geoIpCorrelations.deviceFingerprint, deviceFingerprint)
+      )
+    )
+    .limit(1);
+  const existingRow = existingRows[0];
+
+  const correlation: GeoIpCorrelation = existingRow
+    ? rowToCorrelation(existingRow)
+    : {
+        userId,
+        deviceFingerprint,
+        locations: [],
+        riskScore: 0,
+        flags: [],
+        lastChecked: 0,
+      };
 
   // Add new location
-  existing.locations.push({ geo, timestamp: Date.now() });
+  correlation.locations.push({ geo, timestamp: Date.now() });
 
   // Keep last 20 locations
-  if (existing.locations.length > 20) {
-    existing.locations = existing.locations.slice(-20);
+  if (correlation.locations.length > 20) {
+    correlation.locations = correlation.locations.slice(-20);
   }
 
   // Calculate risk score
-  const { riskScore, flags } = calculateGeoRisk(existing);
-  existing.riskScore = riskScore;
-  existing.flags = flags;
-  existing.lastChecked = Date.now();
+  const { riskScore, flags } = calculateGeoRisk(correlation);
+  correlation.riskScore = riskScore;
+  correlation.flags = flags;
+  correlation.lastChecked = Date.now();
 
-  geoCorrelationStore.set(key, existing);
-  return existing;
+  if (existingRow) {
+    await db
+      .update(geoIpCorrelations)
+      .set({
+        locations: correlation.locations,
+        riskScore: correlation.riskScore,
+        flags: correlation.flags,
+        lastChecked: new Date(correlation.lastChecked),
+        updatedAt: new Date(),
+      })
+      .where(eq(geoIpCorrelations.id, existingRow.id));
+  } else {
+    await db.insert(geoIpCorrelations).values({
+      userId,
+      deviceFingerprint,
+      locations: correlation.locations,
+      riskScore: correlation.riskScore,
+      flags: correlation.flags,
+      lastChecked: new Date(correlation.lastChecked),
+    });
+  }
+
+  return correlation;
 }
 
 function calculateGeoRisk(correlation: GeoIpCorrelation): {
@@ -966,25 +1142,26 @@ function calculateGeoRisk(correlation: GeoIpCorrelation): {
 }
 
 /** Get all geo-IP correlations for admin review */
-export function getAllGeoCorrelations(): GeoIpCorrelation[] {
-  return Array.from(geoCorrelationStore.values());
+export async function getAllGeoCorrelations(): Promise<GeoIpCorrelation[]> {
+  const db = await resolveDb();
+  const rows = await db.select().from(geoIpCorrelations);
+  return rows.map(rowToCorrelation);
 }
 
 /** Get high-risk correlations (risk score above threshold) */
-export function getHighRiskCorrelations(minRiskScore = 50): GeoIpCorrelation[] {
-  return Array.from(geoCorrelationStore.values()).filter(
-    c => c.riskScore >= minRiskScore
-  );
+export async function getHighRiskCorrelations(
+  minRiskScore = 50
+): Promise<GeoIpCorrelation[]> {
+  const all = await getAllGeoCorrelations();
+  return all.filter(c => c.riskScore >= minRiskScore);
 }
 
 /** Clear geo-IP data for a specific user (GDPR/privacy compliance) */
-export function clearGeoIpData(userId: string): number {
-  let cleared = 0;
-  for (const [key, value] of geoCorrelationStore.entries()) {
-    if (value.userId === userId) {
-      geoCorrelationStore.delete(key);
-      cleared++;
-    }
-  }
-  return cleared;
+export async function clearGeoIpData(userId: string): Promise<number> {
+  const db = await resolveDb();
+  const deleted = await db
+    .delete(geoIpCorrelations)
+    .where(eq(geoIpCorrelations.userId, userId))
+    .returning({ id: geoIpCorrelations.id });
+  return deleted.length;
 }

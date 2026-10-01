@@ -1,12 +1,44 @@
 // @ts-nocheck
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
 import {
   resolveGeoIp,
   correlateGeoIp,
   getAllGeoCorrelations,
   getHighRiskCorrelations,
   clearGeoIpData,
+  __setLivenessPersistenceDbForTesting,
 } from "./middleware/livenessSecurityEnhancements";
+
+// 2026-10-01 (C2-mw): B3 geo-IP correlations are PG-backed — inject a real
+// PGlite Postgres (no mocks). Restart-simulation is covered by
+// server/lib/__tests__/classB-persistence.test.ts.
+let pglite: PGlite;
+
+beforeAll(async () => {
+  pglite = new PGlite();
+  await pglite.exec(`
+    CREATE TABLE geo_ip_correlations (
+      id SERIAL PRIMARY KEY,
+      "userId" VARCHAR(128) NOT NULL,
+      "deviceFingerprint" VARCHAR(256) NOT NULL,
+      locations JSONB NOT NULL,
+      "riskScore" INTEGER NOT NULL,
+      flags JSONB NOT NULL,
+      "lastChecked" TIMESTAMP NOT NULL,
+      "createdAt" TIMESTAMP DEFAULT NOW() NOT NULL,
+      "updatedAt" TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE UNIQUE INDEX gic_user_device_unique ON geo_ip_correlations ("userId", "deviceFingerprint");
+  `);
+  __setLivenessPersistenceDbForTesting(drizzle(pglite));
+});
+
+afterAll(async () => {
+  __setLivenessPersistenceDbForTesting(null);
+  await pglite.close();
+});
 
 describe("KYC Phase 4 — Geo-IP Correlation", () => {
   describe("resolveGeoIp", () => {
@@ -35,7 +67,7 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
   });
 
   describe("correlateGeoIp", () => {
-    it("creates a correlation record for a user", () => {
+    it("creates a correlation record for a user", async () => {
       const geo = {
         country: "NG",
         city: "Lagos",
@@ -46,7 +78,7 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
         isTor: false,
         asn: "AS29465",
       };
-      const result = correlateGeoIp("user-001", "device-abc", geo);
+      const result = await correlateGeoIp("user-001", "device-abc", geo);
       expect(result).toHaveProperty("riskScore");
       expect(result).toHaveProperty("flags");
       expect(typeof result.riskScore).toBe("number");
@@ -55,7 +87,7 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
       expect(Array.isArray(result.flags)).toBe(true);
     });
 
-    it("flags VPN usage as elevated risk", () => {
+    it("flags VPN usage as elevated risk", async () => {
       const geo = {
         country: "NG",
         city: "Lagos",
@@ -66,14 +98,14 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
         isTor: false,
         asn: "AS12345",
       };
-      const result = correlateGeoIp("user-002", "device-def", geo);
+      const result = await correlateGeoIp("user-002", "device-def", geo);
       expect(result.riskScore).toBeGreaterThan(0);
       expect(
         result.flags.some((f: string) => f.toLowerCase().includes("vpn"))
       ).toBe(true);
     });
 
-    it("flags Tor usage as high risk", () => {
+    it("flags Tor usage as high risk", async () => {
       const geo = {
         country: "DE",
         city: "Frankfurt",
@@ -84,14 +116,14 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
         isTor: true,
         asn: "AS99999",
       };
-      const result = correlateGeoIp("user-003", "device-ghi", geo);
+      const result = await correlateGeoIp("user-003", "device-ghi", geo);
       expect(result.riskScore).toBeGreaterThanOrEqual(40);
       expect(
         result.flags.some((f: string) => f.toLowerCase().includes("tor"))
       ).toBe(true);
     });
 
-    it("detects impossible travel (same user, different countries, short time)", () => {
+    it("detects impossible travel (same user, different countries, short time)", async () => {
       const geo1 = {
         country: "NG",
         city: "Lagos",
@@ -113,9 +145,9 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
         asn: "AS7922",
       };
       // First correlation establishes baseline
-      correlateGeoIp("user-travel", "device-1", geo1);
+      await correlateGeoIp("user-travel", "device-1", geo1);
       // Second correlation from different country immediately
-      const result = correlateGeoIp("user-travel", "device-2", geo2);
+      const result = await correlateGeoIp("user-travel", "device-2", geo2);
       expect(result.riskScore).toBeGreaterThanOrEqual(10);
       // Should flag something related to the country change
       expect(result.flags.length).toBeGreaterThan(0);
@@ -123,30 +155,30 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
   });
 
   describe("getAllGeoCorrelations", () => {
-    it("returns an array of all correlations", () => {
-      const result = getAllGeoCorrelations();
+    it("returns an array of all correlations", async () => {
+      const result = await getAllGeoCorrelations();
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThan(0);
     });
   });
 
   describe("getHighRiskCorrelations", () => {
-    it("filters correlations by minimum risk score", () => {
-      const result = getHighRiskCorrelations(30);
+    it("filters correlations by minimum risk score", async () => {
+      const result = await getHighRiskCorrelations(30);
       expect(Array.isArray(result)).toBe(true);
       result.forEach((c: any) => {
         expect(c.riskScore).toBeGreaterThanOrEqual(30);
       });
     });
 
-    it("returns empty array for very high threshold with no matches", () => {
-      const result = getHighRiskCorrelations(101);
+    it("returns empty array for very high threshold with no matches", async () => {
+      const result = await getHighRiskCorrelations(101);
       expect(result).toEqual([]);
     });
   });
 
   describe("clearGeoIpData", () => {
-    it("clears data for a specific user and returns count", () => {
+    it("clears data for a specific user and returns count", async () => {
       // Ensure user has data
       const geo = {
         country: "NG",
@@ -158,15 +190,15 @@ describe("KYC Phase 4 — Geo-IP Correlation", () => {
         isTor: false,
         asn: "AS36873",
       };
-      correlateGeoIp("user-to-clear", "device-x", geo);
+      await correlateGeoIp("user-to-clear", "device-x", geo);
 
-      const cleared = clearGeoIpData("user-to-clear");
+      const cleared = await clearGeoIpData("user-to-clear");
       expect(typeof cleared).toBe("number");
       expect(cleared).toBeGreaterThanOrEqual(1);
     });
 
-    it("returns 0 for non-existent user", () => {
-      const cleared = clearGeoIpData("non-existent-user-xyz");
+    it("returns 0 for non-existent user", async () => {
+      const cleared = await clearGeoIpData("non-existent-user-xyz");
       expect(cleared).toBe(0);
     });
   });
@@ -214,18 +246,18 @@ describe("KYC Phase 4 — Lockout Notification", () => {
       "./middleware/livenessSecurityEnhancements"
     );
     // Clear any existing cooldown
-    clearCooldown("notify-test-user");
+    await clearCooldown("notify-test-user");
 
     // Record 3 failures to trigger lockout
-    recordLivenessFailure("notify-test-user");
-    recordLivenessFailure("notify-test-user");
-    const result = recordLivenessFailure("notify-test-user");
+    await recordLivenessFailure("notify-test-user");
+    await recordLivenessFailure("notify-test-user");
+    const result = await recordLivenessFailure("notify-test-user");
 
     // After 3 failures, user should be locked out
     const { isLockedOut } = await import(
       "./middleware/livenessSecurityEnhancements"
     );
-    const locked = isLockedOut("notify-test-user");
+    const locked = await isLockedOut("notify-test-user");
     expect(locked.locked).toBe(true);
   });
 });
