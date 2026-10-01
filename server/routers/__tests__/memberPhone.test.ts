@@ -16,22 +16,38 @@
  *     never stored) and the response does not echo the phone
  *   - verifyPhoneOtp without a token → BAD_REQUEST, zero rows changed
  *   - wrong OTP → BAD_REQUEST + attempts incremented on the REAL row
- *   - correct OTP with NO Redis (test env): the token is consumed
- *     (used=true) but the call FAILS CLOSED — the proof-marker write
- *     requires Redis (phoneOtp.ts:151, documented R3-b6 limitation), so the
- *     error surfaces instead of a silent pass
+ *   - correct OTP with NO Redis proof store (simulated outage — 2026-10-01,
+ *     R3-b6-fix; CI provisions a real Redis so the outage is mocked, not
+ *     assumed): the token is consumed (used=true) but the call FAILS CLOSED —
+ *     the proof-marker write requires Redis (phoneOtp.ts:151, documented
+ *     R3-b6 limitation), so the error surfaces instead of a silent pass
  *   - the member input schemas carry no userId/customerId fields (smuggled
  *     keys are stripped — nothing to bind but the session)
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   makeAuthenticatedCtx,
   makeUnauthenticatedCtx,
 } from "../../lib/__tests__/testHelpers";
+
+// 2026-10-01, R3-b6-fix: the original test assumed "no Redis in the test
+// env" — true for the local unit-test env but FALSE in CI's
+// "Vitest (postgres + redis)" job, which provisions a real Redis service, so
+// the proof-marker write at phoneOtp.ts:151 succeeded and the fail-closed
+// assertion flaked environment-dependently (CI run 36930281388).
+// Simulate the outage deterministically instead: getRedisClient throws.
+// Every other redis call site under test (rate-limit throttle, hasProof,
+// consumeProof) already catches and degrades/fails closed, so the mock keeps
+// those tests green while making this contract environment-independent.
+vi.mock("../../lib/redisClient", () => ({
+  getRedisClient: () => {
+    throw new Error("Redis unavailable (simulated outage, 2026-10-01 R3-b6-fix)");
+  },
+}));
 
 let PG_PORT = 0;
 let PG_URL = "";
