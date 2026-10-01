@@ -6389,3 +6389,65 @@ export const photoReimbursements = pgTable(
   })
 );
 export type PhotoReimbursement = typeof photoReimbursements.$inferSelect;
+
+/**
+ * Actuarial Wave stage A1 (2026-10-01, A1) — unified table-driven rating
+ * engine storage. Every rate row carries provenance (filedBy/approvedBy,
+ * naicomFilingRef) and a draft→filed→active→retired lifecycle; rates are
+ * versioned, never mutated in place (see server/routers/actuarialRatesAdmin.ts).
+ *
+ * Scope key: a table targets EITHER a productCode OR a coverageClass (at
+ * least one must be non-null — enforced in code at create/file/approve time;
+ * the resolver prefers a productCode match over a class match).
+ */
+export const ratingTables = pgTable(
+  "rating_tables",
+  {
+    id: serial("id").primaryKey(),
+    productCode: text("productCode"),
+    coverageClass: text("coverageClass"),
+    effectiveFrom: timestamp("effectiveFrom").notNull(),
+    effectiveTo: timestamp("effectiveTo"),
+    status: varchar("status", { length: 16 }).default("draft").notNull(),
+    version: integer("version").notNull(),
+    filedBy: integer("filedBy").references(() => users.id),
+    approvedBy: integer("approvedBy").references(() => users.id),
+    naicomFilingRef: text("naicomFilingRef"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    scopeIdx: index("rt_scope_idx").on(t.productCode, t.coverageClass, t.status),
+    effectiveIdx: index("rt_effective_idx").on(t.status, t.effectiveFrom),
+  })
+);
+export type RatingTable = typeof ratingTables.$inferSelect;
+
+export const ratingFactors = pgTable(
+  "rating_factors",
+  {
+    id: serial("id").primaryKey(),
+    tableId: integer("tableId")
+      .notNull()
+      .references(() => ratingTables.id),
+    // base | age_band | claims_loading | ncd | location | telematics_cap
+    factorType: varchar("factorType", { length: 32 }).notNull(),
+    // e.g. age band "40-49", claims count "2+", "default", or for base
+    // factors "rate" / "min_premium".
+    factorKey: text("factorKey").notNull(),
+    // 2026-10-01 (A1) deviation from the design doc: numeric(18,6), not
+    // numeric(10,6) — (10,6) overflows (< 10^4) on real NGN absolute values
+    // such as a base 'min_premium' of 10000. Rates are unaffected.
+    value: numeric("value", { precision: 18, scale: 6 }).notNull(),
+    minClamp: numeric("minClamp", { precision: 18, scale: 6 }),
+    maxClamp: numeric("maxClamp", { precision: 18, scale: 6 }),
+    sortOrder: integer("sortOrder").notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    tableIdx: index("rf_table_idx").on(t.tableId, t.sortOrder),
+  })
+);
+export type RatingFactor = typeof ratingFactors.$inferSelect;
