@@ -15,12 +15,51 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 
-import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
+import { insuranceProducts, insuranceProductTypes, claims } from "../../drizzle/schema";
 // Q-wave Q3 (2026-09-25): UBI rolling score for motor rating.
 import { telematicsScores } from "../../drizzle/schema.innovations";
 import { protectedProcedure, publicProcedure, router, serviceOrUserProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { assertPolicyOwnership } from "../lib/memberGuards";
+// 2026-10-01 (A1b): filed rate-table resolver (stage A1) — fail-closed.
+import {
+  RatingUnavailableError,
+  resolveRating,
+  type DrizzleDb,
+  type RatingResult,
+} from "../lib/ratingEngine";
+
+/**
+ * 2026-10-01 (A1b): the claims-loading input is ALWAYS the caller's real
+ * claims count from the DB (claims.claimantId = ctx.user.id — the
+ * memberClaims.ts scoping rule). A client-supplied count is never accepted.
+ */
+async function callerClaimsCount(db: DrizzleDb, userId: number): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: count() })
+    .from(claims)
+    .where(eq(claims.claimantId, userId));
+  return Number(n);
+}
+
+/**
+ * 2026-10-01 (A1b): map the engine's fail-closed RatingUnavailableError to
+ * PRECONDITION_FAILED and rethrow EVERYTHING else — never catch-and-fallback
+ * to a fabricated premium (approved strict policy, design doc §A1).
+ */
+async function resolvePremium(
+  db: DrizzleDb,
+  input: Parameters<typeof resolveRating>[1]
+): Promise<RatingResult> {
+  try {
+    return await resolveRating(db, input);
+  } catch (err) {
+    if (err instanceof RatingUnavailableError) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+    }
+    throw err;
+  }
+}
 
 export const insuranceProductCatalogRouter = router({
   // List all available insurance products
@@ -136,21 +175,37 @@ export const insuranceProductCatalogRouter = router({
         .where(eq(insuranceProducts.id, input.productId)).limit(1);
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
 
-      // Actuarial premium calculation
-      const baseRate = 0.02; // insurance_products has no base_rate column; 2% default
-      let loadingFactor = 1.0;
-
-      // Age loading (life/health products)
-      if (input.age) {
-        if (input.age >= 60) loadingFactor += 0.5;
-        else if (input.age >= 50) loadingFactor += 0.3;
-        else if (input.age >= 40) loadingFactor += 0.15;
-      }
+      // 2026-10-01 (A1b): HONEST REWRITE — the hardcoded `baseRate = 0.02`
+      // constant and the hand-rolled age loadings (+0.15/+0.3/+0.5 at ages
+      // 40/50/60) that previously priced this calculator are REMOVED.
+      // Premiums now resolve through the filed rating tables
+      // (server/lib/ratingEngine.ts, stage A1) under the approved strict
+      // fail-closed policy: when no active rating table covers this product,
+      // this proc throws PRECONDITION_FAILED and returns NO premium — a
+      // premium computed from a fabricated constant is a regulatory
+      // mis-pricing risk, worse than no quote at all.
+      //
+      // Input mapping (honest):
+      //   - productCode: the product's own productCode (coverageClass falls
+      //     back to the product's coverageType).
+      //   - age: remains a quote INPUT — this is a pre-bind calculator with
+      //     no customer profile linked, so there is no server-side source of
+      //     truth for the prospect's age yet (documented per design doc §A1).
+      //   - claimsCount: the caller's REAL claims count from the DB (helper
+      //     above) — never a client input.
+      //   - ncdEligible: deliberately OMITTED — the repo has no NCD
+      //     semantics outside the engine's `ncd` factor type, so no NCD
+      //     discount is ever applied on this path (documented omission).
+      //   - telematicsFactor: the existing policyId-linked telematics
+      //     lookup below (bounds 0.70–1.30); passed only when a real score
+      //     row exists. The engine's telematics_cap row clamps it further.
+      const claimsCount = await callerClaimsCount(db, ctx.user.id);
 
       // Q-wave Q3 (2026-09-25): UBI rating factor for motor products. Read
       // from the telematics_scores rolling-score row (bounded 0.70–1.30);
-      // no score history ⇒ 1.00 — never an implicit discount or loading.
-      let telematicsRatingFactor = 1.0;
+      // no score history ⇒ no factor passed — never an implicit discount or
+      // loading (multiplicative identity 1.00 is equivalent to omitting).
+      let telematicsFactor: number | undefined;
       let telematicsScore: number | null = null;
       if (input.policyId != null && product.coverageType === "motor") {
         const [scoreRow] = await db.select().from(telematicsScores)
@@ -158,19 +213,38 @@ export const insuranceProductCatalogRouter = router({
         if (scoreRow) {
           const f = parseFloat(scoreRow.ratingFactor);
           if (Number.isFinite(f) && f >= 0.7 && f <= 1.3) {
-            telematicsRatingFactor = f;
+            telematicsFactor = f;
             telematicsScore = parseFloat(scoreRow.score);
           }
           // Out-of-band factor (schema drift / manual edit) is ignored —
-          // fail-closed to 1.00 rather than pricing off a corrupt factor.
+          // fail-closed to NO factor rather than pricing off a corrupt value.
         }
       }
 
-      // Duration adjustment
+      const rating = await resolvePremium(db, {
+        productCode: product.productCode,
+        coverageClass: product.coverageType,
+        sumInsured: input.sumInsured,
+        age: input.age,
+        claimsCount,
+        telematicsFactor,
+      });
+
+      // Duration adjustment: rating tables hold ANNUAL rates; the pre-rated
+      // premium and its stamp duty are pro-rated by durationMonths/12, same
+      // as the pre-A1b contract.
       const durationFactor = input.durationMonths / 12;
-      const annualPremium = input.sumInsured * baseRate * loadingFactor * telematicsRatingFactor;
+      // Aggregate view of the applied non-telematics factors (response
+      // contract field; the authoritative breakdown is rating.appliedFactors).
+      const loadingFactor = rating.appliedFactors
+        .filter(f => f.factorType !== "telematics_cap")
+        .reduce((acc, f) => acc * f.value, 1);
+      const appliedTelematics = rating.appliedFactors.find(
+        f => f.factorType === "telematics_cap"
+      );
+      const annualPremium = rating.premiumAfterFloor;
       const premiumNGN = Math.round(annualPremium * durationFactor * 100) / 100;
-      const stampDuty = Math.round(premiumNGN * 0.005 * 100) / 100; // 0.5% stamp duty
+      const stampDuty = Math.round(rating.stampDuty * durationFactor * 100) / 100;
       const totalPayable = premiumNGN + stampDuty;
 
       return {
@@ -178,9 +252,9 @@ export const insuranceProductCatalogRouter = router({
         productName: product.name,
         sumInsured: input.sumInsured,
         durationMonths: input.durationMonths,
-        baseRate,
+        baseRate: rating.baseRate,
         loadingFactor,
-        telematicsRatingFactor,
+        telematicsRatingFactor: appliedTelematics?.value ?? 1.0,
         telematicsScore,
         annualPremium,
         premiumNGN,

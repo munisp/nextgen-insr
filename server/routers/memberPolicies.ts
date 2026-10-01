@@ -31,13 +31,19 @@
  * No mutations exist here — bind/pay/cancel stay on the staff workflows.
  */
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { customers, insuranceProducts, policies } from "../../drizzle/schema";
+import { claims, customers, insuranceProducts, policies } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import type { DrizzleDb } from "../lib/memberGuards";
+// 2026-10-01 (A1b): filed rate-table resolver (stage A1) — fail-closed.
+import {
+  RatingUnavailableError,
+  resolveRating,
+  type RatingResult,
+} from "../lib/ratingEngine";
 
 const policyStatusInput = z.enum([
   "draft",
@@ -204,11 +210,18 @@ export const memberPoliciesRouter = router({
     }),
 
   /**
-   * Anonymous premium quote (no policyId): the catalog's actuarial math
-   * (insuranceProductCatalog.calculatePremium) with the telematics UBI factor
-   * excluded — telematics is policy-linked member data and requires the
-   * assertPolicyOwnership guard, so unauthenticated-ownership quotes never
-   * receive it (factor pinned to 1.00 — neither a discount nor a loading).
+   * Anonymous premium quote (no policyId): resolved through the filed rating
+   * tables (server/lib/ratingEngine.ts, stage A1) with the telematics UBI
+   * factor excluded — telematics is policy-linked member data and requires
+   * the assertPolicyOwnership guard, so unauthenticated-ownership quotes
+   * never receive it (no telematicsFactor is passed — neither a discount
+   * nor a loading).
+   *
+   * 2026-10-01 (A1b): HONEST REWRITE — the previous body duplicated
+   * calculatePremium's hardcoded `baseRate = 0.02` + age bumps; that math
+   * is REMOVED. Under the approved fail-closed policy a product with no
+   * active filed rate now throws PRECONDITION_FAILED instead of returning
+   * a constant-derived premium.
    */
   quote: protectedProcedure
     .input(
@@ -219,29 +232,58 @@ export const memberPoliciesRouter = router({
         age: z.number().min(18).max(70).optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const [product] = await d
-        .select({ id: insuranceProducts.id, name: insuranceProducts.name })
+        .select({
+          id: insuranceProducts.id,
+          name: insuranceProducts.name,
+          productCode: insuranceProducts.productCode,
+          coverageType: insuranceProducts.coverageType,
+        })
         .from(insuranceProducts)
         .where(eq(insuranceProducts.id, input.productId))
         .limit(1);
       if (!product)
         throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
 
-      // Same math as insuranceProductCatalog.calculatePremium (2026-10-01, R3):
-      // insurance_products has no base_rate column; 2% default.
-      const baseRate = 0.02;
-      let loadingFactor = 1.0;
-      if (input.age) {
-        if (input.age >= 60) loadingFactor += 0.5;
-        else if (input.age >= 50) loadingFactor += 0.3;
-        else if (input.age >= 40) loadingFactor += 0.15;
+      // 2026-10-01 (A1b): claimsCount is the caller's REAL claims count from
+      // the DB (claims.claimantId = ctx.user.id, the memberClaims scoping
+      // rule) — a client-supplied count is never accepted. age stays a quote
+      // INPUT (pre-bind, no customer profile linked — documented per design
+      // doc §A1). ncdEligible omitted: the repo has no NCD semantics outside
+      // the engine's `ncd` factor type (documented omission).
+      const [{ n }] = await d
+        .select({ n: count() })
+        .from(claims)
+        .where(eq(claims.claimantId, ctx.user.id));
+      let rating: RatingResult;
+      try {
+        rating = await resolveRating(d, {
+          productCode: product.productCode,
+          coverageClass: product.coverageType,
+          sumInsured: input.sumInsured,
+          age: input.age,
+          claimsCount: Number(n),
+          // No telematicsFactor: anonymous quote, no policy linked yet.
+        });
+      } catch (err) {
+        // Fail-closed mapping; every other error rethrows (never a fallback).
+        if (err instanceof RatingUnavailableError) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+        }
+        throw err;
       }
+
+      // Duration adjustment: rating tables hold ANNUAL rates; pro-rated by
+      // durationMonths/12, same as the pre-A1b contract.
       const durationFactor = input.durationMonths / 12;
-      const annualPremium = input.sumInsured * baseRate * loadingFactor;
+      const loadingFactor = rating.appliedFactors
+        .filter(f => f.factorType !== "telematics_cap")
+        .reduce((acc, f) => acc * f.value, 1);
+      const annualPremium = rating.premiumAfterFloor;
       const premiumNGN = Math.round(annualPremium * durationFactor * 100) / 100;
-      const stampDuty = Math.round(premiumNGN * 0.005 * 100) / 100; // 0.5% stamp duty
+      const stampDuty = Math.round(rating.stampDuty * durationFactor * 100) / 100;
       const totalPayable = premiumNGN + stampDuty;
 
       return {
@@ -249,9 +291,10 @@ export const memberPoliciesRouter = router({
         productName: product.name,
         sumInsured: input.sumInsured,
         durationMonths: input.durationMonths,
-        baseRate,
+        baseRate: rating.baseRate,
         loadingFactor,
-        // 2026-10-01 (R3): telematics deliberately excluded for anonymous quotes.
+        // 2026-10-01 (A1b): telematics deliberately excluded for anonymous
+        // quotes (no policy linked yet) — response pins the identity factor.
         telematicsRatingFactor: 1.0,
         telematicsScore: null,
         annualPremium,
