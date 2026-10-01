@@ -52,6 +52,7 @@ import {
   ClipboardList,
   FilePlus2,
   LifeBuoy,
+  UserRound,
   Briefcase,
   DollarSign,
   Scale,
@@ -232,6 +233,9 @@ const menuGroups: MenuGroup[] = [
     items: [
       { icon: CreditCard, label: "Payments", path: "/payments", permission: "canViewPayments" },
       { icon: Wallet, label: "Wallet (Live)", path: "/wallet", permission: "canViewPayments" },
+      { icon: PiggyBank, label: "My Savings (Live)", path: "/my-savings", permission: "canViewPayments" },
+      { icon: CreditCard, label: "My Premiums (Live)", path: "/my-premiums", permission: "canViewPayments" },
+      { icon: CreditCard, label: "Pay Premium (Live)", path: "/pay-premium", permission: "canViewPayments" },
       { icon: PiggyBank, label: "Savings & Investment", path: "/savings-investment", permission: "canViewPolicies" },
       { icon: Wallet, label: "Financial Wellness", path: "/financial-wellness", permission: "canViewPolicies" },
       { icon: Landmark, label: "Bancassurance", path: "/bancassurance", permission: "canViewPolicies" },
@@ -241,6 +245,7 @@ const menuGroups: MenuGroup[] = [
   {
     label: "Identity & Verification",
     items: [
+      { icon: UserRound, label: "My Account", path: "/my-account", permission: "canViewKYC" },
       { icon: Shield, label: "KYC Status", path: "/kyc", permission: "canViewKYC" },
       { icon: Link2, label: "Policy Protection", path: "/blockchain", permission: "canViewBlockchain" },
     ],
@@ -249,6 +254,7 @@ const menuGroups: MenuGroup[] = [
     label: "Customer Engagement",
     items: [
       { icon: LifeBuoy, label: "Support Tickets", path: "/support", permission: "canViewDashboard" },
+      { icon: LifeBuoy, label: "My Disputes", path: "/my-disputes", permission: "canViewDashboard" },
       { icon: Star, label: "My Loyalty Points", path: "/my-loyalty", permission: "canViewReferrals" },
       { icon: Share2, label: "My Referrals", path: "/my-referrals", permission: "canViewReferrals" },
       { icon: Trophy, label: "Rewards & Achievements", path: "/rewards", permission: "canViewReferrals" },

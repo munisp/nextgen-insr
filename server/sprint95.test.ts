@@ -67,8 +67,14 @@ describe("Sprint 95: Router Implementation", () => {
   // PWA). 473 + 5 = 478, measured via ls server/routers/*.ts | grep -v .test.
   // memberGuards.ts was deliberately placed in server/lib (guard helper, no
   // router) so it is NOT counted.
-  it("should have 478 router files", () => {
-    expect(routerFiles.length).toBe(478);
+  // 2026-10-01 drift fix (R3 batch 2): verified live count = 481. Batch 2
+  // added memberSavings.ts, memberDisputes.ts, memberPayments.ts (registered
+  // as memberSavings / memberDisputes / memberPayments — caller-scoped member
+  // surfaces; savingsProducts fabricated-funds writes and premiumTopUp funds
+  // path deliberately NOT exposed). 478 + 3 = 481, measured via
+  // ls server/routers/*.ts | grep -v .test.
+  it("should have 481 router files", () => {
+    expect(routerFiles.length).toBe(481);
   });
 
   it("should have zero empty routers (router({}))", () => {

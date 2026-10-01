@@ -363,6 +363,10 @@ import { memberClaimsRouter } from "./routers/memberClaims";
 import { memberHelpDeskRouter } from "./routers/memberHelpDesk";
 import { memberLoyaltyRouter } from "./routers/memberLoyalty";
 import { memberReferralsRouter } from "./routers/memberReferrals";
+// R3 batch 2 (2026-10-01, R3-b2): savings/accounts, disputes, payments (read).
+import { memberSavingsRouter } from "./routers/memberSavings";
+import { memberDisputesRouter } from "./routers/memberDisputes";
+import { memberPaymentsRouter } from "./routers/memberPayments";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1213,6 +1217,15 @@ export const appRouter = router({
   memberHelpDesk: memberHelpDeskRouter,
   memberLoyalty: memberLoyaltyRouter,
   memberReferrals: memberReferralsRouter,
+  // R3 batch 2 (2026-10-01, R3-b2): member savings/accounts, disputes,
+  // payments. savingsProducts deposit/withdraw (fabricated funds) and
+  // unscoped listAccounts (IDOR) deliberately NOT exposed; premiumTopUp.topUp
+  // funds path deferred (financialProcedure denies role user — dedicated
+  // reviewed wave); memberPayments is READ-ONLY. Router count 478 -> 481
+  // (sprint95 gate updated with measured value).
+  memberSavings: memberSavingsRouter,
+  memberDisputes: memberDisputesRouter,
+  memberPayments: memberPaymentsRouter,
 });
 
 export type AppRouter = typeof appRouter;
