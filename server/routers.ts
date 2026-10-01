@@ -377,6 +377,7 @@ import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
 import { memberEndorsementsRouter } from "./routers/memberEndorsements";
 import { memberQuotesRouter } from "./routers/memberQuotes";
+import { actuarialRatesAdminRouter } from "./routers/actuarialRatesAdmin";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1254,6 +1255,12 @@ export const appRouter = router({
   memberRenewals: memberRenewalsRouter,
   memberEndorsements: memberEndorsementsRouter,
   memberQuotes: memberQuotesRouter,
+  // Actuarial Wave A1 (2026-10-01, A1): admin-gated rating table lifecycle
+  // (draft->filed->active->retired, versioned, hash-chained audit). The
+  // fail-closed pricing engine (server/lib/ratingEngine.ts) reads only
+  // active filed rates; quote-path rewiring is stage A1b.
+  // Router count 490 -> 491.
+  actuarialRatesAdmin: actuarialRatesAdminRouter,
 });
 
 export type AppRouter = typeof appRouter;

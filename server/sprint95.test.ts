@@ -98,8 +98,13 @@ describe("Sprint 95: Router Implementation", () => {
   // memberGuards.assertPolicyOwnershipDual before delegation; quote cart
   // binds resolved customers.id; payRenewal funds deferred to funds wave).
   // 486 + 4 = 490, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 490 router files", () => {
-    expect(routerFiles.length).toBe(490);
+  // 2026-10-01 drift fix (Actuarial Wave A1): verified live count = 491.
+  // Added actuarialRatesAdmin.ts (registered as actuarialRatesAdmin —
+  // adminProcedure-gated rating-table lifecycle for the fail-closed
+  // table-driven rating engine; replaces hardcoded pricing constants).
+  // 490 + 1 = 491, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 491 router files", () => {
+    expect(routerFiles.length).toBe(491);
   });
 
   it("should have zero empty routers (router({}))", () => {
