@@ -36,6 +36,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   ,
   ,
+  ,
   // Q-wave Q6 innovation nav icons (2026-09-25)
   CloudSun,
   Activity,
@@ -93,6 +94,7 @@ import {
   Leaf,
   LifeBuoy,
   Link2,
+  ListChecks,
   Lock,
   LogOut,
   MapPin,
@@ -225,6 +227,10 @@ const menuGroups: MenuGroup[] = [
       { icon: RefreshCcw, label: "My Renewals (Live)", path: "/my-renewals", permission: "canViewPolicies" },
       { icon: FileEdit, label: "My Endorsements (Live)", path: "/my-endorsements", permission: "canViewPolicies" },
       { icon: ShoppingCart, label: "My Quotes (Live)", path: "/my-quotes", permission: "canViewPolicies" },
+      { icon: ListChecks, label: "My Onboarding (Live)", path: "/my-onboarding", permission: "canViewPolicies" },
+      { icon: MessageSquare, label: "My Feedback (Live)", path: "/my-feedback", permission: "canViewPolicies" },
+      { icon: Smartphone, label: "My Phone (Live)", path: "/my-phone", permission: "canViewKYC" },
+      { icon: Bell, label: "Notifications (Live)", path: "/notifications", permission: "canViewPolicies" },
 ],
   },
   {

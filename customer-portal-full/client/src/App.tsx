@@ -134,6 +134,10 @@ import MyBeneficiaries from "./pages/MyBeneficiaries";
 import MyRenewals from "./pages/MyRenewals";
 import MyEndorsements from "./pages/MyEndorsements";
 import MyQuotes from "./pages/MyQuotes";
+import MyOnboarding from "./pages/MyOnboarding";
+import MyFeedback from "./pages/MyFeedback";
+import MyPhone from "./pages/MyPhone";
+import Notifications from "./pages/Notifications";
 import FileClaim from "./pages/FileClaim";
 import Wallet from "./pages/Wallet";
 import Support from "./pages/Support";
@@ -831,6 +835,27 @@ function Router() {
       <Route path="/my-quotes">
         <UnifiedLayout>
           <MyQuotes />
+        </UnifiedLayout>
+      </Route>
+      {/* R3 batch 6 member surfaces (2026-10-01, R3-b6) */}
+      <Route path="/my-onboarding">
+        <UnifiedLayout>
+          <MyOnboarding />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-feedback">
+        <UnifiedLayout>
+          <MyFeedback />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-phone">
+        <UnifiedLayout>
+          <MyPhone />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/notifications">
+        <UnifiedLayout>
+          <Notifications />
         </UnifiedLayout>
       </Route>
       <Route path="/file-claim">
