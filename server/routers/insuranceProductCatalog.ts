@@ -20,6 +20,7 @@ import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
 import { telematicsScores } from "../../drizzle/schema.innovations";
 import { protectedProcedure, publicProcedure, router, serviceOrUserProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { assertPolicyOwnership } from "../lib/memberGuards";
 
 export const insuranceProductCatalogRouter = router({
   // List all available insurance products
@@ -122,9 +123,15 @@ export const insuranceProductCatalogRouter = router({
       // (0.70–1.30, default 1.00) is applied to motor premiums.
       policyId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // 2026-10-01 (R3 batch 1, IDOR fix): when policyId is supplied this proc
+      // reads that policy's telematics_scores row (member behavioral data).
+      // Verify the caller owns the policy first; NOT_FOUND is non-enumerating.
+      if (input.policyId != null) {
+        await assertPolicyOwnership(db, input.policyId, ctx.user.id);
+      }
       const [product] = await db.select().from(insuranceProducts)
         .where(eq(insuranceProducts.id, input.productId)).limit(1);
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });

@@ -59,8 +59,16 @@ describe("Sprint 95: Router Implementation", () => {
   // member freemium ladder delegating to embeddedFactory's Q1 procedures).
   // 471 + 2 = 473. All verified legitimate (router({...}) present,
   // registered in server/routers.ts).
-  it("should have 473 router files", () => {
-    expect(routerFiles.length).toBe(473);
+  // 2026-10-01 drift fix (R3 batch 1): verified live count = 478. R3 batch 1
+  // added memberPolicies.ts, memberClaims.ts, memberHelpDesk.ts,
+  // memberLoyalty.ts, memberReferrals.ts (registered as memberPolicies /
+  // memberClaims / memberHelpDesk / memberLoyalty / memberReferrals —
+  // caller-scoped member surfaces wiring previously orphaned domains to the
+  // PWA). 473 + 5 = 478, measured via ls server/routers/*.ts | grep -v .test.
+  // memberGuards.ts was deliberately placed in server/lib (guard helper, no
+  // router) so it is NOT counted.
+  it("should have 478 router files", () => {
+    expect(routerFiles.length).toBe(478);
   });
 
   it("should have zero empty routers (router({}))", () => {
