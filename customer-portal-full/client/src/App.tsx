@@ -135,6 +135,13 @@ import Support from "./pages/Support";
 import SupportTicket from "./pages/SupportTicket";
 import MyLoyalty from "./pages/MyLoyalty";
 import MyReferrals from "./pages/MyReferrals";
+// R3 batch 2 member surfaces (2026-10-01, R3-b2)
+import MySavings from "./pages/MySavings";
+import MyAccount from "./pages/MyAccount";
+import MyDisputes from "./pages/MyDisputes";
+import MyDisputeDetail from "./pages/MyDisputeDetail";
+import MyPremiums from "./pages/MyPremiums";
+import PayPremium from "./pages/PayPremium";
 import UsageCoverActivation from "./pages/UsageCoverActivation";
 import WellnessFeed from "./pages/WellnessFeed";
 import PhotoReimbursement from "./pages/PhotoReimbursement";
@@ -818,6 +825,37 @@ function Router() {
       <Route path="/my-referrals">
         <UnifiedLayout>
           <MyReferrals />
+        </UnifiedLayout>
+      </Route>
+      {/* R3 batch 2 member surfaces (2026-10-01, R3-b2) */}
+      <Route path="/my-savings">
+        <UnifiedLayout>
+          <MySavings />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-account">
+        <UnifiedLayout>
+          <MyAccount />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-disputes/:id">
+        <UnifiedLayout>
+          <MyDisputeDetail />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-disputes">
+        <UnifiedLayout>
+          <MyDisputes />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-premiums">
+        <UnifiedLayout>
+          <MyPremiums />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/pay-premium">
+        <UnifiedLayout>
+          <PayPremium />
         </UnifiedLayout>
       </Route>
                         <Route path="/404" component={NotFound} />
