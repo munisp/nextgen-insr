@@ -374,7 +374,10 @@ describe("Sprint 46: Data Integrity", () => {
     // photo_reimbursements). 250 + 4 + 6 + 5 + 4 = 269. Honest-count
     // drift, not a weakening — the gate still counts information_schema
     // at runtime; measured number wins.
-    expect(stats.totalTables).toBe(269);
+    // 2026-10-01 (Actuarial Wave A1): +2 tables rating_tables,
+    // rating_factors (table-driven fail-closed pricing engine). 269 + 2 =
+    // 271, measured via CI vitest run (expected 271 to be 269 failure).
+    expect(stats.totalTables).toBe(271);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
