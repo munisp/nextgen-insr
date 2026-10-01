@@ -378,6 +378,9 @@ import { memberRenewalsRouter } from "./routers/memberRenewals";
 import { memberEndorsementsRouter } from "./routers/memberEndorsements";
 import { memberQuotesRouter } from "./routers/memberQuotes";
 import { actuarialRatesAdminRouter } from "./routers/actuarialRatesAdmin";
+import { memberOnboardingRouter } from "./routers/memberOnboarding";
+import { memberFeedbackRouter } from "./routers/memberFeedback";
+import { memberPhoneRouter } from "./routers/memberPhone";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1255,6 +1258,11 @@ export const appRouter = router({
   memberRenewals: memberRenewalsRouter,
   memberEndorsements: memberEndorsementsRouter,
   memberQuotes: memberQuotesRouter,
+  // R3 batch 6 (2026-10-01, R3-b6): member onboarding progress / feedback /
+  // phone OTP surfaces. Router count 491 -> 494 (includes actuarialRatesAdmin).
+  memberOnboarding: memberOnboardingRouter,
+  memberFeedback: memberFeedbackRouter,
+  memberPhone: memberPhoneRouter,
   // Actuarial Wave A1 (2026-10-01, A1): admin-gated rating table lifecycle
   // (draft->filed->active->retired, versioned, hash-chained audit). The
   // fail-closed pricing engine (server/lib/ratingEngine.ts) reads only

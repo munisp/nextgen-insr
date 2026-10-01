@@ -119,17 +119,32 @@ export const notificationInboxRouter = router({
         });
       }
     }),
+  // 2026-10-01 (R3-b6-fix): markRead/delete previously filtered by id ONLY —
+  // any caller could mark/delete any user's notification (IDOR found by the
+  // batch-6 adversarial verifier). Both now scope recipientId to the caller
+  // and NOT_FOUND (non-enumerating) when no caller-owned row matches.
   markRead: protectedProcedure
     .input(z.object({ notificationId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         const [updated] = await db
           .update(notification_logs)
           .set({ status: "read" })
-          .where(eq(notification_logs.id, input.notificationId))
+          .where(
+            and(
+              eq(notification_logs.id, input.notificationId),
+              eq(notification_logs.recipientId, String(ctx.user.id))
+            )
+          )
           .returning();
+        if (!updated) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Notification not found",
+          });
+        }
         return { success: true, notification: updated };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -167,13 +182,25 @@ export const notificationInboxRouter = router({
     }),
   delete: protectedProcedure
     .input(z.object({ notificationId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
-        await db
+        const deleted = await db
           .delete(notification_logs)
-          .where(eq(notification_logs.id, input.notificationId));
+          .where(
+            and(
+              eq(notification_logs.id, input.notificationId),
+              eq(notification_logs.recipientId, String(ctx.user.id))
+            )
+          )
+          .returning();
+        if (deleted.length === 0) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Notification not found",
+          });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

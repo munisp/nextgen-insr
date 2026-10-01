@@ -103,8 +103,14 @@ describe("Sprint 95: Router Implementation", () => {
   // adminProcedure-gated rating-table lifecycle for the fail-closed
   // table-driven rating engine; replaces hardcoded pricing constants).
   // 490 + 1 = 491, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 491 router files", () => {
-    expect(routerFiles.length).toBe(491);
+  // 2026-10-01 drift fix (R3 batch 6): verified live count = 494. Batch 6
+  // added memberOnboarding.ts, memberFeedback.ts, memberPhone.ts
+  // (registered as memberOnboarding / memberFeedback / memberPhone —
+  // caller-scoped member surfaces for onboarding progress, structured
+  // NPS feedback, and phone OTP verification). 491 + 3 = 494, measured
+  // via ls server/routers/*.ts | grep -v .test.
+  it("should have 494 router files", () => {
+    expect(routerFiles.length).toBe(494);
   });
 
   it("should have zero empty routers (router({}))", () => {
