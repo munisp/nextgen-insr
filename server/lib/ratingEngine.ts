@@ -116,10 +116,19 @@ function matchClaimsKey(key: string, count: number): boolean {
   return key === String(count);
 }
 
+// 2026-10-01 (A1-fix-ci1): row type must include id — claims_loading/location
+// selection compares chosen.id === f.id; the narrower type broke CI tsc.
+type FactorRow = {
+  id: number;
+  factorKey: string;
+  value: unknown;
+  minClamp: unknown;
+  maxClamp: unknown;
+};
 function pickFactor(
-  rows: { factorKey: string; value: unknown; minClamp: unknown; maxClamp: unknown }[],
+  rows: FactorRow[],
   matcher: (key: string) => boolean
-): { factorKey: string; value: unknown; minClamp: unknown; maxClamp: unknown } | undefined {
+): FactorRow | undefined {
   return rows.find(r => matcher(r.factorKey)) ?? rows.find(r => r.factorKey === "default");
 }
 
