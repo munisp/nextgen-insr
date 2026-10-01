@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { ProductStore } from "../store";
 
 export interface ProductDefinition {
   id: string;
@@ -16,6 +17,7 @@ export interface ProductDefinition {
   minAge: number;
   currency: string;
   regulatoryApproval: string;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,8 +66,20 @@ export interface ClaimsStep {
   approverRole?: string;
 }
 
+/**
+ * Persistence-audit A1 fix (2026-10-01, C2d): the engine no longer keeps
+ * products in an in-process Map. All mutations are WRITE-THROUGH to Postgres
+ * via ProductStore and all reads are served from Postgres. FAIL-CLOSED: any
+ * database error propagates to the caller (routes return 500); there is no
+ * silent in-memory fallback.
+ */
 export class ProductBuilderEngine {
-  private products: Map<string, ProductDefinition> = new Map();
+  constructor(private readonly store: ProductStore = new ProductStore()) {}
+
+  /** Idempotent schema bootstrap. Throws (fail-closed) if PG is unavailable. */
+  async init(): Promise<void> {
+    await this.store.init();
+  }
 
   getTemplates() {
     return [
@@ -122,7 +136,7 @@ export class ProductBuilderEngine {
     ];
   }
 
-  createProduct(input: Partial<ProductDefinition>): ProductDefinition {
+  async createProduct(input: Partial<ProductDefinition>): Promise<ProductDefinition> {
     const product: ProductDefinition = {
       id: uuidv4(),
       name: input.name || "New Product",
@@ -138,30 +152,48 @@ export class ProductBuilderEngine {
       maxAge: input.maxAge || 65,
       minAge: input.minAge || 18,
       currency: input.currency || "NGN",
-      regulatoryApproval: "",
+      regulatoryApproval: input.regulatoryApproval || "",
+      createdBy: input.createdBy,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    this.products.set(product.id, product);
+    // Write-through to Postgres; throws on failure (fail-closed, 2026-10-01 C2d).
+    await this.store.insert(product);
     return product;
   }
 
-  getProduct(id: string): ProductDefinition | undefined {
-    return this.products.get(id);
+  async getProduct(id: string): Promise<ProductDefinition | undefined> {
+    return this.store.get(id);
   }
 
-  updateProduct(id: string, updates: Partial<ProductDefinition>): ProductDefinition | undefined {
-    const product = this.products.get(id);
+  async listProducts(status?: string): Promise<ProductDefinition[]> {
+    return this.store.list(status);
+  }
+
+  async updateProduct(id: string, updates: Partial<ProductDefinition>): Promise<ProductDefinition | undefined> {
+    const product = await this.store.get(id);
     if (!product) return undefined;
     Object.assign(product, updates, { updatedAt: new Date().toISOString(), version: product.version + 1 });
+    // Write-through; throws on failure so callers never see a phantom success.
+    await this.store.update(product);
     return product;
   }
 
-  publishProduct(id: string) {
-    const product = this.products.get(id);
+  async publishProduct(id: string): Promise<{ error: string } | { status: string; message: string }> {
+    const product = await this.store.get(id);
     if (!product) return { error: "Product not found" };
     product.status = "published";
     product.updatedAt = new Date().toISOString();
+    await this.store.update(product);
     return { status: "published", message: `Product '${product.name}' is now live` };
+  }
+
+  async retireProduct(id: string): Promise<{ error: string } | { status: string; message: string }> {
+    const product = await this.store.get(id);
+    if (!product) return { error: "Product not found" };
+    product.status = "retired";
+    product.updatedAt = new Date().toISOString();
+    await this.store.update(product);
+    return { status: "retired", message: `Product '${product.name}' has been retired` };
   }
 }

@@ -4,7 +4,7 @@ const DATABASE_URL = process.env.DATABASE_URL || "postgresql://ngapp:ngapp@local
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
 
-export async function query(text: string, params?: any[]) {
+export async function query(text: string, params?: unknown[]) {
   const client = await pool.connect();
   try {
     return await client.query(text, params);
