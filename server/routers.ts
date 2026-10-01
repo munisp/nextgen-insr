@@ -373,6 +373,10 @@ import { memberMobileMoneyRouter } from "./routers/memberMobileMoney";
 import { memberAirtimeRouter } from "./routers/memberAirtime";
 import { memberBillPaymentsRouter } from "./routers/memberBillPayments";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
+import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
+import { memberRenewalsRouter } from "./routers/memberRenewals";
+import { memberEndorsementsRouter } from "./routers/memberEndorsements";
+import { memberQuotesRouter } from "./routers/memberQuotes";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1241,6 +1245,15 @@ export const appRouter = router({
   memberAirtime: memberAirtimeRouter,
   memberBillPayments: memberBillPaymentsRouter,
   memberFxRates: memberFxRatesRouter,
+  // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
+  // endorsements/quote-cart. insuranceWorkflows requestRenewal/
+  // requestEndorsement IDORs closed via memberGuards.assertPolicyOwnershipDual;
+  // quote cart binds resolved customers.id (never input customerId);
+  // payRenewal/premium funds deferred to funds wave. Router count 486 -> 490.
+  memberBeneficiaries: memberBeneficiariesRouter,
+  memberRenewals: memberRenewalsRouter,
+  memberEndorsements: memberEndorsementsRouter,
+  memberQuotes: memberQuotesRouter,
 });
 
 export type AppRouter = typeof appRouter;
