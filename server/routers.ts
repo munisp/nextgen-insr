@@ -356,6 +356,13 @@ import { parametricEngineRouter } from "./routers/parametricEngine";
 // the member freemium ladder — PWA innovationApi bindings.
 import { parametricMemberRouter } from "./routers/parametricMember";
 import { freemiumTiersRouter } from "./routers/freemiumTiers";
+// R3 batch 1 (2026-10-01, R3): member-scoped surfaces for previously orphaned
+// domains. All caller-scoped (ctx.user.id); admin/agent originals untouched.
+import { memberPoliciesRouter } from "./routers/memberPolicies";
+import { memberClaimsRouter } from "./routers/memberClaims";
+import { memberHelpDeskRouter } from "./routers/memberHelpDesk";
+import { memberLoyaltyRouter } from "./routers/memberLoyalty";
+import { memberReferralsRouter } from "./routers/memberReferrals";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1197,6 +1204,15 @@ export const appRouter = router({
   // count 471 → 473 (sprint95 gate updated).
   parametricMember: parametricMemberRouter,
   freemiumTiers: freemiumTiersRouter,
+  // R3 batch 1 (2026-10-01, R3): member surfaces for orphan domains.
+  // memberClaims.fileClaim re-verifies policy ownership then delegates to
+  // insuranceWorkflows.fileClaim. Router count 473 -> 478 (sprint95 gate
+  // updated with measured value).
+  memberPolicies: memberPoliciesRouter,
+  memberClaims: memberClaimsRouter,
+  memberHelpDesk: memberHelpDeskRouter,
+  memberLoyalty: memberLoyaltyRouter,
+  memberReferrals: memberReferralsRouter,
 });
 
 export type AppRouter = typeof appRouter;

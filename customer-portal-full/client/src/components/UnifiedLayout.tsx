@@ -50,6 +50,8 @@ import {
   Settings,
   UserCog,
   ClipboardList,
+  FilePlus2,
+  LifeBuoy,
   Briefcase,
   DollarSign,
   Scale,
@@ -201,6 +203,9 @@ const menuGroups: MenuGroup[] = [
   {
     label: "My Policies",
     items: [
+      // R3 batch 1 (2026-10-01, R3): live monolith-backed member surfaces
+      { icon: Package, label: "Browse Products (Live)", path: "/browse", permission: "canViewPolicies" },
+      { icon: FileText, label: "My Policies (Live)", path: "/my-policies", permission: "canViewPolicies" },
       { icon: FileText, label: "My Applications", path: "/applications", permission: "canViewPolicies" },
       { icon: FileText, label: "Active Policies", path: "/policies", permission: "canViewPolicies" },
       { icon: Wallet, label: "Digital Wallet", path: "/digital-wallet", permission: "canViewPolicies" },
@@ -214,6 +219,8 @@ const menuGroups: MenuGroup[] = [
     label: "Claims Centre",
     items: [
       { icon: ClipboardList, label: "My Claims", path: "/claims", permission: "canViewClaims" },
+      { icon: ClipboardList, label: "My Claims (Live)", path: "/my-claims", permission: "canViewClaims" },
+      { icon: FilePlus2, label: "File a Claim", path: "/file-claim", permission: "canViewClaims" },
       { icon: Clock, label: "Claims Timeline", path: "/claims-timeline", permission: "canViewClaims" },
       { icon: Camera, label: "Claims Evidence", path: "/claims-evidence", permission: "canViewClaims" },
       { icon: Package, label: "Claims Tracker", path: "/claims-tracker", permission: "canViewClaims" },
@@ -224,6 +231,7 @@ const menuGroups: MenuGroup[] = [
     label: "Payments & Finance",
     items: [
       { icon: CreditCard, label: "Payments", path: "/payments", permission: "canViewPayments" },
+      { icon: Wallet, label: "Wallet (Live)", path: "/wallet", permission: "canViewPayments" },
       { icon: PiggyBank, label: "Savings & Investment", path: "/savings-investment", permission: "canViewPolicies" },
       { icon: Wallet, label: "Financial Wellness", path: "/financial-wellness", permission: "canViewPolicies" },
       { icon: Landmark, label: "Bancassurance", path: "/bancassurance", permission: "canViewPolicies" },
@@ -240,6 +248,9 @@ const menuGroups: MenuGroup[] = [
   {
     label: "Customer Engagement",
     items: [
+      { icon: LifeBuoy, label: "Support Tickets", path: "/support", permission: "canViewDashboard" },
+      { icon: Star, label: "My Loyalty Points", path: "/my-loyalty", permission: "canViewReferrals" },
+      { icon: Share2, label: "My Referrals", path: "/my-referrals", permission: "canViewReferrals" },
       { icon: Trophy, label: "Rewards & Achievements", path: "/rewards", permission: "canViewReferrals" },
       { icon: Crown, label: "Loyalty Program", path: "/loyalty-program", permission: "canViewReferrals" },
       { icon: Share2, label: "Referral Program", path: "/referral-program", permission: "canViewReferrals" },

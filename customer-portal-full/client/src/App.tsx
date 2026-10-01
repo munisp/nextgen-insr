@@ -125,6 +125,16 @@ import IFRS17Dashboard from "./pages/IFRS17Dashboard";
 import ParametricCoverage from "./pages/ParametricCoverage";
 import PoolMembership from "./pages/PoolMembership";
 import DrivingScore from "./pages/DrivingScore";
+// R3 batch 1 member surfaces (2026-10-01, R3) — monolith member* routers
+import ProductBrowse from "./pages/ProductBrowse";
+import MyPolicies from "./pages/MyPolicies";
+import MyClaims from "./pages/MyClaims";
+import FileClaim from "./pages/FileClaim";
+import Wallet from "./pages/Wallet";
+import Support from "./pages/Support";
+import SupportTicket from "./pages/SupportTicket";
+import MyLoyalty from "./pages/MyLoyalty";
+import MyReferrals from "./pages/MyReferrals";
 import UsageCoverActivation from "./pages/UsageCoverActivation";
 import WellnessFeed from "./pages/WellnessFeed";
 import PhotoReimbursement from "./pages/PhotoReimbursement";
@@ -762,6 +772,52 @@ function Router() {
       <Route path="/plan-upgrade">
         <UnifiedLayout>
           <FreemiumUpgrade />
+        </UnifiedLayout>
+      </Route>
+      {/* R3 batch 1 member surfaces (2026-10-01, R3) — backed by monolith member* routers */}
+      <Route path="/browse">
+        <UnifiedLayout>
+          <ProductBrowse />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-policies">
+        <UnifiedLayout>
+          <MyPolicies />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-claims">
+        <UnifiedLayout>
+          <MyClaims />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/file-claim">
+        <UnifiedLayout>
+          <FileClaim />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/wallet">
+        <UnifiedLayout>
+          <Wallet />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/support/:id">
+        <UnifiedLayout>
+          <SupportTicket />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/support">
+        <UnifiedLayout>
+          <Support />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-loyalty">
+        <UnifiedLayout>
+          <MyLoyalty />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-referrals">
+        <UnifiedLayout>
+          <MyReferrals />
         </UnifiedLayout>
       </Route>
                         <Route path="/404" component={NotFound} />
