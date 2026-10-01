@@ -48,49 +48,11 @@ const RecurringPaymentsScreen: React.FC = () => {
       const data = await response.json();
       setPayments(data);
     } catch (error) {
-      // Fallback to mock data for demonstration if API fails
-      setPayments([
-        {
-          id: '1',
-          title: 'Netflix Subscription',
-          amount: 15.99,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-15',
-          isActive: true,
-          recipientName: 'Netflix Inc.',
-          category: 'Entertainment',
-        },
-        {
-          id: '2',
-          title: 'Electricity Bill',
-          amount: 85.50,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-20',
-          isActive: true,
-          recipientName: 'City Power & Light',
-          category: 'Utilities',
-        },
-        {
-          id: '3',
-          title: 'Gym Membership',
-          amount: 45.00,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-05',
-          isActive: false,
-          recipientName: 'FitLife Gym',
-          category: 'Health',
-        },
-        {
-          id: '4',
-          title: 'Internet Service',
-          amount: 60.00,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-10',
-          isActive: true,
-          recipientName: 'FastNet Fiber',
-          category: 'Utilities',
-        },
-      ]);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously displayed four
+      // hardcoded fake recurring payments (Netflix / Electricity / Gym /
+      // Internet) on API failure. Fail-closed: empty list + honest error.
+      setPayments([]);
+      Alert.alert('Error', 'Could not load recurring payments. Please try again later.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -124,11 +86,10 @@ const RecurringPaymentsScreen: React.FC = () => {
         prev.map((p) => (p.id === id ? { ...p, isActive: !currentStatus } : p))
       );
     } catch (error) {
-      // Optimistic update for demo purposes if API fails
-      setPayments((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, isActive: !currentStatus } : p))
-      );
-      Alert.alert('Status Updated', `Payment has been ${!currentStatus ? 'enabled' : 'disabled'}.`);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously applied a fake
+      // "optimistic" toggle and showed a success alert when the server call
+      // failed, claiming a payment was enabled/disabled when it was not.
+      Alert.alert('Error', 'Could not update the payment status. No change was made.');
     }
   };
 

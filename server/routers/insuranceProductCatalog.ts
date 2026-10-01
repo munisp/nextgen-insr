@@ -18,12 +18,15 @@ import { z } from "zod";
 import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
 // Q-wave Q3 (2026-09-25): UBI rolling score for motor rating.
 import { telematicsScores } from "../../drizzle/schema.innovations";
-import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, router, serviceOrUserProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
 export const insuranceProductCatalogRouter = router({
   // List all available insurance products
-  listProducts: protectedProcedure
+  // 2026-10-01 (R-fix2): serviceOrUserProcedure — returns only product-catalog
+  // marketing metadata (insuranceProducts rows + count); no customer/policy/PII
+  // joins, so trusted service tokens (whatsapp-bot) may call it.
+  listProducts: serviceOrUserProcedure
     .input(z.object({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
@@ -103,6 +106,10 @@ export const insuranceProductCatalogRouter = router({
   }),
 
   // Get product premium calculator
+  // 2026-10-01 (R-fix2): intentionally KEPT protectedProcedure — when policyId
+  // is supplied this reads telematics_scores (policy-linked driving score and
+  // rating factor) and returns telematicsScore, i.e. member behavioral data.
+  // Not eligible for serviceOrUserProcedure.
   calculatePremium: protectedProcedure
     .input(z.object({
       productId: z.number(),

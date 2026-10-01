@@ -24,6 +24,10 @@ const VirtualCardScreen: React.FC = () => {
   const [cardData, setCardData] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
+  // 2026-10-01 (R1b): error state replaces the fabricated demo card (hardcoded
+  // PAN 5412 8890 1234 5678 + CVV 345, "JOHN DOE") that was displayed whenever
+  // the API failed — a critical fabrication of payment-card data.
+  const [cardError, setCardError] = useState<string | null>(null);
 
   const API_BASE_URL = 'https://api.insureportal.io/v1';
 
@@ -34,34 +38,19 @@ const VirtualCardScreen: React.FC = () => {
   const fetchCardDetails = async () => {
     try {
       setLoading(true);
+      setCardError(null);
       const response = await fetch(`${API_BASE_URL}/cards/virtual`);
       const data = await response.json();
       if (response.ok) {
         setCardData(data);
         setIsFrozen(data.status === 'frozen');
       } else {
-        // Fallback for demo purposes if API is not reachable
-        setCardData({
-          cardNumber: '5412 8890 1234 5678',
-          expiryDate: '12/28',
-          cvv: '345',
-          cardHolder: 'JOHN DOE',
-          balance: 2500.50,
-          currency: 'USD',
-          type: 'Mastercard',
-        });
+        throw new Error(data.message || 'Failed to load card');
       }
     } catch (error) {
-      // Fallback for demo purposes
-      setCardData({
-        cardNumber: '5412 8890 1234 5678',
-        expiryDate: '12/28',
-        cvv: '345',
-        cardHolder: 'JOHN DOE',
-        balance: 2500.50,
-        currency: 'USD',
-        type: 'Mastercard',
-      });
+      // Fail-closed: NEVER render an invented card number/CVV. (2026-10-01, R1b)
+      setCardData(null);
+      setCardError('Virtual card is unavailable right now. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -75,17 +64,18 @@ const VirtualCardScreen: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus ? 'frozen' : 'active' }),
       });
-      
+
       if (response.ok) {
         setIsFrozen(newStatus);
         Alert.alert('Success', `Card has been ${newStatus ? 'frozen' : 'unfrozen'} successfully.`);
       } else {
-        Alert.alert('Error', 'Failed to update card status. Please try again.');
+        throw new Error('Failed to update card status');
       }
     } catch (error) {
-      // Local update for demo
-      setIsFrozen(newStatus);
-      Alert.alert('Success', `Card has been ${newStatus ? 'frozen' : 'unfrozen'} successfully.`);
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously this applied a local
+      // freeze/unfreeze and showed a success alert when the server call failed,
+      // i.e. the UI claimed the card was frozen when it was not (funds risk).
+      Alert.alert('Error', 'Could not update the card status. No change was made. Please try again.');
     }
   };
 
@@ -101,6 +91,23 @@ const VirtualCardScreen: React.FC = () => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6C63FF" />
       </View>
+    );
+  }
+
+  // 2026-10-01 (R1b): fail-closed "card unavailable" state — never render card
+  // visuals without real server-provided card data.
+  if (!cardData) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.cardErrorText}>
+            {cardError ?? 'Virtual card is unavailable.'}
+          </Text>
+          <TouchableOpacity style={styles.actionButton} onPress={fetchCardDetails}>
+            <Text style={styles.actionButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -223,6 +230,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#1A1A2E',
+    padding: 24,
+  },
+  cardErrorText: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   scrollContent: {
     padding: 20,

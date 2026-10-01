@@ -58,25 +58,16 @@ export const AddBeneficiaryScreen = () => {
       if (result.success) {
         setBanks(result.data);
       } else {
-        // Fallback banks for demo/production robustness
-        setBanks([
-          { id: '1', name: 'Access Bank' },
-          { id: '2', name: 'First Bank of Nigeria' },
-          { id: '3', name: 'GTBank' },
-          { id: '4', name: 'Zenith Bank' },
-          { id: '5', name: 'United Bank for Africa' },
-        ]);
+        throw new Error('Failed to load banks');
       }
     } catch (error) {
+      // 2026-10-01 (R1b): FABRICATION REMOVED — previously fell back to a
+      // hardcoded bank list with invented ids ('1'..'5'); a beneficiary saved
+      // against a fake bank code would misroute funds. Fail-closed: empty
+      // list + honest error.
       console.error('Error fetching banks:', error);
-      // Fallback banks
-      setBanks([
-        { id: '1', name: 'Access Bank' },
-        { id: '2', name: 'First Bank of Nigeria' },
-        { id: '3', name: 'GTBank' },
-        { id: '4', name: 'Zenith Bank' },
-        { id: '5', name: 'United Bank for Africa' },
-      ]);
+      setBanks([]);
+      Alert.alert('Error', 'Could not load the bank list. Please try again later.');
     } finally {
       setIsLoadingBanks(false);
     }

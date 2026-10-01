@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
-const API_BASE = 'http://localhost:3000/api/trpc';
+// 2026-10-01 (R1c): was dashboard.notifications (nonexistent) on a hardcoded
+// localhost URL — rewired to the real mounted notificationInbox.list.
+import { trpcQuery } from '../config';
 
 export function NotificationsScreen() {
   const { token } = useAuth();
@@ -15,14 +17,12 @@ export function NotificationsScreen() {
     queryKey: ['notifications'],
     queryFn: async () => {
       try {
-        const res = await fetch(`${API_BASE}/dashboard.notifications`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        const data = json?.result?.data || json || [];
+        const result = await trpcQuery<{ notifications: any[]; total: number }>(
+          'notificationInbox.list', { limit: 50, offset: 0 }, token,
+        );
+        const data = result?.notifications ?? [];
         await setCachedData('notifications', data, 300000);
-        return Array.isArray(data) ? data : [];
+        return data;
       } catch {
         return (await getCachedData('notifications')) || [];
       }

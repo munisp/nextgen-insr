@@ -1,9 +1,13 @@
 /**
  * DrivingScore.tsx — Q-wave Q6 (2026-09-25)
  * Member telematics driving score + trip history.
- * BINDING DISCLOSURE: Q3 (telematicsScore router) is planned in plan-q.md but
- * not deployed yet; bindings feature-detect and this page renders a disclosed
- * "not available yet" state until the backend lands. No data is fabricated.
+ * BINDING: REAL — telematics.myScore / telematics.myTrips (Q3 telematics
+ * router). NOT_FOUND/FORBIDDEN → null remains only as a defensive fallback
+ * for older deployments (2026-10-01, R2b).
+ * 2026-10-01 (R2b): updated to the corrected innovationApi contracts —
+ * DrivingScoreResult.score is nullable (no trips = honest empty state),
+ * ratingFactorApplied → ratingFactor, TripItem.events =
+ * hardBrakes/speedingEvents/corneringEvents. No data is fabricated.
  */
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,7 +67,9 @@ export default function DrivingScore() {
             />
           ) : score.data === null ? (
             <UnavailableState feature="Telematics driving score" />
-          ) : !score.data ? (
+          ) : !score.data || score.data.score == null ? (
+            // 2026-10-01 (R2b): score is null until trips are ingested —
+            // honest empty state, never a fabricated 0.
             <EmptyState
               title="No driving score yet"
               hint="Scores are computed once the mobile app has uploaded scored trips."
@@ -84,20 +90,28 @@ export default function DrivingScore() {
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt>Premium impact</dt>
+                  {/* 2026-10-01 (R2b): contract exposes ratingFactor (number);
+                      no ratingFactorApplied flag exists. */}
+                  <dt>Rating factor</dt>
                   <dd className="font-medium text-stone-900">
-                    {score.data.ratingFactorApplied
-                      ? "Applied to your motor premium"
-                      : "Not yet applied to pricing"}
+                    {score.data.ratingFactor}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt>Period</dt>
-                  <dd>
-                    {new Date(score.data.periodStart).toLocaleDateString()} –{" "}
-                    {new Date(score.data.periodEnd).toLocaleDateString()}
+                  <dt>Window</dt>
+                  <dd className="font-medium text-stone-900">
+                    {score.data.windowDays} days
                   </dd>
                 </div>
+                {score.data.periodStart && score.data.periodEnd && (
+                  <div className="flex justify-between gap-4">
+                    <dt>Period</dt>
+                    <dd>
+                      {new Date(score.data.periodStart).toLocaleDateString()} –{" "}
+                      {new Date(score.data.periodEnd).toLocaleDateString()}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
           )}
@@ -138,10 +152,12 @@ export default function DrivingScore() {
                       {new Date(t.startedAt).toLocaleString()}
                     </p>
                     <p className="text-xs text-stone-500">
-                      {t.distanceKm.toFixed(1)} km · braking{" "}
-                      {t.events.harshBraking} · accel{" "}
-                      {t.events.harshAcceleration} · speeding{" "}
-                      {t.events.speeding}
+                      {/* 2026-10-01 (R2b): TripItem.events contract is
+                          hardBrakes / speedingEvents / corneringEvents. */}
+                      {t.distanceKm.toFixed(1)} km · hard brakes{" "}
+                      {t.events.hardBrakes} · speeding{" "}
+                      {t.events.speedingEvents} · cornering{" "}
+                      {t.events.corneringEvents}
                     </p>
                   </div>
                   <span

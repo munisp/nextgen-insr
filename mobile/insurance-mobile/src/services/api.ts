@@ -1,7 +1,11 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = process.env.API_URL || 'https://api.insureportal.ng';
+// 2026-10-01 (R1c): base URL comes from centralized config (build-time env,
+// localhost fallback only behind __DEV__) — no hardcoded endpoints here.
+import { API_BASE_URL } from '../config';
+
+const API_BASE = API_BASE_URL;
 const TOKEN_KEY = '@insureportal/auth_token';
 const REFRESH_KEY = '@insureportal/refresh_token';
 

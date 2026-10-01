@@ -1,4 +1,5 @@
-// SECURITY: SQL template literals in this file are for display/mock purposes only.
+// 2026-10-01 (R1b): all mock/stub paths removed from this screen — uploads,
+// submission and biometric gating now hit real endpoints/libraries only.
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
@@ -16,23 +17,25 @@ import { useNavigation, NativeStackScreenProps } from '@react-navigation/native'
 import axios, { AxiosError } from 'axios';
 import { launchCamera, launchImageLibrary, Asset } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Placeholder for react-native-biometrics - actual library may vary
-// We'll use a simple interface for the stubbed functionality
-// import Biometrics from 'react-native-biometrics';
+// 2026-10-01 (R1b): real biometrics library (already used by
+// BiometricAuthScreen/PinSetupScreen) replaces the always-true stub.
+import ReactNativeBiometrics from 'react-native-biometrics';
 
 // --- Configuration & Constants ---
 const API_BASE_URL = 'https://kyc.insureportal.io/api/v1';
-const PAYSTACK_PUBLIC_KEY = 'pk_test_xxxxxxxxxxxxxxxxxxxx';
-const FLUTTERWAVE_PUBLIC_KEY = 'FLW_PUBK_TEST-xxxxxxxxxxxxxxxxxxxx';
+// 2026-10-01 (R1b): removed hardcoded Paystack/Flutterwave TEST public keys
+// (PAYSTACK_PUBLIC_KEY / FLUTTERWAVE_PUBLIC_KEY). Test keys must never ship,
+// and the fabricated "verification fee" payment step that used them was
+// removed (see handleSubmitAll).
 
 // --- Type Definitions ---
 
 // Define the root stack param list for navigation
+// 2026-10-01 (R1b): PaymentSuccess route removed — it does not exist and was
+// only reachable via the fabricated fee-payment flow.
 type RootStackParamList = {
   Home: undefined;
   KYCVerification: undefined;
-  PaymentSuccess: { transactionId: string };
-  // Add other screens as needed
 };
 
 // Define the screen props type
@@ -74,7 +77,7 @@ const initialState: KYCState = {
   verificationStatus: 'initial',
 };
 
-// --- API Service Stub ---
+// --- API Service (real endpoints; 2026-10-01, R1b) ---
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -83,29 +86,30 @@ const api = axios.create({
   },
 });
 
-// --- Biometrics Stub ---
+// --- Biometrics (real) ---
+// 2026-10-01 (R1b): FABRICATION REMOVED — the previous BiometricsService stub
+// resolved `true` after a timer for BOTH support checks and authentication,
+// i.e. biometric gating always "passed" without any biometric check.
+const rnBiometrics = new ReactNativeBiometrics();
+
 const BiometricsService = {
   isSupported: async (): Promise<boolean> => {
-    // In a real app, this would call Biometrics.isSensorAvailable()
-    return new Promise(resolve => setTimeout(() => resolve(true), 500));
+    const { available } = await rnBiometrics.isSensorAvailable();
+    return available;
   },
   authenticate: async (prompt: string): Promise<boolean> => {
-    // In a real app, this would call Biometrics.simplePrompt({ promptMessage: prompt })
-    Alert.alert('Biometric Auth', `Authenticating with: ${prompt}`);
-    return new Promise(resolve => setTimeout(() => resolve(true), 1000));
+    const { success } = await rnBiometrics.simplePrompt({
+      promptMessage: prompt,
+      cancelButtonText: 'Cancel',
+    });
+    return success;
   },
 };
 
-// --- Payment Gateway Stub ---
-const PaymentService = {
-  // A simple stub for initiating a payment (e.g., a small verification fee)
-  initiatePayment: async (amount: number, currency: string, email: string): Promise<string> => {
-    console.log(`Initiating ${currency} ${amount} payment for ${email}`);
-    // In a real app, this would involve calling the Paystack/Flutterwave SDK
-    // For this example, we'll simulate a successful transaction ID
-    return new Promise(resolve => setTimeout(() => resolve(`TXN-${Date.now()}`), 1500));
-  },
-};
+// 2026-10-01 (R1b): PaymentService stub DELETED — it fabricated a successful
+// transaction ID for a "verification fee" that was never charged. No real
+// verification-fee endpoint exists in the API client; the step is removed
+// from the submission flow entirely.
 
 // --- Utility Functions ---
 
@@ -136,9 +140,10 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
   // Check for offline status and biometrics support on mount
   useEffect(() => {
     const checkStatus = async () => {
-      // Check network status (stubbed)
-      const isConnected = true; // In a real app, use NetInfo
-      setState(s => ({ ...s, isOffline: !isConnected }));
+      // 2026-10-01 (R1b): removed stubbed `isConnected = true`. NetInfo is not
+      // a dependency of this app; rather than fabricate connectivity state we
+      // default to online and let real API errors surface honestly.
+      setState(s => ({ ...s, isOffline: false }));
 
       // Check biometrics support
       try {
@@ -217,20 +222,22 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
         type: document.fileType,
       } as any); // 'as any' is used because FormData expects a Blob/File, but RN uses a custom object
 
-      // 2. API Call (Stubbed)
-      // In a real app, this would be a POST request to upload the file
-      // const response = await api.post('/upload', formData, {
-      //   headers: { 'Content-Type': 'multipart/form-data' },
-      // });
+      // 2. API Call (real — 2026-10-01, R1b): previously this SKIPPED the
+      // upload, waited 2s on a timer, then marked the document 'verified' —
+      // a fabricated KYC pass. Now the file is actually uploaded and the
+      // status only advances on a confirmed server response.
+      await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
 
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate network delay
-
-      // 3. Update state on success
+      // 3. Update state on confirmed success. Status is 'uploaded' (submitted
+      //    for review) — only the backend compliance review can mark a
+      //    document 'verified'.
       setState(s => ({
         ...s,
         isLoading: false,
         documents: s.documents.map(doc =>
-          doc.id === document.id ? { ...doc, status: 'verified' } : doc
+          doc.id === document.id ? { ...doc, status: 'uploaded' } : doc
         ),
       }));
       Alert.alert('Success', `${document.name} uploaded and submitted for verification.`);
@@ -262,19 +269,25 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
         }
       }
 
-      // 2. Final KYC Submission API Call (Stubbed)
-      // This would typically submit all document references for final processing
-      // const response = await api.post('/submit-kyc', { documentReferences: documents.map(d => d.fileName) });
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Simulate processing time
+      // 2. Final KYC Submission API Call (real — 2026-10-01, R1b): previously
+      //      a 3s timer simulated success and a stubbed PaymentService
+      //      fabricated a fee transaction ID. Both removed.
+      await api.post('/submit-kyc', {
+        documentReferences: documents.map(d => d.fileName),
+      });
 
-      // 3. Payment Gateway Integration (Stubbed - e.g., for a small verification fee)
-      const transactionId = await PaymentService.initiatePayment(100, 'NGN', 'user@example.com');
+      // 3. Record submitted status locally (cache only — the server is the
+      //    source of truth for KYC state).
+      await AsyncStorage.setItem('kyc_status', JSON.stringify({ status: 'submitted' }));
 
-      // 4. Save status offline (AsyncStorage)
-      await AsyncStorage.setItem('kyc_status', JSON.stringify({ status: 'submitted', transactionId }));
-
-      // 5. Navigate to success screen
-      navigation.navigate('PaymentSuccess', { transactionId });
+      // 4. Honest completion: no fabricated PaymentSuccess screen (that route
+      //    does not exist); confirm and return.
+      setState(s => ({ ...s, isLoading: false, verificationStatus: 'complete' }));
+      Alert.alert(
+        'Submitted',
+        'Your documents have been submitted for verification. You will be notified once the review is complete.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
 
     } catch (err) {
       handleApiError(err as AxiosError, (msg) => setState(s => ({ ...s, error: msg })));

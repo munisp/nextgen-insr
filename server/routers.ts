@@ -352,6 +352,10 @@ import { openTelemetryRouter } from "./routers/openTelemetry";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 import { operationalRunbookRouter } from "./routers/operationalRunbook";
 import { parametricEngineRouter } from "./routers/parametricEngine";
+// Q-wave Q6 (2026-10-01, R2): member-scoped parametric views (read-only) and
+// the member freemium ladder — PWA innovationApi bindings.
+import { parametricMemberRouter } from "./routers/parametricMember";
+import { freemiumTiersRouter } from "./routers/freemiumTiers";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1187,6 +1191,12 @@ export const appRouter = router({
   // claims CX / provider portal (Curacel) — migration 0089.
   careRetention: careRetentionRouter,
   providerPortal: providerPortalRouter,
+  // Q-wave Q6 (2026-10-01, R2): PWA member surfaces. parametricMember is
+  // READ-ONLY (the admin engine stays on parametricEngine); freemiumTiers
+  // delegates its money path to embeddedFactory's Q1 procedures. Router
+  // count 471 → 473 (sprint95 gate updated).
+  parametricMember: parametricMemberRouter,
+  freemiumTiers: freemiumTiersRouter,
 });
 
 export type AppRouter = typeof appRouter;

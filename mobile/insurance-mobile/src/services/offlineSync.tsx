@@ -40,7 +40,10 @@ const OfflineSyncContext = createContext<OfflineSyncContextType | null>(null);
 const QUEUE_KEY = '@insureportal/offline_queue';
 const CACHE_PREFIX = '@insureportal/cache/';
 const SYNC_INTERVAL = 30_000;
-const API_BASE = process.env.API_URL || 'https://api.insureportal.ng';
+// 2026-10-01 (R1c): endpoint from centralized config; no envless default.
+import { API_BASE_URL } from '../config';
+
+const API_BASE = API_BASE_URL;
 
 export function OfflineSyncProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SyncState>({
@@ -161,7 +164,15 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
             }),
           });
 
-          if (response.ok) {
+          // 2026-10-01 (R1c) CRITICAL data-loss fix: HTTP 200 alone is NOT
+          // proof of persistence. The BFF now returns per-item statuses;
+          // only mark the op synced when the server confirms THIS operation
+          // persisted. synced:false (with a reason) keeps the item queued
+          // for retry instead of being silently dropped.
+          const body = await response.json().catch(() => null);
+          const itemResult = body?.results?.find?.((r: any) => r.operationId === row.id);
+          const confirmed = response.ok && (itemResult ? itemResult.synced === true : body?.synced === true);
+          if (confirmed) {
             await dbRef.current!.executeSql("UPDATE offline_queue SET status = 'synced' WHERE id = ?", [row.id]);
             await dbRef.current!.executeSql(
               "INSERT INTO sync_log (operation_id, direction, status, timestamp, details) VALUES (?, 'up', 'success', ?, ?)",
@@ -175,7 +186,9 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
               errors.push({ operationId: row.id, error: 'Conflict detected', timestamp: Date.now() });
             }
           } else {
-            throw new Error(`HTTP ${response.status}`);
+            // 2026-10-01 (R1c): surface the server's per-item reason so the
+            // sync log and retry path reflect the real failure.
+            throw new Error(itemResult?.error || body?.error || `HTTP ${response.status}`);
           }
         } catch (err) {
           const newRetry = row.retry_count + 1;
@@ -205,7 +218,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     await refreshPendingCount();
   }, []);
 
-  const getCachedData = useCallback(async <T>(key: string): Promise<T | null> => {
+  const getCachedData = useCallback(async <T,>(key: string): Promise<T | null> => {
     if (!dbRef.current) {
       const raw = await AsyncStorage.getItem(CACHE_PREFIX + key);
       return raw ? JSON.parse(raw) : null;
@@ -222,7 +235,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     return JSON.parse(row.value);
   }, []);
 
-  const setCachedData = useCallback(async <T>(key: string, data: T, ttl?: number) => {
+  const setCachedData = useCallback(async <T,>(key: string, data: T, ttl?: number) => {
     const expiresAt = ttl ? Date.now() + ttl : null;
     if (!dbRef.current) {
       await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data));

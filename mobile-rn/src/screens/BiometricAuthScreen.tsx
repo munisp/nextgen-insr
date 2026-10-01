@@ -8,7 +8,8 @@ import {
   Alert,
   Platform,
   AccessibilityProps,
-  TextInput, // Added TextInput
+  // 2026-10-01 (R1b): TextInput import removed — only used by the deleted
+  // payment-demo block.
 } from 'react-native';
 import { useNavigation, NativeStackScreenProps } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +32,10 @@ interface AuthResponse {
   success: boolean;
   token: string;
   message: string;
+  // 2026-10-01 (R1b): these optional fields were already read below but were
+  // missing from the type (TS error).
+  refreshToken?: string;
+  userId?: string;
 }
 
 // Define the shape of the component's state
@@ -231,50 +236,12 @@ const BiometricAuthScreen: React.FC<BiometricAuthScreenProps> = () => {
         <Text style={styles.fallbackButtonText}>Use Password Login</Text>
       </TouchableOpacity>
 
-      {/* Payment Gateway Integration Example */}
-      <View style={styles.paymentSection}>
-        <Text style={styles.subheader}>Payment Gateway Demo</Text>
-        <Text style={styles.label}>Enter Amount (₦):</Text>
-        {/* Using TextInput for proper form input and validation */}
-        <TextInput
-          style={styles.inputPlaceholder}
-          onChangeText={setPaymentAmount}
-          value={paymentAmount}
-          keyboardType="numeric"
-          placeholder="e.g., 1000"
-          accessibilityLabel="Payment amount input"
-        />
-        {paymentError && <Text style={styles.paymentErrorText}>{paymentError}</Text>}
-
-        <View style={styles.paymentButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.paymentButton, { backgroundColor: '#00C389' }]} // Paystack Green
-            onPress={() => validateAndPay('paystack')}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>Pay with Paystack</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.paymentButton, { backgroundColor: '#FF5733' }]} // Flutterwave Orange
-            onPress={() => validateAndPay('flutterwave')}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>Pay with Flutterwave</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Documentation Placeholder */}
-      <View style={styles.documentation}>
-        <Text style={styles.docHeader}>Documentation</Text>
-        <Text style={styles.docText}>
-          This screen handles biometric authentication using react-native-biometrics.
-          It integrates with a mock API via axios, uses AsyncStorage for offline token storage,
-          and includes placeholders for Paystack and Flutterwave payment integrations.
-          State is managed via React hooks, and navigation uses React Navigation.
-        </Text>
-      </View>
+      {/* 2026-10-01 (R1b): removed the "Payment Gateway Demo" section. It
+          referenced undefined variables (paymentAmount, setPaymentAmount,
+          paymentError, validateAndPay) which broke the build, and a payment
+          gateway demo has no place on the biometric AUTHENTICATION screen.
+          Also removed the embedded "Documentation" block that described a
+          mock API — the screen uses real server verification only. */}
     </View>
   );
 };

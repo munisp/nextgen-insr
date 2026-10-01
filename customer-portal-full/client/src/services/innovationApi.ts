@@ -9,19 +9,28 @@
  * credentials: "include", i.e. the member's existing session cookie — no
  * tokens are stored or cached by this module.
  *
- * Binding status per surface (honest disclosure):
+ * Binding status per surface (2026-10-01, R2 — all bindings now REAL):
  *  - careRetention.*            REAL — Q4 checkpoint server/routers/careRetention.ts
  *  - documentManagement.requestUploadUrl  REAL — existing P-wave presigned flow
- *  - parametricEngine.myCoverage/myPayouts  FORWARD-LOOKING — the Q2 checkpoint
- *    (server/routers/parametricEngine.ts) ships ADMIN-only procedures today;
- *    member-scoped coverage/payout procedures are planned. Calls feature-detect
- *    NOT_FOUND / FORBIDDEN and degrade to `null` (pages render an honest
- *    "not yet available" empty state — never fabricated data).
- *  - poolSurplus.* / telematicsScore.* / usageCover.*  FORWARD-LOOKING — Q3
- *    (feat/innov-pools-telematics) procedure names planned in plan-q.md; same
- *    graceful-degradation contract.
- *  - freemiumTiers.*            FORWARD-LOOKING — Q1 (feat/innov-embedded)
- *    freemium ladder; same graceful-degradation contract.
+ *  - parametricMember.myCoverage/myPayouts  REAL — Q6 member router
+ *    server/routers/parametricMember.ts (protectedProcedure, READ-ONLY views
+ *    over the Q2 0087 tables; the admin engine stays on parametricEngine).
+ *  - poolSurplus.*  REAL — member reads on the Q3 p2pPools router
+ *    (p2pPools.myMemberships / p2pPools.myStatements; surplus mutations stay
+ *    financialProcedure-gated).
+ *  - telematicsScore.*  REAL — member reads on the Q3 telematics router
+ *    (telematics.myScore / telematics.myTrips).
+ *  - usageCover.*  REAL — Q3 usageCover router (usageCover.myActivations /
+ *    activateCover / cancelCover; server names are the contract of record).
+ *  - freemiumTiers.*  REAL — Q6 member router server/routers/freemiumTiers.ts
+ *    (freemiumTiers.myTier / listTiers / upgrade; upgrade delegates to the
+ *    Q1 embeddedFactory procedures — premium collection stays fail-closed).
+ *
+ * The NOT_FOUND/FORBIDDEN → null degradation below is kept ONLY as a
+ * defensive fallback (2026-10-01, R2): if a deployment runs an older backend
+ * that predates these mounts, pages still render the disclosed "not
+ * available" empty state instead of crashing. It is no longer the primary
+ * path — every binding above resolves against the live monolith.
  */
 
 const TRPC_BASE = "/api/trpc";
@@ -55,13 +64,14 @@ export class InnovationApiError extends Error {
 }
 
 /**
- * 2026-09-25 — Feature-detection contract for FORWARD-LOOKING bindings: when
- * the backend does not expose the procedure yet (tRPC NOT_FOUND, HTTP 404) or
- * the procedure exists but is admin-gated (FORBIDDEN 403), the binding
- * resolves to `null` instead of throwing. Pages MUST treat `null` as
- * "feature not available on this deployment" and render a disclosed empty
- * state. Genuine errors (network, 5xx) still throw so pages can show an
- * honest error state.
+ * 2026-09-25 — Feature-detection contract. As of 2026-10-01 (R2) every
+ * binding in this module is REAL (see header); this degradation is retained
+ * ONLY as a defensive fallback: when a deployment runs an older backend
+ * that predates the mount (tRPC NOT_FOUND, HTTP 404) or gates it
+ * (FORBIDDEN 403), the binding resolves to `null` instead of throwing.
+ * Pages MUST treat `null` as "feature not available on this deployment"
+ * and render a disclosed empty state. Genuine errors (network, 5xx) still
+ * throw so pages can show an honest error state.
  */
 function isUnavailableError(error: InnovationApiError): boolean {
   return (
@@ -276,10 +286,11 @@ export const uploadApi = {
   },
 };
 
-// ── Q2 parametric member surfaces (FORWARD-LOOKING, 2026-09-25) ────────────
-// The Q2 checkpoint router (parametricEngine) currently exposes admin-only
-// procedures. Member-scoped `myCoverage` / `myPayouts` are the planned member
-// procedures; both degrade to null (feature-detect) until the backend lands.
+// ── Q2 parametric member surfaces (REAL — 2026-10-01, R2) ─────────────────
+// Member-scoped READ-ONLY views live on the Q6 parametricMember router
+// (server/routers/parametricMember.ts); the parametricEngine router remains
+// admin-only by design. `null` is now only the defensive fallback for older
+// backends (see header).
 
 export interface ParametricCoverageItem {
   policyId: number;
@@ -294,68 +305,77 @@ export interface ParametricCoverageItem {
 export interface ParametricPayoutItem {
   id: number;
   eventId: number;
+  claimId: number;
   policyId: number;
   amount: string;
   currency: string;
-  status: string;
-  paidAt: string | null;
+  status: string; // "paid" | "pending_adjudication"
   createdAt: string;
 }
 
 export const parametricMemberApi = {
-  /** null = member parametric surface not deployed yet (disclosed empty state). */
   myCoverage: () =>
     trpcCall<{ coverage: ParametricCoverageItem[] }>(
-      "parametricEngine.myCoverage",
+      "parametricMember.myCoverage",
       "query",
       undefined,
       { unavailableAsNull: true }
     ),
   myPayouts: (params?: { limit?: number; offset?: number }) =>
     trpcCall<{ payouts: ParametricPayoutItem[]; count: number }>(
-      "parametricEngine.myPayouts",
+      "parametricMember.myPayouts",
       "query",
       params,
       { unavailableAsNull: true }
     ),
 };
 
-// ── Q3 pools / telematics / usage cover (FORWARD-LOOKING, 2026-09-25) ──────
-// Procedure names follow plan-q.md (feat/innov-pools-telematics): pool
-// surplus accounting, telematics driving scores, per-trip/per-day usage
-// cover. All degrade to null until the Q3 backend lands.
+// ── Q3 pools / telematics / usage cover (REAL — 2026-10-01, R2) ───────────
+// Server is the contract of record: member reads live on the Q3 p2pPools /
+// telematics / usageCover routers in server/routers/innovationRouters.ts.
+// Surplus distribution mutations stay financialProcedure-gated server-side;
+// these bindings are read-only for pools/telematics and member-scoped for
+// usage cover.
 
 export interface PoolMembershipItem {
+  memberId: number;
   poolId: number;
   poolName: string;
-  mode: string; // "p2p_refund" | "takaful_surplus"
-  role: string;
+  poolType: string; // "family" | "cooperative" | "employer" | "community"
+  productType: string;
+  poolStatus: string;
+  role: "organiser" | "member";
+  contributionPaid: string;
   joinedAt: string;
   status: string;
 }
 
 export interface PoolSurplusStatement {
+  distributionId: number;
   periodId: number;
   poolName: string;
   periodStart: string;
   periodEnd: string;
+  distributionMode: string; // "p2p_refund" | "takaful_wakala"
+  periodStatus: string;
   contributed: string;
   surplusShare: string;
-  distributionStatus: string;
+  shareBps: number;
+  distributionStatus: string; // "proposed" | "approved" | "executed" | "failed"
   currency: string;
 }
 
 export const poolSurplusApi = {
   myMemberships: () =>
     trpcCall<{ memberships: PoolMembershipItem[] }>(
-      "poolSurplus.myMemberships",
+      "p2pPools.myMemberships",
       "query",
       undefined,
       { unavailableAsNull: true }
     ),
   myStatements: (params?: { limit?: number; offset?: number }) =>
     trpcCall<{ statements: PoolSurplusStatement[]; count: number }>(
-      "poolSurplus.myStatements",
+      "p2pPools.myStatements",
       "query",
       params,
       { unavailableAsNull: true }
@@ -363,26 +383,31 @@ export const poolSurplusApi = {
 };
 
 export interface DrivingScoreResult {
-  score: number;
+  policyId: number | null;
+  /** null = no trips ingested yet (honest empty state, not a fabricated 0). */
+  score: number | null;
+  ratingFactor: number;
   tripsScored: number;
-  ratingFactorApplied: boolean;
-  periodStart: string;
-  periodEnd: string;
+  windowDays: number;
+  periodStart: string | null;
+  periodEnd: string | null;
 }
 
 export interface TripItem {
   id: number;
+  policyId: number;
   startedAt: string;
   endedAt: string | null;
   distanceKm: number;
+  durationSeconds: number;
   score: number | null;
-  events: { harshBraking: number; harshAcceleration: number; speeding: number };
+  events: { hardBrakes: number; speedingEvents: number; corneringEvents: number };
 }
 
 export const telematicsApi = {
   myScore: () =>
     trpcCall<DrivingScoreResult>(
-      "telematicsScore.myScore",
+      "telematics.myScore",
       "query",
       undefined,
       {
@@ -391,7 +416,7 @@ export const telematicsApi = {
     ),
   myTrips: (params?: { limit?: number; offset?: number }) =>
     trpcCall<{ trips: TripItem[]; count: number }>(
-      "telematicsScore.myTrips",
+      "telematics.myTrips",
       "query",
       params,
       { unavailableAsNull: true }
@@ -400,12 +425,24 @@ export const telematicsApi = {
 
 export interface UsageCoverActivation {
   id: number;
-  coverType: string; // "per_trip" | "per_day"
+  policyId: number;
+  coverType: "trip" | "day"; // server contract of record
   status: string;
   activatedAt: string;
   expiresAt: string | null;
-  premiumQuoted: string | null;
-  currency: string;
+  /** Recorded-not-collected premium estimate (server docstring) — never
+   *  treat as received funds. */
+  premiumAmount: string | null;
+  tripId: number | null;
+  days: number | null;
+}
+
+export interface UsageCoverActivationResult {
+  success: boolean;
+  idempotent: boolean;
+  activationId: number;
+  status: string;
+  expiresAt: string | null;
 }
 
 export const usageCoverApi = {
@@ -416,33 +453,69 @@ export const usageCoverApi = {
       undefined,
       { unavailableAsNull: true }
     ),
-  activate: (input: { coverType: "per_trip" | "per_day"; policyId?: number }) =>
-    trpcCall<UsageCoverActivation>("usageCover.activate", "mutation", input, {
-      unavailableAsNull: true,
-    }),
+  /**
+   * Activate per-trip or per-day cover. Server contract
+   * (usageCover.activateCover): idempotent by clientActivationId — the page
+   * MUST generate a stable client key per user intent (e.g. crypto.randomUUID()
+   * kept in component state) so a retry replays honestly instead of
+   * double-activating. `days` is required for "day" cover, `tripId` for
+   * "trip" cover.
+   */
+  activate: (input: {
+    policyId: number;
+    coverType: "trip" | "day";
+    clientActivationId: string;
+    days?: number;
+    tripId?: number;
+    premiumAmount?: number;
+  }) =>
+    trpcCall<UsageCoverActivationResult>(
+      "usageCover.activateCover",
+      "mutation",
+      input,
+      { unavailableAsNull: true }
+    ),
   deactivate: (input: { activationId: number }) =>
-    trpcCall<{ success: boolean }>("usageCover.deactivate", "mutation", input, {
-      unavailableAsNull: true,
-    }),
+    trpcCall<UsageCoverActivationResult>(
+      "usageCover.cancelCover",
+      "mutation",
+      input,
+      { unavailableAsNull: true }
+    ),
 };
 
-// ── Q1 freemium ladder (FORWARD-LOOKING, 2026-09-25) ───────────────────────
-// Q1 (feat/innov-embedded) freemium tiers: free basic cover → paid upgrade.
-// Degrades to null until the Q1 backend lands.
+// ── Q1 freemium ladder (REAL — 2026-10-01, R2) ─────────────────────────────
+// Member surface on the Q6 freemiumTiers router
+// (server/routers/freemiumTiers.ts). `upgrade` delegates server-side to the
+// Q1 embeddedFactory procedures: free tier → immediate enrollment; paid tier
+// → premium collected FIRST via the mobile-money rail (fail-closed, so
+// msisdn is required for paid upgrades).
 
 export interface FreemiumTier {
+  tierId: number;
   code: string;
   name: string;
-  description: string;
+  coverageType: string;
   monthlyPremium: string;
   currency: string;
   coverLimit: string;
-  benefits: string[];
+  isFree: boolean;
+  sortOrder: number;
+}
+
+export interface FreemiumUpgradeResult {
+  success: boolean;
+  tier: string;
+  enrollmentId?: number;
+  policyId?: number;
+  /** Present when success=false: the honest collection-declined reason. */
+  reason?: string;
+  message?: string;
 }
 
 export const freemiumApi = {
   myTier: () =>
-    trpcCall<{ tier: string; since: string | null }>(
+    trpcCall<{ tier: string; tierName?: string; since: string | null }>(
       "freemiumTiers.myTier",
       "query",
       undefined,
@@ -457,8 +530,13 @@ export const freemiumApi = {
         unavailableAsNull: true,
       }
     ),
-  upgrade: (input: { tierCode: string }) =>
-    trpcCall<{ success: boolean; tier: string }>(
+  upgrade: (input: {
+    tierCode: string;
+    /** Required for PAID tiers (premium collection); omit for free enroll. */
+    msisdn?: string;
+    channel?: "airtime" | "mobile_money";
+  }) =>
+    trpcCall<FreemiumUpgradeResult>(
       "freemiumTiers.upgrade",
       "mutation",
       input,
