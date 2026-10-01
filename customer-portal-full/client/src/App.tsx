@@ -130,6 +130,10 @@ import ProductBrowse from "./pages/ProductBrowse";
 import MyPolicies from "./pages/MyPolicies";
 import MyClaims from "./pages/MyClaims";
 import MyIdentity from "./pages/MyIdentity";
+import MyBeneficiaries from "./pages/MyBeneficiaries";
+import MyRenewals from "./pages/MyRenewals";
+import MyEndorsements from "./pages/MyEndorsements";
+import MyQuotes from "./pages/MyQuotes";
 import FileClaim from "./pages/FileClaim";
 import Wallet from "./pages/Wallet";
 import Support from "./pages/Support";
@@ -806,6 +810,27 @@ function Router() {
       <Route path="/my-identity">
         <UnifiedLayout>
           <MyIdentity />
+        </UnifiedLayout>
+      </Route>
+      {/* R3 batch 5 member surfaces (2026-10-01, R3-b5) */}
+      <Route path="/my-beneficiaries">
+        <UnifiedLayout>
+          <MyBeneficiaries />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-renewals">
+        <UnifiedLayout>
+          <MyRenewals />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-endorsements">
+        <UnifiedLayout>
+          <MyEndorsements />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-quotes">
+        <UnifiedLayout>
+          <MyQuotes />
         </UnifiedLayout>
       </Route>
       <Route path="/file-claim">

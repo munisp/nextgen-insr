@@ -35,6 +35,7 @@ import { useRole, UserRole } from "@/contexts/RoleContext";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   ,
+  ,
   // Q-wave Q6 innovation nav icons (2026-09-25)
   CloudSun,
   Activity,
@@ -70,6 +71,7 @@ import {
   Database,
   DollarSign,
   Eye,
+  FileEdit,
   FilePlus,
   FilePlus2,
   FileText,
@@ -103,6 +105,7 @@ import {
   PieChart,
   PiggyBank,
   ReceiptText,
+  RefreshCcw,
   RefreshCw,
   Route,
   Scale,
@@ -116,6 +119,7 @@ import {
   Share2,
   Shield,
   ShieldCheck,
+  ShoppingCart,
   Siren,
   Smartphone,
   Sparkles,
@@ -217,7 +221,11 @@ const menuGroups: MenuGroup[] = [
       { icon: UsersRound, label: "Family Policies", path: "/family-policies", permission: "canViewPolicies" },
       { icon: Bell, label: "Policy Renewal", path: "/policy-renewal", permission: "canViewPolicies" },
       { icon: UsersRound, label: "Family Coverage", path: "/family-coverage", permission: "canViewPolicies" },
-    ],
+          { icon: Users, label: "My Beneficiaries (Live)", path: "/my-beneficiaries", permission: "canViewPolicies" },
+      { icon: RefreshCcw, label: "My Renewals (Live)", path: "/my-renewals", permission: "canViewPolicies" },
+      { icon: FileEdit, label: "My Endorsements (Live)", path: "/my-endorsements", permission: "canViewPolicies" },
+      { icon: ShoppingCart, label: "My Quotes (Live)", path: "/my-quotes", permission: "canViewPolicies" },
+],
   },
   {
     label: "Claims Centre",

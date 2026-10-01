@@ -90,8 +90,16 @@ describe("Sprint 95: Router Implementation", () => {
   // kycDocumentManagement.approve/reject and biometricAuth.fullVerification
   // raw deliberately NOT exposed — fabricated/phantom identity paths).
   // 485 + 1 = 486, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 486 router files", () => {
-    expect(routerFiles.length).toBe(486);
+  // 2026-10-01 drift fix (R3 batch 5): verified live count = 490. Batch 5
+  // added memberBeneficiaries.ts, memberRenewals.ts, memberEndorsements.ts,
+  // memberQuotes.ts (registered as memberBeneficiaries / memberRenewals /
+  // memberEndorsements / memberQuotes — caller-scoped member surfaces;
+  // requestRenewal/requestEndorsement source IDORs closed via
+  // memberGuards.assertPolicyOwnershipDual before delegation; quote cart
+  // binds resolved customers.id; payRenewal funds deferred to funds wave).
+  // 486 + 4 = 490, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 490 router files", () => {
+    expect(routerFiles.length).toBe(490);
   });
 
   it("should have zero empty routers (router({}))", () => {

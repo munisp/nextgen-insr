@@ -14,7 +14,7 @@
  * foreign policy id exists).
  */
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 import { policies } from "../../drizzle/schema";
 import type { getDb } from "../db";
@@ -37,6 +37,46 @@ export async function assertPolicyOwnership(
     .where(eq(policies.id, policyId))
     .limit(1);
   if (!row || row.customerId !== userId) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Policy not found",
+    });
+  }
+}
+
+/**
+ * 2026-10-01 (R3-b5): dual-space variant of assertPolicyOwnership.
+ * policies.customerId is written in TWO identity spaces with no FK
+ * (schema.ts:4919) — portal-filed rows pin customerId = ctx.user.id
+ * (users.id; insuranceWorkflows.ts ~337), customer-wallet-era rows pin the
+ * resolved customers.id (customers.keycloakSub = String(ctx.user.id)).
+ * memberPolicies.callerPolicyScope documents this. The single-space guard
+ * above would WRONGLY reject a caller whose policy lives in the
+ * customers.id space, so member renewal/endorsement mutations (which also
+ * resolve the session customer) use this variant. Both spaces are the
+ * caller's OWN identities — OR-ing them is fail-closed; no foreign row can
+ * enter the scope. Same non-enumerating NOT_FOUND contract.
+ */
+export async function assertPolicyOwnershipDual(
+  db: DrizzleDb,
+  policyId: number,
+  userId: number,
+  customerId: number | null
+): Promise<void> {
+  const [row] = await db
+    .select({ id: policies.id })
+    .from(policies)
+    .where(
+      and(
+        eq(policies.id, policyId),
+        or(
+          eq(policies.customerId, userId),
+          customerId != null ? eq(policies.customerId, customerId) : undefined
+        )
+      )
+    )
+    .limit(1);
+  if (!row) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Policy not found",
