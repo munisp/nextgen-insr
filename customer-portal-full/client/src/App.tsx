@@ -129,6 +129,7 @@ import DrivingScore from "./pages/DrivingScore";
 import ProductBrowse from "./pages/ProductBrowse";
 import MyPolicies from "./pages/MyPolicies";
 import MyClaims from "./pages/MyClaims";
+import MyIdentity from "./pages/MyIdentity";
 import FileClaim from "./pages/FileClaim";
 import Wallet from "./pages/Wallet";
 import Support from "./pages/Support";
@@ -800,6 +801,11 @@ function Router() {
       <Route path="/my-claims">
         <UnifiedLayout>
           <MyClaims />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-identity">
+        <UnifiedLayout>
+          <MyIdentity />
         </UnifiedLayout>
       </Route>
       <Route path="/file-claim">

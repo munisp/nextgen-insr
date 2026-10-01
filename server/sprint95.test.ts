@@ -83,8 +83,15 @@ describe("Sprint 95: Router Implementation", () => {
   // ls server/routers/*.ts | grep -v .test. NOTE: memberIdentity.ts
   // (R3 batch 4) exists in some working trees but is NOT part of this
   // push — CI count on this branch is 485.
-  it("should have 485 router files", () => {
-    expect(routerFiles.length).toBe(485);
+  // 2026-10-01 drift fix (R3 batch 4): verified live count = 486. Batch 4
+  // added memberIdentity.ts (registered as memberIdentity — caller-scoped
+  // member KYC/MFA/face-enrollment status surface; faceEnrollment.enroll/
+  // verify, decentralizedIdentityManager.verifyIdentity,
+  // kycDocumentManagement.approve/reject and biometricAuth.fullVerification
+  // raw deliberately NOT exposed — fabricated/phantom identity paths).
+  // 485 + 1 = 486, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 486 router files", () => {
+    expect(routerFiles.length).toBe(486);
   });
 
   it("should have zero empty routers (router({}))", () => {

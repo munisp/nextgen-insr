@@ -359,6 +359,7 @@ import { freemiumTiersRouter } from "./routers/freemiumTiers";
 // R3 batch 1 (2026-10-01, R3): member-scoped surfaces for previously orphaned
 // domains. All caller-scoped (ctx.user.id); admin/agent originals untouched.
 import { memberPoliciesRouter } from "./routers/memberPolicies";
+import { memberIdentityRouter } from "./routers/memberIdentity";
 import { memberClaimsRouter } from "./routers/memberClaims";
 import { memberHelpDeskRouter } from "./routers/memberHelpDesk";
 import { memberLoyaltyRouter } from "./routers/memberLoyalty";
@@ -1229,6 +1230,7 @@ export const appRouter = router({
   // reviewed wave); memberPayments is READ-ONLY. Router count 478 -> 481
   // (sprint95 gate updated with measured value).
   memberSavings: memberSavingsRouter,
+  memberIdentity: memberIdentityRouter,
   memberDisputes: memberDisputesRouter,
   memberPayments: memberPaymentsRouter,
   // R3 batch 3 (2026-10-01, R3-b3): READ-ONLY member rails. cashIn/cashOut/
