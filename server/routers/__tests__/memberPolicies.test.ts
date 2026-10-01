@@ -65,6 +65,7 @@ let policyCCust = 0; // customerId = 5500 (customers.id space)
 let policyCUser = 0; // customerId = 9200 (users.id space)
 let policyG1 = 0;    // customerId = 9199 — stranger's portal-filed policy
 let productId = 0;
+let noRateProductId = 0; // 2026-10-01 (A1b): product with no filed rate
 
 async function startPglite(): Promise<void> {
   const script = path.resolve(
@@ -156,6 +157,64 @@ async function createTablesAndSeed() {
   policyCUser = Number(firstRow(await db.execute(mkPolicy("POL-C-USER", 9200, "active"))).id);
   // Stranger (no customers row) has a portal-filed policy in users.id space.
   policyG1 = Number(firstRow(await db.execute(mkPolicy("POL-G-1", 9199, "active"))).id);
+
+  // 2026-10-01 (A1b): memberPolicies.quote now resolves premiums through the
+  // filed rating tables (fail-closed, stage A1) and reads the caller's REAL
+  // claims count — seed faithful minimal projections of claims /
+  // rating_tables / rating_factors (same columns the engine/router touch).
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS claims (
+      id serial PRIMARY KEY,
+      "claimantId" integer NOT NULL
+    )`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS rating_tables (
+      id serial PRIMARY KEY,
+      "productCode" text,
+      "coverageClass" text,
+      "effectiveFrom" timestamp NOT NULL,
+      "effectiveTo" timestamp,
+      status varchar(16) NOT NULL DEFAULT 'draft',
+      version integer NOT NULL,
+      "filedBy" integer,
+      "approvedBy" integer,
+      "naicomFilingRef" text,
+      "tenantId" integer,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS rating_factors (
+      id serial PRIMARY KEY,
+      "tableId" integer NOT NULL,
+      "factorType" varchar(32) NOT NULL,
+      "factorKey" text NOT NULL,
+      value numeric(18,6) NOT NULL,
+      "minClamp" numeric(18,6),
+      "maxClamp" numeric(18,6),
+      "sortOrder" integer NOT NULL,
+      "tenantId" integer,
+      "createdAt" timestamp NOT NULL DEFAULT now()
+    )`);
+  // Active filed table for MP-TEST-1 — base rate 2.5%, deliberately NOT the
+  // removed hardcoded 2% so the test proves the engine (not a constant).
+  await db.execute(sql`
+    INSERT INTO rating_tables
+      (id, "productCode", "coverageClass", "effectiveFrom", status, version)
+    VALUES (1, 'MP-TEST-1', NULL, '2026-01-01', 'active', 1)`);
+  await db.execute(sql`
+    INSERT INTO rating_factors
+      ("tableId", "factorType", "factorKey", value, "sortOrder")
+    VALUES (1, 'base', 'rate', 0.025, 0)`);
+  // Caller A (user 9102) has one historical claim; caller B has none.
+  await db.execute(sql`INSERT INTO claims ("claimantId") VALUES (9102)`);
+
+  // Product with NO filed rate — fail-closed probe target.
+  const noRate = await db.execute(sql`
+    INSERT INTO insurance_products ("productCode", name, description, "coverageType")
+    VALUES ('MP-NORATE', 'Unrated Product', 'No filed rates', 'motor')
+    RETURNING id`);
+  noRateProductId = Number(firstRow(noRate).id);
 }
 
 beforeAll(async () => {
@@ -262,20 +321,34 @@ describe("memberPolicies authz", () => {
   });
 });
 
+// 2026-10-01 (A1b): HONEST-CONTRACT REWRITE of this block — the previous
+// assertions pinned the REMOVED hardcoded math (2% of sum insured + fixed
+// stamp). quote now resolves the seeded ACTIVE rating table for MP-TEST-1
+// (filed base 2.5%) via server/lib/ratingEngine.ts and fails closed
+// (PRECONDITION_FAILED) when no active rate covers the product.
 describe("memberPolicies.quote", () => {
-  it("quotes a real product with catalog math and no telematics factor", async () => {
+  it("quotes a real product through the filed rating table, no telematics factor", async () => {
     const q = await memberCaller.quote({
       productId,
       sumInsured: 1_000_000,
       durationMonths: 12,
     });
     expect(q!.productName).toBe("Test Motor Cover");
-    expect(q!.premiumNGN).toBeCloseTo(20_000, 2); // 2% of sum insured
-    expect(q!.stampDuty).toBeCloseTo(100, 2); // 0.5%
-    expect(q!.totalPayable).toBeCloseTo(20_100, 2);
+    // Filed base rate 2.5%: 1,000,000 × 0.025 = 25,000; stamp 0.5% = 125.
+    // Caller A's one seeded claim matches no claims_loading rows → no loading.
+    expect(q!.baseRate).toBeCloseTo(0.025, 6);
+    expect(q!.premiumNGN).toBeCloseTo(25_000, 2);
+    expect(q!.stampDuty).toBeCloseTo(125, 2);
+    expect(q!.totalPayable).toBeCloseTo(25_125, 2);
     // Anonymous quotes never receive the UBI factor (guard required).
     expect(q!.telematicsRatingFactor).toBe(1.0);
     expect(q!.telematicsScore).toBeNull();
+  });
+
+  it("FAIL-CLOSED: product with no active filed rate → PRECONDITION_FAILED, no fabricated premium", async () => {
+    await expect(
+      memberCaller.quote({ productId: noRateProductId, sumInsured: 1_000_000 })
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
   it("unknown product → NOT_FOUND", async () => {
