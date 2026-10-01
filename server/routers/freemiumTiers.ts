@@ -40,7 +40,7 @@ export const freemiumTiersRouter = router({
     const [row] = await d
       .select({
         enrollmentId: freemiumEnrollments.id,
-        enrolledAt: freemiumEnrollments.createdAt,
+        enrolledAt: freemiumEnrollments.enrolledAt, // 2026-10-01 (R-fix3): table has enrolledAt, not createdAt
         tierCode: freemiumTiers.tierCode,
         tierName: freemiumTiers.name,
       })

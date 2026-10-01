@@ -1712,7 +1712,7 @@ export const p2pPoolsRouter = router({
       poolId: p2pPoolMembers.poolId,
       memberStatus: p2pPoolMembers.status,
       contributionPaid: p2pPoolMembers.contributionPaid,
-      joinedAt: p2pPoolMembers.createdAt,
+      joinedAt: p2pPoolMembers.joinedAt, // 2026-10-01 (R-fix3): p2p_pool_members column is joined_at
       poolName: p2pPools.poolName,
       poolType: p2pPools.poolType,
       productType: p2pPools.productType,

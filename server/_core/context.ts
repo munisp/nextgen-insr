@@ -66,7 +66,7 @@ export type TrpcContext = {
    * end-user identity was verified (X-End-User-Authorization JWT or a
    * direct end-user Bearer token).
    */
-  serviceAuth: boolean;
+  serviceAuth?: boolean; // 2026-10-01 (R-fix3): optional — testHelpers builds partial contexts; readers use `=== true` so undefined == false
 };
 
 /**
