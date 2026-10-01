@@ -42,8 +42,24 @@ import {
 // 54394 (distinct from memberPolicies' 54397, memberClaims' 54396,
 // memberLoyalty's 54395, auth-f3's 54399 and embedded-factory's 54398) so
 // the suites can run concurrently.
-const PG_PORT = 54394;
-const PG_URL = `postgresql://postgres:postgres@127.0.0.1:${PG_PORT}/postgres`;
+// 2026-10-01 (R3-fix-ci2): hardcoded 54394 collided in CI (EADDRINUSE —
+// another runner process held it). Probe an ephemeral free port instead;
+// PG_URL is computed after the probe in startPglite().
+let PG_PORT = 0;
+let PG_URL = "";
+
+async function probeFreePort(): Promise<number> {
+  const net = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      srv.close(() => (port > 0 ? resolve(port) : reject(new Error("no port"))));
+    });
+  });
+}
 let pgliteChild: ChildProcess | null = null;
 
 // Unit-test env: no Permify sidecar. Explicit insecure opt-in (same pattern
@@ -68,6 +84,8 @@ const VALID_CODE_EXPIRY = new Date("2027-01-01T00:00:00Z");
 const SEEDED_REFERRAL_ROWS = 4; // rewarded + pending + expired + foreign
 
 async function startPglite(): Promise<void> {
+  PG_PORT = await probeFreePort();
+  PG_URL = `postgresql://postgres:postgres@127.0.0.1:${PG_PORT}/postgres`;
   const script = path.resolve(
     __dirname,
     "../../../tests/integration/setup/pgliteServer.mjs"
