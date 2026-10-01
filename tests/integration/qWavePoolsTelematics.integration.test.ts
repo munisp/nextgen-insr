@@ -20,7 +20,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../../server/db";
-import { auditLog, customers, insuranceProducts, policies, users } from "../../drizzle/schema";
+import { auditLog, customers, insuranceProducts, policies, ratingFactors, ratingTables, users } from "../../drizzle/schema";
 import {
   p2pPoolMembers,
   p2pPools,
@@ -401,6 +401,49 @@ describe("Q-wave Q3: pool surplus + telematics + usage cover (integration, real 
 
   // ── 7. Rating factor in calculatePremium ─────────────────────────────────
   describe("calculatePremium UBI rating factor", () => {
+    // 2026-10-01 (A1b-fix): HONEST-CONTRACT REWRITE. This test previously
+    // asserted the pre-A1b hardcoded math (`annualPremium = sumInsured × 2%
+    // constant × factor`). A1b removed the buried 2% constant — premiums now
+    // resolve through the filed rating tables (server/lib/ratingEngine.ts)
+    // under the approved strict fail-closed policy, so with no rating table
+    // seeded calculatePremium correctly threw PRECONDITION_FAILED (the
+    // engine working as designed). We now seed a REAL filed rating table
+    // for Q3-MOTOR-001 — base rate 0.02, the same numeric rate but now an
+    // explicit FILED row with NAICOM filing provenance instead of a buried
+    // constant, plus a telematics_cap row clamping 0.70–1.30 — and assert
+    // the engine-derived premium and its provenance fields.
+    const Q3_RATING_TABLE_ID = 960031;
+    beforeAll(async () => {
+      const db = (await getDb())!;
+      await db.insert(ratingTables).values({
+        id: Q3_RATING_TABLE_ID,
+        productCode: "Q3-MOTOR-001",
+        coverageClass: "motor",
+        effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+        status: "active",
+        version: 1,
+        naicomFilingRef: "Q3-TEST-FILING-001",
+      }).onConflictDoNothing();
+      await db.insert(ratingFactors).values([
+        {
+          tableId: Q3_RATING_TABLE_ID,
+          factorType: "base",
+          factorKey: "rate",
+          value: "0.02",
+          sortOrder: 0,
+        },
+        {
+          tableId: Q3_RATING_TABLE_ID,
+          factorType: "telematics_cap",
+          factorKey: "default",
+          value: "1",
+          minClamp: "0.70",
+          maxClamp: "1.30",
+          sortOrder: 1,
+        },
+      ]).onConflictDoNothing();
+    });
+
     it("motor premium reflects the telematics rating factor; neutral without a score", async () => {
       const rated = await callerFor(Q3_MEMBER_A).insuranceProductCatalog.calculatePremium({
         productId: PRODUCT_ID, sumInsured: 5000000, durationMonths: 12, policyId: POLICY_ID,
@@ -411,14 +454,19 @@ describe("Q-wave Q3: pool surplus + telematics + usage cover (integration, real 
       const factor = parseFloat(row.ratingFactor);
       expect(rated.telematicsRatingFactor).toBeCloseTo(factor, 2);
       expect(rated.telematicsScore).toBeCloseTo(parseFloat(row.score), 2);
-      // annualPremium = 5,000,000 × 2% × 1.0 × factor
-      expect(rated.annualPremium).toBeCloseTo(100000 * factor, 0);
+      // Engine-sourced math: base rate now comes from the FILED rating row
+      // (0.02), not a code constant:
+      //   annualPremium = 5,000,000 × filed base rate (0.02) × telematics factor
+      expect(rated.baseRate).toBeCloseTo(0.02, 6);
+      expect(rated.annualPremium).toBeCloseTo(5000000 * 0.02 * factor, 0);
 
       const neutral = await callerFor(Q3_MEMBER_A).insuranceProductCatalog.calculatePremium({
         productId: PRODUCT_ID, sumInsured: 5000000, durationMonths: 12,
       });
       expect(neutral.telematicsRatingFactor).toBe(1.0);
-      expect(neutral.annualPremium).toBe(100000);
+      // No score row ⇒ engine applies no telematics factor; premium is
+      // exactly sumInsured × the filed base rate.
+      expect(neutral.annualPremium).toBe(5000000 * 0.02);
     });
   });
 
