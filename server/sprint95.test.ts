@@ -73,8 +73,18 @@ describe("Sprint 95: Router Implementation", () => {
   // surfaces; savingsProducts fabricated-funds writes and premiumTopUp funds
   // path deliberately NOT exposed). 478 + 3 = 481, measured via
   // ls server/routers/*.ts | grep -v .test.
-  it("should have 481 router files", () => {
-    expect(routerFiles.length).toBe(481);
+  // 2026-10-01 drift fix (R3 batch 3): verified live count = 485. Batch 3
+  // added memberMobileMoney.ts, memberAirtime.ts, memberBillPayments.ts,
+  // memberFxRates.ts (registered as memberMobileMoney / memberAirtime /
+  // memberBillPayments / memberFxRates — caller-scoped member READ-ONLY
+  // rails surfaces; cashIn/cashOut/vend/pay funds mutations and
+  // fxRates.updateRates/refresh deliberately NOT exposed, deferred to the
+  // funds wave). 481 + 4 = 485, measured via
+  // ls server/routers/*.ts | grep -v .test. NOTE: memberIdentity.ts
+  // (R3 batch 4) exists in some working trees but is NOT part of this
+  // push — CI count on this branch is 485.
+  it("should have 485 router files", () => {
+    expect(routerFiles.length).toBe(485);
   });
 
   it("should have zero empty routers (router({}))", () => {

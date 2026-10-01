@@ -142,6 +142,11 @@ import MyDisputes from "./pages/MyDisputes";
 import MyDisputeDetail from "./pages/MyDisputeDetail";
 import MyPremiums from "./pages/MyPremiums";
 import PayPremium from "./pages/PayPremium";
+// R3 batch 3 member surfaces (2026-10-01, R3-b3)
+import MyMobileMoney from "./pages/MyMobileMoney";
+import MyAirtime from "./pages/MyAirtime";
+import MyBills from "./pages/MyBills";
+import FxRates from "./pages/FxRates";
 import UsageCoverActivation from "./pages/UsageCoverActivation";
 import WellnessFeed from "./pages/WellnessFeed";
 import PhotoReimbursement from "./pages/PhotoReimbursement";
@@ -856,6 +861,27 @@ function Router() {
       <Route path="/pay-premium">
         <UnifiedLayout>
           <PayPremium />
+        </UnifiedLayout>
+      </Route>
+      {/* R3 batch 3 member surfaces (2026-10-01, R3-b3) */}
+      <Route path="/my-mobile-money">
+        <UnifiedLayout>
+          <MyMobileMoney />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-airtime">
+        <UnifiedLayout>
+          <MyAirtime />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-bills">
+        <UnifiedLayout>
+          <MyBills />
+        </UnifiedLayout>
+      </Route>
+      <Route path="/my-fx">
+        <UnifiedLayout>
+          <FxRates />
         </UnifiedLayout>
       </Route>
                         <Route path="/404" component={NotFound} />
