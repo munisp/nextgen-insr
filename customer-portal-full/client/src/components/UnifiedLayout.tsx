@@ -130,6 +130,7 @@ import {
   Gauge,
   CarFront,
   HeartPulse,
+  ArrowLeftRight,
   ReceiptText,
   BadgePercent,
 } from "lucide-react";
@@ -236,6 +237,10 @@ const menuGroups: MenuGroup[] = [
       { icon: PiggyBank, label: "My Savings (Live)", path: "/my-savings", permission: "canViewPayments" },
       { icon: CreditCard, label: "My Premiums (Live)", path: "/my-premiums", permission: "canViewPayments" },
       { icon: CreditCard, label: "Pay Premium (Live)", path: "/pay-premium", permission: "canViewPayments" },
+      { icon: Smartphone, label: "Mobile Money (Live)", path: "/my-mobile-money", permission: "canViewPayments" },
+      { icon: Phone, label: "Airtime (Live)", path: "/my-airtime", permission: "canViewPayments" },
+      { icon: ReceiptText, label: "Bill Payments (Live)", path: "/my-bills", permission: "canViewPayments" },
+      { icon: ArrowLeftRight, label: "FX Rates (Live)", path: "/my-fx", permission: "canViewPayments" },
       { icon: PiggyBank, label: "Savings & Investment", path: "/savings-investment", permission: "canViewPolicies" },
       { icon: Wallet, label: "Financial Wellness", path: "/financial-wellness", permission: "canViewPolicies" },
       { icon: Landmark, label: "Bancassurance", path: "/bancassurance", permission: "canViewPolicies" },

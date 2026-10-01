@@ -367,6 +367,11 @@ import { memberReferralsRouter } from "./routers/memberReferrals";
 import { memberSavingsRouter } from "./routers/memberSavings";
 import { memberDisputesRouter } from "./routers/memberDisputes";
 import { memberPaymentsRouter } from "./routers/memberPayments";
+// R3 batch 3 (2026-10-01, R3-b3): member payments-rails reads.
+import { memberMobileMoneyRouter } from "./routers/memberMobileMoney";
+import { memberAirtimeRouter } from "./routers/memberAirtime";
+import { memberBillPaymentsRouter } from "./routers/memberBillPayments";
+import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { partnerSelfServiceRouter } from "./routers/partnerSelfService";
@@ -1226,6 +1231,14 @@ export const appRouter = router({
   memberSavings: memberSavingsRouter,
   memberDisputes: memberDisputesRouter,
   memberPayments: memberPaymentsRouter,
+  // R3 batch 3 (2026-10-01, R3-b3): READ-ONLY member rails. cashIn/cashOut/
+  // vend/pay funds mutations deferred (financialProcedure denies role user);
+  // fxRates.updateRates/refresh (broken authz — any authed user could
+  // overwrite the global rate book) never exposed. Router count 481 -> 485.
+  memberMobileMoney: memberMobileMoneyRouter,
+  memberAirtime: memberAirtimeRouter,
+  memberBillPayments: memberBillPaymentsRouter,
+  memberFxRates: memberFxRatesRouter,
 });
 
 export type AppRouter = typeof appRouter;
