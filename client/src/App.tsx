@@ -77,6 +77,18 @@ const MemberClaims = lazy(() => import("./pages/member/MemberClaims"));
 const MemberPayments = lazy(() => import("./pages/member/MemberPayments"));
 const MemberProfile = lazy(() => import("./pages/member/MemberProfile"));
 const MemberLogin = lazy(() => import("./pages/member/MemberLogin"));
+// 2026-10-02 (W7-B5): policy servicing pages (detail, renewals,
+// beneficiaries, endorsements) — same lazy pattern.
+const MemberPolicyDetail = lazy(
+  () => import("./pages/member/MemberPolicyDetail")
+);
+const MemberRenewals = lazy(() => import("./pages/member/MemberRenewals"));
+const MemberBeneficiaries = lazy(
+  () => import("./pages/member/MemberBeneficiaries")
+);
+const MemberEndorsements = lazy(
+  () => import("./pages/member/MemberEndorsements")
+);
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
@@ -1358,6 +1370,10 @@ function AuthenticatedApp() {
         </Route>
         <Route path="/member/quotes" component={MemberQuotes} />
         <Route path="/member/policies" component={MemberPolicies} />
+        <Route path="/member/policies/:id" component={MemberPolicyDetail} />
+        <Route path="/member/renewals" component={MemberRenewals} />
+        <Route path="/member/beneficiaries" component={MemberBeneficiaries} />
+        <Route path="/member/endorsements" component={MemberEndorsements} />
         <Route path="/member/claims" component={MemberClaims} />
         <Route path="/member/payments" component={MemberPayments} />
         <Route path="/member/profile" component={MemberProfile} />

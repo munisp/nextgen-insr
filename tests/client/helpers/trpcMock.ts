@@ -30,6 +30,24 @@ export interface MockQueryResult {
 const queryResults = new Map<string, MockQueryResult>();
 const mutationCalls: { path: string; input: unknown }[] = [];
 
+/** Scriptable mutation outcome (W7-B5): when registered, mutate() invokes
+ *  the caller's onSuccess(data) or onError(error) — the same contract the
+ *  real tRPC client has. Unregistered mutations keep the old behavior
+ *  (record-only, no callbacks) so existing tests are unaffected. */
+export interface MockMutationBehavior {
+  /** Success payload passed to onSuccess. */
+  data?: unknown;
+  /** Error passed to onError (message-shaped like TRPCClientError). */
+  error?: { message: string } | null;
+}
+const mutationBehaviors = new Map<string, MockMutationBehavior>();
+
+/** Register the outcome for <path>.useMutation().mutate(...), e.g.
+ *  setMutation("x.y", { error: { message: "CONFLICT" } }). */
+export function setMutation(path: string, behavior: MockMutationBehavior): void {
+  mutationBehaviors.set(path, behavior);
+}
+
 /** Register the result a given procedure's useQuery returns, e.g.
  *  setQuery("fraud.list", { isLoading: true }). */
 export function setQuery(path: string, result: MockQueryResult): void {
@@ -39,6 +57,7 @@ export function setQuery(path: string, result: MockQueryResult): void {
 export function resetTrpcMock(): void {
   queryResults.clear();
   mutationCalls.length = 0;
+  mutationBehaviors.clear();
 }
 
 /** Inputs recorded for <path>.useMutation().mutate(...) calls. */
@@ -118,20 +137,29 @@ function makeTrpcProxy(path: string[]): unknown {
           return (opts?: {
             onSuccess?: (data: unknown) => void;
             onError?: (err: unknown) => void;
-          }) => ({
-            mutate: (input: unknown) => {
+          }) => {
+            const fire = (input: unknown) => {
               mutationCalls.push({ path: key, input });
-            },
-            mutateAsync: async (input: unknown) => {
-              mutationCalls.push({ path: key, input });
-              return undefined;
-            },
-            isPending: false,
-            isError: false,
-            isSuccess: false,
-            error: null,
-            reset: vi.fn(),
-          });
+              const b = mutationBehaviors.get(key);
+              if (!b) return;
+              if (b.error) opts?.onError?.(b.error);
+              else opts?.onSuccess?.(b.data);
+            };
+            return {
+              mutate: fire,
+              mutateAsync: async (input: unknown) => {
+                fire(input);
+                const b = mutationBehaviors.get(key);
+                if (b?.error) throw b.error;
+                return b?.data;
+              },
+              isPending: false,
+              isError: false,
+              isSuccess: false,
+              error: null,
+              reset: vi.fn(),
+            };
+          };
         }
         case "useUtils":
         case "useContext":

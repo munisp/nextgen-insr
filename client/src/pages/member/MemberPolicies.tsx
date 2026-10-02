@@ -7,6 +7,7 @@
  * Honest states only: loading skeletons, empty state, error card.
  */
 import { trpc } from "@/lib/trpc";
+import { Link } from "wouter";
 import MemberLayout, {
   MemberError,
   MemberLoading,
@@ -69,7 +70,12 @@ export default function MemberPolicies() {
                 {policies.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="font-mono">
-                      {p.policyNumber}
+                      <Link
+                        href={`/member/policies/${p.id}`}
+                        className="underline underline-offset-2"
+                      >
+                        {p.policyNumber}
+                      </Link>
                     </TableCell>
                     <TableCell>{p.productName ?? "—"}</TableCell>
                     <TableCell>
