@@ -85,6 +85,78 @@ function log(level, message, meta = {}) {
   else process.stdout.write(line + '\n');
 }
 
+// 2026-10-02 (W7-B2): `logger.*` was referenced in 23 places but never defined,
+// crashing the listen callback on every boot. Alias it to the structured log().
+const logger = {
+  info: (msg, meta) => log('info', msg, meta),
+  warn: (msg, meta) => log('warn', msg, meta),
+  error: (msg, meta) => log('error', msg, meta),
+  debug: (msg, meta) => log('debug', msg, meta),
+  child: (meta) => ({
+    info: (msg, m) => log('info', msg, { ...meta, ...m }),
+    warn: (msg, m) => log('warn', msg, { ...meta, ...m }),
+    error: (msg, m) => log('error', msg, { ...meta, ...m }),
+    debug: (msg, m) => log('debug', msg, { ...meta, ...m }),
+  }),
+};
+
+// 2026-10-02 (W7-B2): the four helpers below were referenced across the route
+// map and dispatcher but never defined — every request previously crashed with
+// ReferenceError. Minimal standard implementations, fail-closed behavior kept.
+function validate(input, rules = {}) {
+  for (const [field, rule] of Object.entries(rules)) {
+    const v = input?.[field];
+    const missing = v === undefined || v === null || v === '';
+    if (missing) {
+      if (rule.required) { const e = new Error(`${field} is required`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+      continue;
+    }
+    if (rule.type && typeof v !== rule.type) { const e = new Error(`${field} must be ${rule.type}`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+    if (rule.minLength && String(v).length < rule.minLength) { const e = new Error(`${field} too short`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+    if (rule.maxLength && String(v).length > rule.maxLength) { const e = new Error(`${field} too long`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+    if (rule.min !== undefined && Number(v) < rule.min) { const e = new Error(`${field} below minimum`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+    if (rule.max !== undefined && Number(v) > rule.max) { const e = new Error(`${field} above maximum`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+    if (rule.oneOf && !rule.oneOf.includes(v)) { const e = new Error(`${field} must be one of ${rule.oneOf.join(', ')}`); e.statusCode = 400; e.code = 'BAD_REQUEST'; throw e; }
+  }
+  return true;
+}
+function sanitizeInput(input) {
+  if (Array.isArray(input)) return input.map(sanitizeInput);
+  if (input && typeof input === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (k.startsWith('$') || k.includes('.') || k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = sanitizeInput(v);
+    }
+    return out;
+  }
+  return input;
+}
+function paginate(sql, input = {}) {
+  const limit = Math.min(Math.max(parseInt(input?.limit, 10) || 20, 1), 100);
+  const page = Math.max(parseInt(input?.page, 10) || 1, 1);
+  const offset = (page - 1) * limit;
+  return { sql: `${sql} LIMIT ${limit} OFFSET ${offset}`, limit, offset, page };
+}
+const _rateLimitHits = new Map();
+function checkRateLimit(key) {
+  const now = Date.now();
+  const hits = (_rateLimitHits.get(key) || []).filter((t) => t > now - RATE_LIMIT_WINDOW);
+  if (hits.length >= RATE_LIMIT_MAX) { _rateLimitHits.set(key, hits); return false; }
+  hits.push(now); _rateLimitHits.set(key, hits); return true;
+}
+
+// 2026-10-02 (W7-B2 verifier fix): process-level safety net — no request path
+// may ever crash the whole Node process silently. unhandledRejection is logged
+// and swallowed only after logging; uncaughtException logs and exits (fail-closed).
+process.on('unhandledRejection', (reason) => {
+  log('error', 'Unhandled promise rejection (contained)', { error: reason?.message || String(reason) });
+});
+process.on('uncaughtException', (err) => {
+  log('error', 'Uncaught exception — shutting down', { error: err?.message || String(err) });
+  process.exit(1);
+});
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
@@ -466,12 +538,14 @@ async function loadRateLimitsFromDB() {
 }
 
 // JWT secret for token signing
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
+// 2026-10-02 (W7-B2): removed duplicate top-level `const JWT_SECRET` and
+// `const tokenBlacklist` declarations that were already declared above
+// (lines ~164/~68) — the duplicate `const` made the whole file fail to parse
+// under plain `node`, so the server could not boot at all.
 
 // Session tokens store — persisted to PostgreSQL (survives restarts)
 // In-memory Map is write-through cache; PostgreSQL is source of truth
 const sessions = new Map();
-const tokenBlacklist = new Set();
 
 // Persist session to DB (async, non-blocking)
 async function persistSession(token, userData) {
@@ -1169,6 +1243,49 @@ async function getNaicomDashboard() {
 // ========== ROUTE HANDLERS — Real DB Queries ==========
 // Each function returns the data for a given tRPC route name.
 // Routes without a direct DB table use computed data from real tables.
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2026-10-02 (W7-B2): HONEST MUTATION INFRASTRUCTURE
+// notImplemented(): fail-closed 501 for actions with no real backend yet —
+//   NEVER fabricate success on a mutation.
+// proxyMemberMutation(): passthrough to the monolith tRPC member routers for
+//   actions that DO have a real equivalent, forwarding the caller's bearer
+//   token. Monolith auth decides (fail-closed); upstream errors are relayed
+//   verbatim. When MONOLITH_URL is unset, falls back to honest 501.
+// ═══════════════════════════════════════════════════════════════════════
+const MONOLITH_URL = (process.env.MONOLITH_URL || '').replace(/\/+$/, '');
+function notImplemented(capability) {
+  const err = new Error('NOT_IMPLEMENTED: ' + capability);
+  err.code = 'NOT_IMPLEMENTED';
+  err.statusCode = 501;
+  err.detail = 'This action is not yet available on this portal. Use the member portal at /member.';
+  err.capability = capability;
+  return err;
+}
+async function proxyMemberMutation(procedure, input, ctx, capability) {
+  if (!MONOLITH_URL) throw notImplemented(capability + ' — MONOLITH_URL not configured');
+  const authHeader = ctx?.req?.headers?.authorization || '';
+  const token = ctx?.token || (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null);
+  if (!token) { const err = new Error('Authentication required'); err.code = 'UNAUTHORIZED'; err.statusCode = 401; throw err; }
+  let resp;
+  try {
+    resp = await fetch(`${MONOLITH_URL}/api/trpc/${procedure}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ json: input }),
+    });
+  } catch (e) {
+    const err = new Error(`Monolith unreachable for ${procedure}: ${e.message}`);
+    err.code = 'UPSTREAM_UNAVAILABLE'; err.statusCode = 502; throw err;
+  }
+  const body = await resp.json().catch(() => null);
+  if (!resp.ok) {
+    const err = new Error(body?.error?.message || `Monolith rejected ${procedure} (HTTP ${resp.status})`);
+    err.code = body?.error?.code || 'UPSTREAM_ERROR'; err.statusCode = resp.status; throw err;
+  }
+  return body?.result?.data?.json ?? body?.result?.data ?? body;
+}
+
 
 const ROUTE_HANDLERS = {
   // ─── Dashboard ───
@@ -2032,10 +2149,8 @@ const ROUTE_HANDLERS = {
     const r = await q1(`INSERT INTO ab_tests (name, description, status, "startDate", "endDate", "variant_a", "variant_b", "createdAt") VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '30 days', $3, $4, NOW()) RETURNING *`, [input.name || 'New Test', input.description || '', input.variantA || 'Control', input.variantB || 'Variant'], { id: 1 });
     return r;
   },
-  'abTesting.update': async (input) => { return {success:true,experimentId:input?.id}; },
-  'abTesting.delete': async (input) => { return {success:true}; },
-
-  // Actuarial
+  'abTesting.update': async () => { throw notImplemented('A/B-testing experiment write backend (no monolith member equivalent)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: A/B-testing experiment write backend (no monolith member equivalent)
+  'abTesting.delete': async () => { throw notImplemented('A/B-testing experiment delete backend (no monolith member equivalent)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: A/B-testing experiment delete backend (no monolith member equivalent)
   'actuarial.calculate': async (input) => {
     return { calculationType: input.type || 'Premium', result: 125000.50, confidence: 0.95, factors: ['age', 'region', 'riskProfile', 'claimsHistory'], methodology: 'Generalized Linear Model (GLM)', timestamp: new Date().toISOString() };
   },
@@ -2050,10 +2165,10 @@ const ROUTE_HANDLERS = {
 
   // Agricultural
   'agricultural.schemes': () => q('SELECT id, name, crop_type as type, coverage_type as coverage, "maxPayout", "adminBody", "enrollmentCount", status FROM agricultural_schemes WHERE status=\'active\' ORDER BY "enrollmentCount" DESC'),
-  'agricultural.submitApplication': async (input) => { const ref = 'AGR-' + Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'agricultural.submitApplication\', \'agriculture\', $1, $2, NOW())', [ref, JSON.stringify(input || {})]); return {success:true,applicationId:ref,status:'under_review',estimatedPayout:input?.coverage || 500000}; },
+  'agricultural.submitApplication': async () => { throw notImplemented('agricultural insurance application persistence backend (previously only an audit row was written; the application itself was fabricated)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: agricultural insurance application persistence backend (previously only an audit row was written; the application itself was fabricated)
   'agriculturalInsurance.products': () => q(`SELECT DISTINCT ON (type) id, name, type, premium, "sumAssured" as "coverageAmount" FROM policies WHERE type='Agricultural' ORDER BY type, id`),
   'agriculturalInsurance.ndviReadings': () => q('SELECT id, region, reading_date as date, ndvi_value as ndvi, status, satellite FROM ndvi_readings ORDER BY reading_date DESC LIMIT 20'),
-  'agriculturalInsurance.purchase': async (input) => { return {success:true,policyId:'AGR-POL-'+Date.now(),premium:input?.premium||5000,coverage:input?.coverage||'crop'}; },
+  'agriculturalInsurance.purchase': async () => { throw notImplemented('agricultural policy issuance backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: agricultural policy issuance backend
   'agriculturalInsurance.triggerEvents': () => q('SELECT id, event_type as type, region, severity, event_date as date, affected_policies as "affectedPolicies", total_exposure as "totalExposure", payout_triggered as "payoutTriggered", payout_amount as "payoutAmount", data_source as "dataSource" FROM agricultural_trigger_events ORDER BY event_date DESC'),
 
   // AI
@@ -2077,18 +2192,7 @@ const ROUTE_HANDLERS = {
     }
     return metrics;
   },
-  'aiClaims.process': async (input) => {
-    const claimId = input?.claimId || 'CLM-'+Date.now();
-    const start = Date.now();
-    const mlFraud = await mlFraudScore(input?.amount || 250000);
-    const mlChurn = await mlChurnPredict();
-    const mlAnomaly = await mlAnomalyDetect(input?.amount || 250000);
-    const fraudScore = mlFraud ? mlFraud.score : Math.min(100, ((input?.amount || 0) > 1000000 ? 25 : (input?.amount || 0) > 500000 ? 15 : 5));
-    const recommendation = fraudScore > 50 ? 'investigate' : fraudScore > 30 ? 'manual_review' : 'approve';
-    return { claimId, recommendation, confidence: mlFraud ? mlFraud.score / 100 : 0.87, fraudScore, estimatedPayout: input?.amount || 250000,
-      processingTime: `${Date.now() - start}ms`, mlModelsUsed: mlFraud ? ['fraud_detection_v2', 'churn_prediction_v2', 'anomaly_detection_v2'] : [],
-      churnRisk: mlChurn?.churnRisk || null, anomalyDetected: mlAnomaly?.isAnomaly || false, source: mlFraud ? 'ml_inference' : 'rule_engine' };
-  },
+  'aiClaims.process': async () => { throw notImplemented('AI claims auto-adjudication backend (ML inference is advisory only; no real adjudication write)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: AI claims auto-adjudication backend (ML inference is advisory only; no real adjudication write)
   'aiClaims.results': () => q('SELECT c.id, c."claimNumber", c.amount, c."fraudScore", c.status::text FROM claims c ORDER BY c."createdAt" DESC LIMIT 20'),
 
   // Analytics
@@ -2119,23 +2223,13 @@ const ROUTE_HANDLERS = {
   },
   'application.get': (input) => q1('SELECT * FROM insurance_applications WHERE id=$1', [input.id || 1]),
   'application.list': (input) => { const p = paginate('SELECT id, "userId", "productType", status, "createdAt" FROM insurance_applications ORDER BY "createdAt" DESC', input); return q(p.sql); },
-  'application.update': async (input) => { validate(input, { id: { required: true } }); return {success:true,applicationId:input?.id||'APP-'+Date.now(),status:'updated'}; },
-
-  // Audit Trail
+  'application.update': async () => { throw notImplemented('application status write backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: application status write backend
   'auditTrail.list': () => q('SELECT id, action, "entityType", "entityId", "userId", details, "createdAt" FROM audit_trail ORDER BY "createdAt" DESC LIMIT 100'),
-  'auditTrail.export': async () => { return {url:'/api/exports/audit-trail-'+new Date().toISOString().slice(0,10)+'.csv',format:'csv',generatedAt:new Date().toISOString(),records:100}; },
-
-  // Bancassurance mutations
-  'bancassurance.submitApplication': async (input) => { return {success:true,applicationId:'BNC-'+Date.now(),status:'pending_review',bank:input?.bank||'First Bank'}; },
-
-  // Bank Integrations
+  'auditTrail.export': async () => { throw notImplemented('audit trail export generation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: audit trail export generation backend
+  'bancassurance.submitApplication': async () => { throw notImplemented('bancassurance application submission backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: bancassurance application submission backend
   'bankIntegrations.banks': () => q('SELECT id, "bankName" as name, "bankCode" as code, status, "updatedAt" as "lastSync" FROM bancassurance_partners ORDER BY "bankName"'),
-  'bankIntegrations.verifyAccount': async (input) => { return {valid:true,accountName:'Verified Account Holder',bank:input?.bankCode||'FBN',accountNumber:input?.accountNumber||'1234567890'}; },
-
-  // Batch Processing
-  'batch.run': async (input) => { return {jobId:'batch-'+Date.now(),status:'running',type:input?.type||'renewal',estimatedCompletion:'5 minutes'}; },
-
-  // Broker API
+  'bankIntegrations.verifyAccount': async () => { throw notImplemented('bank account verification provider integration (nibss/bank API)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: bank account verification provider integration (nibss/bank API)
+  'batch.run': async () => { throw notImplemented('batch job scheduling/execution backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: batch job scheduling/execution backend
   'brokerApi.keys': async () => { const rows = await q('SELECT id, name, key, status, "createdAt" as created, "lastUsedAt" as "lastUsed" FROM broker_api_keys ORDER BY "createdAt" DESC LIMIT 10'); return rows.length ? rows : [{id:1,name:'Production',key:'pk_live_****1234',status:'active',created:'2026-01-15'},{id:2,name:'Test',key:'pk_test_****5678',status:'active',created:'2026-03-01'}]; },
   'brokerApi.create': async (input) => { const key = 'pk_live_'+Math.random().toString(36).slice(2,18); await q('INSERT INTO broker_api_keys (name, key, status, "createdAt") VALUES ($1, $2, \'active\', NOW())', [input?.name||'New Key', key]); return {id:Date.now(),name:input?.name||'New Key',key,status:'active'}; },
   'brokerApi.revoke': async (input) => { if (input?.id) await q('UPDATE broker_api_keys SET status=\'revoked\' WHERE id=$1', [input.id]); return {success:true}; },
@@ -2221,17 +2315,13 @@ const ROUTE_HANDLERS = {
     return { success: true };
   },
   'claimsEvidence.list': () => q('SELECT id, "userId", "claimId", "evidenceType", "fileName", "fileUrl", description, status FROM claim_evidence ORDER BY "createdAt" DESC'),
-  'claimsEvidence.upload': async (input) => { return {success:true,evidenceId:'EVD-'+Date.now(),type:input?.type||'photo',status:'uploaded'}; },
-
-  // Claim Routing
+  'claimsEvidence.upload': async () => { throw notImplemented('claims evidence document storage backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: claims evidence document storage backend
   'claimRouting.queue': () => q(`SELECT c.id, c."claimNumber", c.amount, c.status::text, c.description, c."createdAt" FROM claims c WHERE c.status IN ('Submitted', 'Under Review') ORDER BY c."createdAt"`),
   'claimRouting.route': async (input) => { const amount = input?.amount || 0; const team = amount > 1000000 ? 'senior_adjuster' : amount > 500000 ? 'standard_adjuster' : 'auto_approve'; return {claimId:input?.claimId||'CLM-'+Date.now(),routedTo:team,priority:amount>1000000?'high':'normal',estimatedTime:team==='auto_approve'?'instant':'3 business days'}; },
 
   // Compliance
   'compliance.list': (input) => { const p = paginate('SELECT id, "reportType", period, status, "totalAlerts", "highAlerts", "mediumAlerts", "lowAlerts" FROM compliance_reports ORDER BY "createdAt" DESC', input); return q(p.sql); },
-  'compliance.run': async () => { const ref = 'CMP-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", details, "createdAt") VALUES (\'compliance.run\', \'compliance\', $1, NOW())', [JSON.stringify({runId:ref})]); return {success:true,runId:ref,checksCompleted:15,passed:13,failed:2,score:87}; },
-
-  // Currency
+  'compliance.run': async () => { throw notImplemented('compliance check execution engine (results were hardcoded)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: compliance check execution engine (results were hardcoded)
   'currency.convert': async (input) => {
     // FX rates from PostgreSQL (source of truth) with hardcoded fallback
     let rates = { USD: 1550, GBP: 1960, EUR: 1680, NGN: 1 };
@@ -2253,14 +2343,10 @@ const ROUTE_HANDLERS = {
 
   // Digital Consumer
   'digitalConsumer.products': async () => { const rows = await q('SELECT id, code, name, category, description, "minPremium", status FROM insurance_products WHERE status=\'active\' LIMIT 15'); return rows; },
-  'digitalConsumer.activate': async (input) => { return {success:true,policyId:'DIG-'+Date.now(),product:input?.product}; },
-
-  // Disaster Recovery
+  'digitalConsumer.activate': async () => { throw notImplemented('digital product activation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: digital product activation backend
   'disasterRecovery.status': async () => { const r = await q1('SELECT COUNT(*) as c FROM backup_snapshots'); return {status:'healthy',lastBackup:new Date(Date.now()-3600000).toISOString(),backupCount:Number(r?.c)||24,rto:'4 hours',rpo:'1 hour',lastDrTest:'2026-05-01',nextDrTest:'2026-08-01'}; },
-  'disasterRecovery.test': async () => { const id='DR-'+Date.now(); await q('UPDATE disaster_recovery_config SET last_test_date=CURRENT_DATE, last_test_result=\'passed\', updated_at=NOW()'); return {success:true, testId:id, result:'passed', duration:'3m 42s', failoversSimulated:await q1('SELECT COUNT(*) as c FROM disaster_recovery_config').then(r=>Number(r?.c)||3)}; },
-
-  // Documents mutations
-  'documents.upload': async (input) => { validate(input, { documentType: { type: 'string' } }); return {success:true,documentId:'DOC-'+Date.now(),url:'/api/documents/'+Date.now()+'.pdf'}; },
+  'disasterRecovery.test': async () => { throw notImplemented('disaster recovery drill execution backend (test result was fabricated)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: disaster recovery drill execution backend (test result was fabricated)
+  'documents.upload': async () => { throw notImplemented('document storage backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: document storage backend
   'documents.delete': async (input) => {
     validate(input, { id: { required: true, type: 'number', min: 1 } });
     await q('UPDATE documents SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
@@ -2289,14 +2375,12 @@ const ROUTE_HANDLERS = {
 
   // Embedded Distribution
   'embeddedDistribution.partners': async () => { const rows = await q('SELECT id, name, type, status FROM embedded_partners'); return rows; },
-  'embeddedDistribution.createPartner': async (input) => { return {success:true,partnerId:'EMB-'+Date.now()}; },
+  'embeddedDistribution.createPartner': async () => { throw notImplemented('embedded distribution partner onboarding backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: embedded distribution partner onboarding backend
   'embeddedDistribution.revenue': async () => { const r = await q1('SELECT COALESCE(SUM(monthly_revenue),0) as total, COUNT(*) as partners FROM embedded_partners WHERE status=\'active\''); return {totalRevenue:Number(r?.total)||0,activePartners:Number(r?.partners)||0}; },
 
   // Embedded Insurance
-  'embedded.activate': async (input) => { validate(input, { partnerId: { required: true, type: 'string' } }); return {success:true,partnerId:input?.partnerId,status:'active'}; },
-  'embedded.create': async (input) => { validate(input, { name: { required: true, type: 'string', minLength: 1 } }); return {success:true,partnerId:'EMB-'+Date.now(),name:input?.name}; },
-
-  // Emergency
+  'embedded.activate': async () => { throw notImplemented('embedded insurance activation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: embedded insurance activation backend
+  'embedded.create': async () => { throw notImplemented('embedded partner creation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: embedded partner creation backend
   'emergency.create': async (input) => {
     validate(input, { type: { required: true, type: 'string' }, description: { required: true, type: 'string', minLength: 5 } });
     const r = await q1(`INSERT INTO emergency_incidents (id, "userId", "incidentType", description, status, "createdAt")
@@ -2308,10 +2392,8 @@ const ROUTE_HANDLERS = {
 
   // Family Coverage
   'familyCoverage.members': () => q('SELECT id, "userId", "memberName" as name, relationship, "dateOfBirth", "coveredPolicyId", status FROM family_members ORDER BY "userId"'),
-  'familyCoverage.add': async (input) => { return {success:true,memberId:'FM-'+Date.now(),name:input?.name||'Family Member',relationship:input?.relationship||'spouse'}; },
-  'familyCoverage.remove': async (input) => { return {success:true,removed:input?.memberId}; },
-
-  // Feedback
+  'familyCoverage.add': async (input, ctx) => proxyMemberMutation('memberBeneficiaries.upsertBeneficiary', { policyId: Number(input?.policyId ?? input?.coveredPolicyId), name: input?.name, relationship: input?.relationship, dateOfBirth: input?.dateOfBirth, percentage: Number(input?.percentage) }, ctx, 'family coverage beneficiary write (monolith memberBeneficiaries.upsertBeneficiary)'), // 2026-10-02 (W7-B2): wired to monolith tRPC memberBeneficiaries.upsertBeneficiary (caller's bearer token forwarded; fails closed 501 when MONOLITH_URL unset, honest upstream error otherwise)
+  'familyCoverage.remove': async (input, ctx) => proxyMemberMutation('memberBeneficiaries.removeBeneficiary', { policyId: Number(input?.policyId ?? input?.coveredPolicyId), beneficiaryId: Number(input?.memberId ?? input?.beneficiaryId) }, ctx, 'family coverage beneficiary removal (monolith memberBeneficiaries.removeBeneficiary)'), // 2026-10-02 (W7-B2): wired to monolith tRPC memberBeneficiaries.removeBeneficiary (caller's bearer token forwarded; fails closed 501 when MONOLITH_URL unset, honest upstream error otherwise)
   'feedback.submit': async (input) => {
     validate(input, { rating: { required: true, type: 'number', min: 1, max: 5 }, comment: { type: 'string', maxLength: 2000 } });
     const r = await q1(`INSERT INTO customer_feedback (id, "userId", "feedbackType", rating, comment, status, "createdAt")
@@ -2346,9 +2428,7 @@ const ROUTE_HANDLERS = {
   'financialWellness.recommendations': async (input, ctx) => { const uid = ctx?.userId || 1; const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=$1', [uid]); const types = policies.map(p=>p.type); const recs = []; if (!types.includes('Health')) recs.push({id:1,type:'coverage_gap',title:'Health Insurance Gap',description:'You have no active health policy. Consider Basic Health Shield.',priority:'high',potentialSavings:50000}); if (types.length >= 2) recs.push({id:2,type:'premium_optimization',title:'Bundle Discount Available',description:'Combine policies for up to 15% discount.',priority:'medium',potentialSavings:15000}); recs.push({id:3,type:'emergency_fund',title:'Build Emergency Reserve',description:'Target 6 months of premium payments in savings.',priority:'low',potentialSavings:0}); return recs; },
 
   // Fraud Network
-  'fraudNetwork.analyze': async (input) => { return {networkId:'FN-'+Date.now(),nodes:12,edges:18,clusters:3,riskScore:45,flaggedEntities:[{id:1,type:'individual',name:'Suspicious Actor',connections:5,riskLevel:'high'}]}; },
-
-  // Geospatial
+  'fraudNetwork.analyze': async () => { throw notImplemented('fraud network graph analysis backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: fraud network graph analysis backend
   'geospatial.analyze': async (input) => {
     const loc = input?.location || { lat: 6.5244, lng: 3.3792 };
     const lat = Number(loc.lat); const lng = Number(loc.lng);
@@ -2378,16 +2458,10 @@ const ROUTE_HANDLERS = {
   },
 
   // Gig Economy
-  'gigEconomy.activate': async (input) => { return {success:true,policyId:'GIG-'+Date.now(),type:input?.type||'ride_hailing',dailyPremium:150}; },
-
-  // Group Life
-  'groupLife.enroll': async (input) => { return {success:true,enrollmentId:'GL-'+Date.now(),members:input?.members||1}; },
-
-  // Health
+  'gigEconomy.activate': async () => { throw notImplemented('gig economy policy activation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: gig economy policy activation backend
+  'groupLife.enroll': async () => { throw notImplemented('group life enrollment backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: group life enrollment backend
   'health.data': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id FROM users WHERE id=$1', [uid]); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=$1', [uid]); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
-  'health.submit': async (input) => { return {success:true,recordId:'HLT-'+Date.now()}; },
-
-  // Insurance Radar
+  'health.submit': async () => { throw notImplemented('health record submission backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: health record submission backend
   'insuranceRadar.scan': async () => { const products = await q1('SELECT COUNT(*) as c FROM insurance_products WHERE status=\'active\''); const alerts = await q1('SELECT COUNT(*) as c FROM insurance_radar_alerts WHERE action_required=true'); return {lastScan:new Date().toISOString(), productsCompared:Number(products.c)||0, savingsIdentified:25000, recommendations:Number(alerts.c)||0}; },
   'insuranceRadar.alerts': () => q('SELECT id, title, description as message, alert_type as type, severity, source, published_date as date, action_required as "actionRequired" FROM insurance_radar_alerts ORDER BY published_date DESC'),
 
@@ -2449,23 +2523,15 @@ const ROUTE_HANDLERS = {
     const customers = await q('SELECT c.id, c."firstName" || \' \' || c."lastName" as name, COUNT(p.id) * 2000 as points FROM customers c LEFT JOIN policies p ON p."userId"=c.id AND p.status=\'Active\' GROUP BY c.id, c."firstName", c."lastName" ORDER BY points DESC LIMIT 20');
     return customers.map(c => ({ id: String(c.id), customerName: c.name || 'Customer ' + c.id, points: Number(c.points) || 0, lastActivity: new Date().toISOString().slice(0, 10) }));
   },
-  'loyalty.redeem': async (input) => { return {success:true,rewardId:'RWD-'+Date.now(),pointsSpent:input?.points||1000,remaining:14000}; },
-
-  // Marketplace
+  'loyalty.redeem': async () => { throw notImplemented('loyalty redemption backend (monolith memberLoyalty router is read-only: myBalance/myHistory only)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: loyalty redemption backend (monolith memberLoyalty router is read-only: myBalance/myHistory only)
   'marketplace.products': () => q(`SELECT id, name, type as category, premium, name as description, status FROM policies WHERE status='Active' ORDER BY type`),
-  'marketplace.purchase': async (input) => { return {success:true,policyId:'MKT-'+Date.now(),product:input?.product,premium:input?.premium||45000}; },
-
-  // MCMC Risk Modeling
+  'marketplace.purchase': async () => { throw notImplemented('marketplace policy purchase backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: marketplace policy purchase backend
   'mcmc.simulate': async (input) => { const id = 'MCMC-'+Date.now(); const iters = input?.iterations || 10000; await q('INSERT INTO mcmc_simulations (simulation_id, model_type, iterations, burn_in, converged, r_hat, effective_sample_size, posterior_means, credible_intervals) VALUES ($1, $2, $3, $4, true, 1.01, $5, $6, $7)', [id, input?.modelType||'loss_ratio_prediction', iters, Math.floor(iters*0.2), Math.floor(iters*0.42), JSON.stringify({mean:0.055,std:0.012}), JSON.stringify({ci95:[0.032,0.078]})]); return {simulationId:id, iterations:iters, status:'completed', results:{mean:0.055, std:0.012, ci95:[0.032,0.078]}}; },
   'mcmc.results': async () => { const r = await q1('SELECT simulation_id, model_type, iterations, burn_in as "burnIn", converged as convergence, r_hat as "rHat", effective_sample_size as "effectiveSampleSize", posterior_means as "posteriorMeans", credible_intervals as "credibleIntervals" FROM mcmc_simulations ORDER BY run_date DESC LIMIT 1'); return r || {iterations:0, convergence:false}; },
 
   // Microinsurance
-  'microinsurance.enroll': async (input) => { return {success:true,policyId:'MIC-'+Date.now(),premium:input?.premium||500,coverage:'personal_accident',duration:'24 hours'}; },
-
-  // Model Security
-  'modelSecurity.scan': async (input) => { return {scanId:'SCAN-'+Date.now(),status:'completed',modelsScanned:4,vulnerabilities:[{model:'fraud_detection',severity:'low',description:'Model weights not encrypted at rest'}],overallScore:92}; },
-
-  // NAICOM mutations
+  'microinsurance.enroll': async () => { throw notImplemented('microinsurance enrollment backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: microinsurance enrollment backend
+  'modelSecurity.scan': async () => { throw notImplemented('ML model security scanning backend (scan results were hardcoded)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: ML model security scanning backend (scan results were hardcoded)
   'naicom.filings': async (input) => {
     const rows = await q('SELECT id, "filingType" as type, period, status, "dueDate", "submittedAt" as "submissionDate", "filingRef" FROM naicom_filings ORDER BY "dueDate" DESC');
     const page = input?.page || 1;
@@ -2475,17 +2541,10 @@ const ROUTE_HANDLERS = {
     const start = (page - 1) * limit;
     return { filings: filtered.slice(start, start + limit), totalPages: Math.ceil(filtered.length / limit) || 1 };
   },
-  'naicom.submit': async (input) => {
-    validate(input, { filingType: { type: 'string' } });
-    return { success: true, filingId: 'NAI-' + Date.now(), status: 'submitted', message: 'Filing submitted to NAICOM portal' };
-  },
-
-  // NIIRA
+  'naicom.submit': async () => { throw notImplemented('NAICOM filing submission backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: NAICOM filing submission backend
   'niiraInsurance.classes': () => q('SELECT id, class_name as name, naicom_code as code, is_compulsory as compulsory, minimum_premium as "minPremium", category, description, applicable_to as "applicableTo" FROM niira_insurance_classes ORDER BY is_compulsory DESC, id'),
-  'niiraInsurance.purchase': async (input) => { return {success:true,policyId:'NII-'+Date.now(),class:input?.class||'MTP'}; },
-
-  // NMID
-  'nmid.verify': async (input) => { validate(input, { nmid: { required: true, type: 'string' } }); return {valid:true,nmid:input?.nmid||'NMID-001',holder:'Verified Holder',policies:3,lastVerified:new Date().toISOString()}; },
+  'niiraInsurance.purchase': async () => { throw notImplemented('NIIRA policy purchase backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: NIIRA policy purchase backend
+  'nmid.verify': async () => { throw notImplemented('NMID verification provider integration'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: NMID verification provider integration
   'nmid.history': async () => { const rows = await q('SELECT p.id, p."policyNumber" as nmid, p.name as vehicle, CASE WHEN p."startDate" > NOW() - INTERVAL \'90 days\' THEN \'registered\' ELSE \'renewed\' END as action, p."startDate" as date FROM policies p WHERE p.type=\'Motor\' ORDER BY p."startDate" DESC LIMIT 10'); return rows; },
 
   // Notifications
@@ -2495,15 +2554,8 @@ const ROUTE_HANDLERS = {
 
   // Onboarding
   'onboarding.status': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id, name, email FROM users WHERE id=$1', [uid]); const kyc = await q1('SELECT "kycLevel", "kycStatus" FROM kyc_profiles WHERE "userId"=$1', [uid]); const policy = await q1('SELECT COUNT(*) as c FROM policies WHERE "userId"=$1', [uid]); const steps = []; if(user) steps.push('profile'); if(kyc?.kycStatus==='verified') steps.push('kyc'); if(Number(policy?.c)>0) steps.push('firstPolicy'); return {completed: steps.length >= 3, steps, currentStep: steps.length < 3 ? ['profile','kyc','firstPolicy'][steps.length] : null, completionPercentage: Math.round(steps.length/3*100)}; },
-  'onboarding.complete': async () => { return {success:true}; },
-
-  // Parametric mutations
-  'parametric.claim': async (input) => { const ref = 'PAR-CLM-'+Date.now(); return {success:true,claimId:ref,autoApproved:true,payout:input?.amount||75000,triggerEvent:input?.event||'rainfall_deficit',processingTime:'instant'}; },
-
-  // ═══════════════════════════════════════════════════════════════════
-  // FLOW-OF-FUNDS SCENARIO 1: Premium Payment (Card/Bank) — ATOMIC
-  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
-  // ═══════════════════════════════════════════════════════════════════
+  'onboarding.complete': async () => { throw notImplemented('onboarding completion write backend (monolith memberOnboarding router is read-only: myProgress only)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: onboarding completion write backend (monolith memberOnboarding router is read-only: myProgress only)
+  'parametric.claim': async () => { throw notImplemented('parametric claim payout backend (monolith parametricMember router is read-only: myCoverage/myPayouts only)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: parametric claim payout backend (monolith parametricMember router is read-only: myCoverage/myPayouts only)
   'payments.process': async (input) => {
     const kycCheck = await checkKycGate(1);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
@@ -2542,32 +2594,9 @@ const ROUTE_HANDLERS = {
 
   // Payment Gateway Integration
   'payments.gateways': async () => { const rows = await q('SELECT gateway, COUNT(*) as transactions, SUM(amount) as volume, SUM(CASE WHEN status=\'success\' THEN 1 ELSE 0 END) as successful FROM payment_transactions GROUP BY gateway'); return rows.length ? rows.map(r=>({name:r.gateway,transactions:Number(r.transactions),volume:Number(r.volume),successRate:Math.round(Number(r.successful)/Number(r.transactions)*100)})) : [{name:'paystack',status:'active',transactions:150,volume:12500000},{name:'flutterwave',status:'active',transactions:85,volume:8500000},{name:'insureportal_pay',status:'active',transactions:45,volume:2500000}]; },
-  'payments.initiate': async (input) => {
-    validate(input, { amount: { required: true, type: 'number', min: 1 }, gateway: { type: 'string', oneOf: ['paystack', 'flutterwave', 'insureportal_pay'] } });
-    const gateway = input?.gateway || 'paystack';
-    const amount = input?.amount || 0;
-    const ref = `${gateway.toUpperCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    // In production, this would call Paystack/Flutterwave API:
-    // Paystack: POST https://api.paystack.co/transaction/initialize
-    // Flutterwave: POST https://api.flutterwave.com/v3/payments
-    return {
-      success: true, reference: ref, gateway,
-      authorizationUrl: `https://${gateway === 'paystack' ? 'checkout.paystack.com' : 'checkout.flutterwave.com'}/${ref}`,
-      amount, currency: 'NGN', status: 'pending',
-      callbackUrl: '/api/payments/callback',
-    };
-  },
-  'payments.verify': async (input) => {
-    validate(input, { reference: { required: true, type: 'string' } });
-    const ref = input?.reference || '';
-    return { success: true, reference: ref, status: 'success', amount: input?.amount || 0, channel: 'card', paidAt: new Date().toISOString() };
-  },
-  'payments.webhook': async (input) => {
-    // Process webhook from Paystack/Flutterwave — verify signature, update payment status
-    return { received: true, processed: true };
-  },
-
-  // Trial Balance Report — integrated with ERP sync
+  // 2026-10-02 (W7-B2): removed dead duplicate 'payments.initiate' definition — the fabricated body here was shadowed by the later key; the effective handler now fails closed 501 (see below).
+  // 2026-10-02 (W7-B2): removed dead duplicate 'payments.verify' definition — the fabricated body here was shadowed by the later key; the effective handler now fails closed 501 (see below).
+  // 2026-10-02 (W7-B2): removed dead duplicate 'payments.webhook' definition — the fabricated body here was shadowed by the later key; the effective handler now fails closed 501 (see below).
   'financial.trialBalance': async () => {
     const gl = await q('SELECT "debitAccount", "creditAccount", COALESCE(SUM(amount),0) as total FROM financial_transactions GROUP BY "debitAccount", "creditAccount" ORDER BY "debitAccount"');
     const debitTotals = {};
@@ -2664,20 +2693,13 @@ const ROUTE_HANDLERS = {
     await q(`UPDATE policies SET status='Cancelled', "updatedAt"=NOW() WHERE id=$1`, [input.id]);
     return { success: true };
   },
-  'policies.renew': async (input) => {
-    validate(input, { id: { type: 'number', min: 1 } });
-    return { success: true, newPolicyId: 'POL-REN-' + Date.now(), status: 'renewed' };
-  },
-
-  // Policy Comparison
+  'policies.renew': async (input, ctx) => proxyMemberMutation('memberRenewals.requestRenewal', { policyId: Number(input?.id ?? input?.policyId), isAutoRenewal: input?.isAutoRenewal }, ctx, 'policy renewal request (monolith memberRenewals.requestRenewal)'), // 2026-10-02 (W7-B2): wired to monolith tRPC memberRenewals.requestRenewal (caller's bearer token forwarded; fails closed 501 when MONOLITH_URL unset, honest upstream error otherwise)
   'policyComparison.compare': async (input) => { return {policies:input?.policyIds||[],comparison:{premium:{min:25000,max:75000},coverage:{min:5000000,max:50000000},features:['Roadside assistance','Legal cover','Personal accident']},recommendation:'ComprehensiveMotor Plus offers best value'}; },
   'policyComparison.results': async () => { const policies = await q('SELECT id, "policyNumber", type, premium, "sumAssured" as coverage, status::text FROM policies WHERE status=\'Active\' ORDER BY premium DESC LIMIT 5'); return {comparisons: policies}; },
 
   // Policy Renewal
   'policyRenewal.upcoming': () => q(`SELECT id, "policyNumber", type, premium, "endDate" as "renewalDate", status::text FROM policies WHERE "endDate" < NOW() + INTERVAL '90 days' AND status='Active' ORDER BY "endDate"`),
-  'policyRenewal.renew': async (input) => { const ref = 'POL-REN-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'policy.renewed\', \'policy\', $1, $2, NOW())', [input?.policyId||ref, JSON.stringify({renewedBy:'user',discount:'10%'})]); return {success:true,renewedPolicyId:ref,discount:10,newExpiry:new Date(Date.now()+365*86400000).toISOString().slice(0,10)}; },
-
-  // Premium Rates mutations
+  'policyRenewal.renew': async (input, ctx) => proxyMemberMutation('memberRenewals.requestRenewal', { policyId: Number(input?.policyId ?? input?.id), isAutoRenewal: input?.isAutoRenewal }, ctx, 'policy renewal request (monolith memberRenewals.requestRenewal)'), // 2026-10-02 (W7-B2): was audit-row-only fabrication; wired to monolith tRPC memberRenewals.requestRenewal (bearer forwarded; 501 when MONOLITH_URL unset)
   'premiumRates.create': async (input) => { const ref = 'PRT-'+Date.now(); await q('INSERT INTO premium_rate_tables (name, "baseRate", "productType", category, status) VALUES ($1, $2, $3, $4, \'active\')', [input?.name||'New Rate', input?.rate||5.0, input?.productType||'motor', input?.category||'standard']); return {success:true,id:ref}; },
   'premiumRates.update': async (input) => { if (input?.id) await q('UPDATE premium_rate_tables SET "baseRate"=$1, name=$2 WHERE id=$3', [input.rate||5.0, input.name||'Updated', input.id]); return {success:true,id:input?.id}; },
   'premiumRates.delete': async (input) => { if (input?.id) await q('UPDATE premium_rate_tables SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
@@ -2739,41 +2761,34 @@ const ROUTE_HANDLERS = {
   // Reinsurance mutations
   'reinsurance.cessions': () => q('SELECT id, "treatyId", "policyId", "cedingAmount", "retainedAmount", "reinsurerPremium", status, "cessionDate" FROM reinsurance_cessions ORDER BY "cessionDate" DESC'),
   'reinsurance.claims': () => q('SELECT rc.id, rc."treatyId", rt."treatyName", rc."policyId", rc."cedingAmount" as amount, rc.status, rc."cessionDate" FROM reinsurance_cessions rc LEFT JOIN reinsurance_treaties rt ON rc."treatyId"=rt.id ORDER BY rc."cessionDate" DESC'),
-  'reinsurance.create': async (input) => { validate(input, { type: { type: 'string', oneOf: ['quota_share', 'surplus', 'excess_of_loss', 'stop_loss', 'facultative'] } }); const ref = 'RE-'+Date.now(); return {success:true,treatyId:ref,type:input?.type||'quota_share'}; },
-
-  // Reports
-  'reports.generate': async (input) => { validate(input, { format: { type: 'string', oneOf: ['pdf', 'csv', 'xlsx', 'json'] }, type: { type: 'string' } }); const ref = 'RPT-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'report.generated\', \'report\', $1, $2, NOW())', [ref, JSON.stringify({format:input?.format||'pdf',type:input?.type||'summary'})]); return {success:true,reportId:ref,format:input?.format||'pdf',status:'generating',estimatedTime:'30 seconds'}; },
-
-  // Reviews mutations
-  'reviews.create': async (input) => { validate(input, { rating: { required: true, type: 'number', min: 1, max: 5 } }); return {success:true,reviewId:'REV-'+Date.now(),rating:input?.rating||5}; },
-  'reviews.delete': async (input) => { return {success:true}; },
-
-  // Savings mutations
+  'reinsurance.create': async () => { throw notImplemented('reinsurance treaty write backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: reinsurance treaty write backend
+  'reports.generate': async () => { throw notImplemented('report generation backend (only an audit row was written; the report itself was fabricated)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: report generation backend (only an audit row was written; the report itself was fabricated)
+  'reviews.create': async () => { throw notImplemented('product reviews write backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: product reviews write backend
+  'reviews.delete': async () => { throw notImplemented('product reviews delete backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: product reviews delete backend
   'savings.create': async (input) => { validate(input, { name: { required: true, type: 'string', minLength: 1 }, targetAmount: { required: true, type: 'number', min: 1 }, frequency: { type: 'string', oneOf: ['weekly', 'monthly', 'quarterly'] } }); const r = await q1('INSERT INTO savings_plans (user_id, name, target_amount, interest_rate, frequency) VALUES (1, $1, $2, $3, $4) RETURNING id', [input?.name||'New Plan', input?.targetAmount||500000, input?.interestRate||8.5, input?.frequency||'monthly']); return {success:true,planId:'SAV-'+(r?.id||Date.now())}; },
-  'savings.contribute': async (input) => { const amt = input?.amount || 10000; await q('UPDATE savings_plans SET current_amount = current_amount + $1 WHERE id=$2', [amt, input?.planId||1]); return {success:true,transactionId:'STX-'+Date.now(),newBalance:150000+amt}; },
-
-  // SME
-  'sme.submitApplication': async (input) => { return {success:true,applicationId:'SME-'+Date.now(),status:'under_review',estimatedTime:'2 business days'}; },
-
-  // Takaful mutations
-  'takaful.join': async (input) => { return {success:true,participantId:'TAK-'+Date.now(),plan:input?.plan||'family'}; },
+  'savings.contribute': async (input) => { // 2026-10-02 (W7-B2): removed fabricated newBalance (150000+amt); now returns the real persisted balance via RETURNING, honest error when plan missing or DB unavailable.
+    const amt = Number(input?.amount) || 0;
+    if (amt <= 0) { const e2 = new Error('Amount must be positive'); e2.statusCode = 400; e2.code = 'BAD_REQUEST'; throw e2; }
+    if (!input?.planId) { const e2 = new Error('planId is required'); e2.statusCode = 400; e2.code = 'BAD_REQUEST'; throw e2; }
+    const r = await q1('UPDATE savings_plans SET "currentAmount" = COALESCE("currentAmount",0) + $1 WHERE id=$2 RETURNING "currentAmount"', [amt, input.planId], null);
+    if (!r || r.currentAmount === undefined) { const e2 = new Error('Savings plan not found or unavailable'); e2.statusCode = 404; e2.code = 'NOT_FOUND'; throw e2; }
+    return { success: true, transactionId: 'STX-' + Date.now(), newBalance: Number(r.currentAmount) };
+  },
+  'sme.submitApplication': async () => { throw notImplemented('SME insurance application backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: SME insurance application backend
+  'takaful.join': async () => { throw notImplemented('takaful participation backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: takaful participation backend
   'takaful.pools': () => q('SELECT id, "poolName" as name, "totalContributions", surplus, "surplusDistributed", "wakalaFee", status FROM takaful_pools WHERE status=\'active\' ORDER BY "totalContributions" DESC'),
   'takaful.shariaPrinciples': () => q('SELECT id, name, description, category FROM takaful_sharia_principles ORDER BY id'),
 
   // Telco Credit Scoring
   'telcoCredit.score': async (input) => { return {score:Math.floor(600+Math.random()*200),provider:input?.provider||'MTN',lastUpdated:new Date().toISOString().slice(0,10),eligible:true}; },
-  'telcoCredit.submitApplication': async (input) => { return {success:true,applicationId:'TCS-'+Date.now(),status:'approved',creditLimit:500000}; },
-
-  // Tech Innovations
+  'telcoCredit.submitApplication': async () => { throw notImplemented('telco credit application backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: telco credit application backend
   'techInnovations.features': () => q('SELECT id, name, description, status, adoption_pct as adoption, category FROM insuretech_innovations WHERE status IN (\'active\',\'pilot\') ORDER BY adoption_pct DESC LIMIT 10'),
   'techInnovations.calculatePrice': async (input) => { const base = input?.sumAssured ? input.sumAssured * 0.015 : 45000; return {premium:base,discount:base*0.1,total:base*0.9,factors:['loyalty','no-claims','telematics']}; },
   'techInnovations.gamificationLevels': async () => { const levels = await q('SELECT level_name as name, level_number as level, points_required as "pointsRequired", badge_icon as badge, perks, description FROM gamification_levels ORDER BY level_number'); if (levels.length) return levels; /* fallback */ return [{level:1,name:'Starter',minPoints:0,badge:'🛡️'},{level:2,name:'Protector',minPoints:1000,badge:'⭐'},{level:3,name:'Guardian',minPoints:5000,badge:'🏆'},{level:4,name:'Champion',minPoints:15000,badge:'💎'}]; },
   'techInnovations.pricingComparison': async () => { const rates = await q('SELECT "productType", "baseRate" FROM premium_rate_tables WHERE status=\'active\' ORDER BY "productType"'); const result = [{provider:'InsurePortal'}]; rates.forEach(r => { result[0][r.productType?.toLowerCase()] = Number(r.baseRate); }); return result; },
 
   // Telematics mutations
-  'telematics.submit': async (input) => { validate(input, { deviceId: { required: true, type: 'string' } }); return {success:true,dataId:'TEL-'+Date.now(),device:input?.deviceId,readings:input?.readings||1}; },
-
-  // USSD
+  'telematics.submit': async () => { throw notImplemented('telematics data ingestion backend'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: telematics data ingestion backend
   'ussd.simulate': async (input) => { const code = input?.code || '*919#'; const sessionId = 'USSD-' + Date.now(); const menus = { '*919#': '1. Check Policy Status\n2. File a Claim\n3. Pay Premium\n4. Get Quote\n5. Agent Support\n0. Exit', '1': 'Enter Policy Number:', '2': 'Enter Claim Details:', '3': 'Enter Amount:', '4': 'Select: 1.Motor 2.Health 3.Life', '5': 'Connecting to nearest agent...'}; const response = menus[code] || 'Invalid option. Reply *919# to start over'; await q('INSERT INTO ussd_sessions (session_id, phone, menu_level, current_input, response) VALUES ($1, $2, $3, $4, $5)', [sessionId, input?.phone || '08012345678', 0, code, response]); return { response: '*919# InsurePortal\n' + response, sessionId }; },
 
   // Voice
@@ -3007,14 +3022,8 @@ const ROUTE_HANDLERS = {
     if (returnId) await q('UPDATE naicom_returns SET status=\'submitted\', "submissionDate"=NOW(), "submissionRef"=\'NAICOM-\' || id || \'-\' || EXTRACT(EPOCH FROM NOW())::int WHERE id=$1', [returnId]);
     return { success: true, message: 'Return submitted to NAICOM portal', submissionRef: 'NAICOM-' + Date.now() };
   },
-  'naicom.receiveData': async (input) => {
-    // Bidirectional: receive data from NAICOM
-    return { success: true, type: input?.type || 'circular', ref: input?.ref || 'NAICOM/CIR/' + Date.now(), acknowledged: true, receivedAt: new Date().toISOString() };
-  },
-  'naicom.sendData': async (input) => {
-    // Bidirectional: send data to NAICOM
-    return { success: true, type: input?.type || 'filing', ref: 'NAICOM-OUT-' + Date.now(), sentAt: new Date().toISOString(), status: 'transmitted' };
-  },
+  // 2026-10-02 (W7-B2): removed dead duplicate 'naicom.receiveData' definition — the fabricated body here was shadowed by the later key; the effective handler now fails closed 501 (see below).
+  // 2026-10-02 (W7-B2): removed dead duplicate 'naicom.sendData' definition — the fabricated body here was shadowed by the later key; the effective handler now fails closed 501 (see below).
   'naicom.requirements': async () => {
     const dash = await getNaicomDashboard();
     return dash.requirements;
@@ -3741,32 +3750,8 @@ const ROUTE_HANDLERS = {
     const summary = { outbound: rows.filter(r => r.direction === 'outbound').length, inbound: rows.filter(r => r.direction === 'inbound').length, acknowledged: rows.filter(r => r.status === 'acknowledged').length, pending: rows.filter(r => r.status === 'pending' || r.status === 'sent').length };
     return { exchanges: rows, summary };
   },
-  'naicom.sendData': async (input) => {
-    const dataType = input?.dataType || 'quarterly_returns';
-    const period = input?.period || '2026-Q2';
-    // Aggregate real platform data for NAICOM submission
-    const premiums = await q1('SELECT COALESCE(SUM(premium),0) as total FROM policies WHERE status=\'Active\'');
-    const claims = await q1('SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as count FROM claims');
-    const reinsurance = await q1('SELECT COALESCE(SUM("cedingAmount"),0) as total_ceded FROM reinsurance_cessions WHERE status=\'Active\'');
-    const ifrs17Csm = await q1('SELECT COALESCE(SUM(closing_csm),0) as total FROM ifrs17_csm_rollforward WHERE reporting_period=$1', [period]);
-    const payload = {
-      period, reportType: dataType,
-      grossPremium: Number(premiums?.total) || 0,
-      netPremium: (Number(premiums?.total) || 0) - (Number(reinsurance?.total_ceded) || 0),
-      claimsPaid: Number(claims?.total) || 0,
-      claimsCount: Number(claims?.count) || 0,
-      reinsuranceCeded: Number(reinsurance?.total_ceded) || 0,
-      ifrs17CSM: Number(ifrs17Csm?.total) || 0,
-      submittedAt: new Date().toISOString()
-    };
-    await q('INSERT INTO naicom_data_exchange (direction, data_type, payload, status, sent_at) VALUES (\'outbound\', $1, $2, \'sent\', NOW())', [dataType, JSON.stringify(payload)]);
-    return { success: true, direction: 'outbound', dataType, payload, naicomEndpoint: 'https://api.naicom.gov.ng/v1/returns/submit' };
-  },
-  'naicom.receiveData': async (input) => {
-    const { dataType, payload, naicomRef } = input || {};
-    await q('INSERT INTO naicom_data_exchange (direction, data_type, payload, status, naicom_ref) VALUES (\'inbound\', $1, $2, \'received\', $3)', [dataType || 'notification', JSON.stringify(payload || {}), naicomRef || null]);
-    return { success: true, direction: 'inbound', received: true };
-  },
+  'naicom.sendData': async () => { throw notImplemented('NAICOM outbound reporting integration'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: NAICOM outbound reporting integration
+  'naicom.receiveData': async () => { throw notImplemented('NAICOM inbound data receiver integration'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: NAICOM inbound data receiver integration
   'naicom.penalties': async () => {
     const penalties = await q('SELECT * FROM naicom_penalties ORDER BY due_date ASC');
     const totalOutstanding = penalties.filter(p => p.status === 'outstanding').reduce((s, p) => s + Number(p.amount), 0);
@@ -4050,34 +4035,9 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Payment Gateway Integration (Paystack/Flutterwave/InsurePortal Pay) ───
-  'payments.initiate': async (input) => {
-    const { gateway, amount, email, type, metadata } = input || {};
-    const gw = gateway || 'paystack';
-    const ref = gw.toUpperCase().slice(0,3) + '-' + Date.now();
-    const authorizationUrl = gw === 'paystack'
-      ? 'https://checkout.paystack.com/pay/' + ref
-      : gw === 'flutterwave'
-        ? 'https://checkout.flutterwave.com/pay/' + ref
-        : '/pay/insureportal/' + ref;
-    await q('INSERT INTO payment_transactions (gateway, reference, amount, type, status, customer_email, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', [gw, ref, amount || 0, type || 'premium_payment', 'pending', email || 'customer@email.com', JSON.stringify(metadata || {})]);
-    return { success: true, reference: ref, authorizationUrl, gateway: gw, amount: amount || 0 };
-  },
-  'payments.verify': async (input) => {
-    const { reference } = input || {};
-    const txn = await q1('SELECT * FROM payment_transactions WHERE reference=$1', [reference]);
-    if (!txn) return { success: false, verified: false, error: 'Transaction not found' };
-    // In production, verify with gateway API. For now, mark as success.
-    await q('UPDATE payment_transactions SET status=\'success\' WHERE reference=$1', [reference]);
-    return { success: true, verified: true, reference, amount: Number(txn.amount), gateway: txn.gateway, status: 'success' };
-  },
-  'payments.webhook': async (input) => {
-    const { event, data } = input || {};
-    if (event === 'charge.success' && data?.reference) {
-      await q('UPDATE payment_transactions SET status=\'success\' WHERE reference=$1', [data.reference]);
-      await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'payment.success\', \'payment\', $1, $2, NOW())', [data.reference, JSON.stringify(data)]);
-    }
-    return { received: true };
-  },
+  'payments.initiate': async () => { throw notImplemented('payment gateway initialization integration (Paystack/Flutterwave)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: payment gateway initialization integration (Paystack/Flutterwave)
+  'payments.verify': async () => { throw notImplemented('payment gateway transaction verification integration (Paystack/Flutterwave)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: payment gateway transaction verification integration (Paystack/Flutterwave)
+  'payments.webhook': async () => { throw notImplemented('payment gateway webhook processing (signature verification + payment status update)'); }, // 2026-10-02 (W7-B2): removed fabricated success — missing backend: payment gateway webhook processing (signature verification + payment status update)
   'payments.history': async () => {
     const rows = await q('SELECT id, gateway, reference, amount, type, status, customer_email, "createdAt" FROM payment_transactions ORDER BY "createdAt" DESC LIMIT 50');
     return rows;
@@ -4684,8 +4644,19 @@ app.all('/api/trpc/*', async (req, res) => {
   const jwtPayload = bearerToken ? verifyJWT(bearerToken) : null;
   const userId = jwtPayload?.sub || (bearerToken && sessions.has(bearerToken) ? sessions.get(bearerToken).id : null);
 
-  // Enforce auth on POST mutations (except PUBLIC_ROUTES)
-  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !userId) {
+  // 2026-10-02 (W7-B2 verifier fix): mutation detection is method-agnostic.
+  // Previously only POST was gated, so real-write handlers (e.g.
+  // savings.contribute, kyc.submit) were executable unauthenticated via GET.
+  const MUTATION_VERBS = ['create', 'update', 'delete', 'add', 'remove', 'submit', 'initiate', 'process', 'send', 'generate', 'pay', 'cancel', 'activate', 'deactivate', 'upload', 'register', 'approve', 'reject', 'transfer', 'convert', 'remit', 'purchase', 'enroll', 'simulate', 'claim', 'file', 'book', 'schedule', 'assign', 'resolve', 'verify', 'notify', 'respond', 'redeem', 'apply', 'renew', 'suspend', 'reinstate', 'refund', 'settle', 'dispatch', 'trigger', 'sync', 'invite', 'enable', 'disable', 'reset', 'link', 'unlink', 'report', 'escalate', 'close', 'reopen', 'withdraw', 'deposit', 'topup', 'charge', 'contribute', 'join', 'run', 'scan', 'export', 'complete', 'revoke', 'webhook'];
+  const isMutationRoute = (name) => {
+    const action = (name || '').split('.').slice(1).join('.').toLowerCase();
+    return MUTATION_VERBS.some((v) => action.startsWith(v));
+  };
+
+  // Enforce auth on ALL mutation-dispatching requests (any HTTP method) and on
+  // non-public POSTs (except PUBLIC_ROUTES)
+  const touchesMutation = routes.some(isMutationRoute);
+  if ((req.method === 'POST' || touchesMutation) && !PUBLIC_ROUTES.has(route) && !userId) {
     return res.status(401).json({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
   }
 
@@ -4707,14 +4678,20 @@ app.all('/api/trpc/*', async (req, res) => {
     const handler = ROUTE_MAP.get(route);
     if (handler) {
       try {
-        const data = await handler(input);
+        const data = await handler(input, { userId, user: jwtPayload, token: bearerToken, req });
         if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
         return res.json({ result: { data: data } });
       } catch (err) {
+        // 2026-10-02 (W7-B2): honest fail-closed statuses — never fabricate success on mutations.
+        if (err && err.code === 'NOT_IMPLEMENTED') {
+          return res.status(501).json({ success: false, error: 'NOT_IMPLEMENTED', detail: err.detail || 'This action is not yet available on this portal. Use the member portal at /member.', capability: err.capability });
+        }
+        if (err && Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 600) {
+          return res.status(err.statusCode).json({ success: false, error: { message: err.message, code: err.code || 'UPSTREAM_ERROR' } });
+        }
         console.error(`Route error [${route}]:`, err.message);
         return res.status(500).json({ result: { data: [] }, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
-      return res.status(statusCode).json({ error: { message: statusCode >= 500 ? 'Internal server error' : err.message, code: statusCode >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST' } });
     }
     return res.status(404).json({ result: { data: [] }, error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
   }
@@ -4722,7 +4699,11 @@ app.all('/api/trpc/*', async (req, res) => {
   // Batch path (legacy support for httpBatchLink clients)
   let keys = ['0'];
   let parsedInput = {};
-  const inputRaw = req.query.input || (req.body ? JSON.stringify(req.body) : null);
+  // 2026-10-02 (W7-B2 verifier fix): express.json sets req.body={} on GET —
+  // stringifying it produced zero batch keys and an empty []. Only use the
+  // body when it actually carries content.
+  const hasBody = req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0;
+  const inputRaw = req.query.input || (hasBody ? JSON.stringify(req.body) : null);
   if (batch && inputRaw) {
     try {
       parsedInput = typeof inputRaw === 'string' ? JSON.parse(inputRaw) : inputRaw;
@@ -4730,48 +4711,57 @@ app.all('/api/trpc/*', async (req, res) => {
     } catch (e) { log('warn', 'Batch input parse error', { error: e.message }); }
   }
 
+  // 2026-10-02 (W7-B2 verifier fix): every batch item is fully wrapped so a
+  // single bad route can never produce an unhandled rejection that kills the
+  // process; errors are honest tRPC per-item error objects, never empty success.
   const results = await Promise.all(keys.map(async (key, i) => {
     const batchRoute = routes[i] || routes[0] || '';
-    let batchInput = parsedInput[key]?.json || parsedInput[key] || {};
-    batchInput = sanitizeInput(batchInput);
+    try {
+      let batchInput = parsedInput[key]?.json || parsedInput[key] || {};
+      batchInput = sanitizeInput(batchInput);
 
-    if (batchRoute === 'auth.me') {
-      if (user) {
-        const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [user.sub || user.id]);
-        if (dbUser?.id) {
-          const kycCheck = await checkKycGate(dbUser.id);
-          return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
-        }
-      }
-      const authHeader = req.headers?.authorization;
-      const token = authHeader?.replace('Bearer ', '') || batchInput?.token;
-      if (token) {
-        const decoded = verifyToken(token);
-        if (decoded && decoded.type === 'access') {
-          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+      if (batchRoute === 'auth.me') {
+        if (jwtPayload) {
+          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [jwtPayload.sub || jwtPayload.id]);
           if (dbUser?.id) {
             const kycCheck = await checkKycGate(dbUser.id);
             return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
           }
+          return { result: { data: { json: { ...DEMO_USER, id: jwtPayload.sub, email: jwtPayload.email } } } };
         }
+        const token = bearerToken || batchInput?.token;
+        if (token) {
+          const decoded = verifyToken(token);
+          if (decoded && decoded.type === 'access') {
+            const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+            if (dbUser?.id) {
+              const kycCheck = await checkKycGate(dbUser.id);
+              return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
+            }
+          }
+        }
+        return { result: { data: { json: DEMO_USER } } };
       }
-      return { result: { data: { json: DEMO_USER } } };
-    }
 
-    try {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
         const batchStart = Date.now();
-        const batchToken = req.headers?.authorization?.replace('Bearer ', '') || null;
-        const data = await handler(batchInput, { userId, user, token: batchToken, req });
+        const data = await handler(batchInput, { userId, user: jwtPayload, token: bearerToken, req });
         const batchDuration = Date.now() - batchStart;
         if (batchDuration > 1000) log('warn', 'Slow batch route', { route: batchRoute, duration: batchDuration, userId });
         return { result: { data: { json: data } } };
       }
-      return { error: { message: `Route not found: ${batchRoute}` } };
+      return { error: { message: `Route not found: ${batchRoute}`, code: 'NOT_FOUND', httpStatus: 404 } };
     } catch (err) {
-      logger.error('Batch route error', { route: batchRoute, error: err.message });
-      return { result: { data: { json: [] } } };
+      // Honest failures — never an empty-success payload.
+      if (err && err.code === 'NOT_IMPLEMENTED') {
+        return { error: { message: err.detail || 'This action is not yet available on this portal. Use the member portal at /member.', code: 'NOT_IMPLEMENTED', httpStatus: 501 } };
+      }
+      if (err && Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 600) {
+        return { error: { message: err.message, code: err.code || 'UPSTREAM_ERROR', httpStatus: err.statusCode } };
+      }
+      logger.error('Batch route error', { route: batchRoute, error: err?.message });
+      return { error: { message: 'Internal server error', code: 'INTERNAL_ERROR', httpStatus: 500 } };
     }
   }));
 
@@ -4847,7 +4837,8 @@ app.get('*', (req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info('InsurePortal started', { port: PORT, version: '3.0.0' });
   logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp' });
-  logger.info('Middleware status', { kafka: KAFKA_ENABLED, tigerbeetle: TB_ENABLED, opensearch: OS_ENABLED, redis: !!redis });
+  // 2026-10-02 (W7-B2): KAFKA_ENABLED/TB_ENABLED/OS_ENABLED were never defined — boot crash.
+  logger.info('Middleware status', { redis: !!redis });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
