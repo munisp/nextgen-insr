@@ -55,17 +55,17 @@ test('embedded-sdk persistence (real PostgreSQL)', async (t) => {
   });
 
   await t.test('auth: missing/invalid key rejected, test key accepted', async () => {
-    let r = await fetch(`${API}/api/v1/embedded/products`); // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    let r = await fetch(`${API}/api/v1/embedded/products`); // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     assert.equal(r.status, 401);
-    r = await fetch(`${API}/api/v1/embedded/products`, { headers: { 'x-api-key': 'sk_wrong' } }); // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    r = await fetch(`${API}/api/v1/embedded/products`, { headers: { 'x-api-key': 'sk_wrong' } }); // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     assert.equal(r.status, 401);
-    r = await fetch(`${API}/api/v1/embedded/products`, { headers: { 'x-api-key': TEST_KEY } }); // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    r = await fetch(`${API}/api/v1/embedded/products`, { headers: { 'x-api-key': TEST_KEY } }); // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     assert.equal(r.status, 200);
   });
 
   let quoteId = '';
   await t.test('quote is persisted to PostgreSQL (survives outside process memory)', async () => {
-    const r = await fetch(`${API}/api/v1/embedded/quotes`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    const r = await fetch(`${API}/api/v1/embedded/quotes`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       method: 'POST',
       headers: { 'x-api-key': TEST_KEY, 'content-type': 'application/json' },
       body: JSON.stringify({ product_id: 'motor-basic', sum_insured: 10000000 }),
@@ -81,7 +81,7 @@ test('embedded-sdk persistence (real PostgreSQL)', async (t) => {
   });
 
   await t.test('purchase is persisted to PostgreSQL (money-bearing, durable)', async () => {
-    const r = await fetch(`${API}/api/v1/embedded/purchases`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    const r = await fetch(`${API}/api/v1/embedded/purchases`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       method: 'POST',
       headers: { 'x-api-key': TEST_KEY, 'content-type': 'application/json' },
       body: JSON.stringify({ quote_id: quoteId }),
@@ -101,7 +101,7 @@ test('embedded-sdk persistence (real PostgreSQL)', async (t) => {
   });
 
   await t.test('purchase with unknown quote fails closed (404)', async () => {
-    const r = await fetch(`${API}/api/v1/embedded/purchases`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    const r = await fetch(`${API}/api/v1/embedded/purchases`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       method: 'POST',
       headers: { 'x-api-key': TEST_KEY, 'content-type': 'application/json' },
       body: JSON.stringify({ quote_id: 'QT-doesnotexist' }),
@@ -110,7 +110,7 @@ test('embedded-sdk persistence (real PostgreSQL)', async (t) => {
   });
 
   await t.test('analytics reads from PostgreSQL', async () => {
-    const r = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+    const r = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       headers: { 'x-api-key': TEST_KEY },
     });
     assert.equal(r.status, 200);
@@ -155,13 +155,13 @@ test('embedded-sdk persistence (real PostgreSQL)', async (t) => {
     await seedPurchase('PUR-an-1', 'QT-an-1', 'partner-test-001', 500000);
 
     try {
-      const r1 = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+      const r1 = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
         headers: { 'x-api-key': TEST_KEY },
       });
       assert.equal(r1.status, 200);
       const a1 = await r1.json();
 
-      const r2 = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request — loopback test server on 127.0.0.1, no real network (2026-10-02, C2-ci)
+      const r2 = await fetch(`${API}/api/v1/embedded/analytics`, { // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
         headers: { 'x-api-key': P2_KEY },
       });
       assert.equal(r2.status, 200);
