@@ -14,6 +14,36 @@ import {
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+// 2026-10-02 (W10-B2): payout idempotency rides the repo's ESTABLISHED F-02
+// DB-backed store (idempotency_records, drizzle/schema.ts:913) via the
+// journey-activities helpers — the same reserve/complete/fail semantics the
+// TigerBeetle payout journeys use. Fail-closed: any store error propagates
+// and the payout is REFUSED (never proceeds unprotected).
+import {
+  checkIdempotency,
+  failIdempotency,
+  IdempotencyConflictError,
+  IdempotencyInProgressError,
+  recordIdempotency,
+} from "../journey-activities";
+
+// 2026-10-02 (W10-B2): idempotency namespace for merchant payouts.
+const PAYOUT_IDEM_JOURNEY = "merchant-payout";
+
+/** Map the F-02 idempotency signals onto tRPC codes (replay-safety surface). */
+function asIdempotencyTrpcError(error: unknown): TRPCError | null {
+  if (error instanceof IdempotencyConflictError) {
+    return new TRPCError({ code: "CONFLICT", message: error.message });
+  }
+  if (error instanceof IdempotencyInProgressError) {
+    return new TRPCError({
+      code: "CONFLICT",
+      message:
+        "A payout with this idempotency key is currently in progress; retry after backoff",
+    });
+  }
+  return null;
+}
 
 
 export const merchantPayoutSettlementRouter = router({
@@ -70,9 +100,59 @@ export const merchantPayoutSettlementRouter = router({
         merchantId: z.number(),
         amount: z.number().min(100),
         settlementCycle: z.enum(["T0", "T1", "T2", "weekly"]).default("T1"),
+        // 2026-10-02 (W10-B2): client-supplied idempotency key (or the
+        // Idempotency-Key / X-Idempotency-Key header, resolved below). A
+        // retried request MUST replay the original payout, never double-pay.
+        idempotencyKey: z.string().min(8).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // 2026-10-02 (W10-B2): key from input or the standard headers
+      // (financialAttackPrevention.ts honors "idempotency-key";
+      // connectivityResilience.ts honors "x-idempotency-key").
+      const headerKey =
+        ((ctx.req?.headers?.["idempotency-key"] ??
+          ctx.req?.headers?.["x-idempotency-key"]) as string | undefined) ||
+        undefined;
+      const idempotencyKey = input.idempotencyKey ?? headerKey;
+      // Fail-closed: a funds mutation with NO idempotency key is refused.
+      if (!idempotencyKey)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "An idempotency key is required to initiate a payout (idempotencyKey input or Idempotency-Key header)",
+        });
+      // The payload fingerprint binds the key to THESE funds parameters —
+      // key reuse with a different amount/merchant is a CONFLICT (F-02).
+      const idemPayload = {
+        merchantId: input.merchantId,
+        amount: input.amount,
+        settlementCycle: input.settlementCycle,
+      };
+      try {
+        // Reserve/replay BEFORE any side effect. A completed record replays
+        // the ORIGINAL payout row verbatim — no second insert, no double-pay.
+        const replay = await checkIdempotency(
+          idempotencyKey,
+          PAYOUT_IDEM_JOURNEY,
+          idemPayload
+        );
+        if (replay !== null && replay !== undefined) {
+          return { payout: (replay as { payout: unknown }).payout, idempotent: true };
+        }
+      } catch (error) {
+        // Store failure → refuse the payout (fail-closed); conflict signals
+        // surface as CONFLICT.
+        const idemError = asIdempotencyTrpcError(error);
+        if (idemError) throw idemError;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Idempotency store unavailable — payout refused (fail-closed): " +
+            (error instanceof Error ? error.message : String(error)),
+        });
+      }
+
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -137,7 +217,26 @@ export const merchantPayoutSettlementRouter = router({
         settlementDate.setDate(
           settlementDate.getDate() + cycleMap[input.settlementCycle]
         );
-        const reference = `PO-${merchant.merchantCode}-${Date.now()}`;
+        // 2026-10-02 (W10-B2): the reference is DERIVED from the idempotency
+        // key (not Date.now()), so a crash between the payout insert and the
+        // idempotency-record write is recoverable: the retried execution
+        // finds the already-inserted row below and adopts it instead of
+        // paying out twice.
+        const reference = `PO-${merchant.merchantCode}-${idempotencyKey}`;
+        const [priorPayout] = await db
+          .select()
+          .from(merchantPayouts)
+          .where(eq(merchantPayouts.reference, reference))
+          .limit(1);
+        if (priorPayout) {
+          await recordIdempotency(
+            idempotencyKey,
+            PAYOUT_IDEM_JOURNEY,
+            { payout: priorPayout },
+            idemPayload
+          );
+          return { payout: priorPayout, idempotent: true };
+        }
         const [payout] = await db
           .insert(merchantPayouts)
           .values({
@@ -154,8 +253,31 @@ export const merchantPayoutSettlementRouter = router({
             initiatedBy: ctx.user.id,
           } as any)
           .returning();
+        // 2026-10-02 (W10-B2): persist the result under the reserved key so
+        // any retry replays THIS row. A record failure is fatal (fail-closed)
+        // — we refuse to leave an unprotected payout: mark the key failed and
+        // surface the error rather than return success.
+        await recordIdempotency(
+          idempotencyKey,
+          PAYOUT_IDEM_JOURNEY,
+          { payout },
+          idemPayload
+        );
         return { payout };
       } catch (error) {
+        // 2026-10-02 (W10-B2): release the reservation so an explicit client
+        // retry can re-execute (failed reservations are reclaimable per F-02).
+        try {
+          await failIdempotency(
+            idempotencyKey,
+            PAYOUT_IDEM_JOURNEY,
+            error instanceof Error ? error.message : String(error)
+          );
+        } catch {
+          /* best-effort release; the stale-reservation takeover covers crashes */
+        }
+        const idemError = asIdempotencyTrpcError(error);
+        if (idemError) throw idemError;
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

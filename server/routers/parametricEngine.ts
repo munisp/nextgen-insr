@@ -25,6 +25,20 @@ import { adminProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { datasourceConfigSchema } from "../lib/parametricDatasources";
 import { evaluateTrigger } from "../lib/parametricEngine";
+// 2026-10-02 (W10-B2): attestation replay-safety rides the repo's ESTABLISHED
+// F-02 DB-backed idempotency store (idempotency_records) — the unique-key
+// reservation serializes concurrent duplicate attests even without a schema
+// change (schema.ts is append-only this wave, so no new index on
+// parametric_manual_readings). Fail-closed: store errors refuse the attest.
+import {
+  checkIdempotency,
+  failIdempotency,
+  IdempotencyInProgressError,
+  recordIdempotency,
+} from "../journey-activities";
+
+// 2026-10-02 (W10-B2): idempotency namespace for manual-reading attestation.
+const ATTEST_IDEM_JOURNEY = "parametric-attest";
 
 async function db() {
   const d = await getDb();
@@ -119,6 +133,10 @@ export const parametricEngineRouter = router({
   }),
 
   // ── Manual datasource readings (dual control) ──────────────────────────────
+  // Auth (verified 2026-10-02, W10-B2): adminProcedure — JWT + users.role
+  // 'admin' + Permify admin check (server/_core/trpc.ts requireAdmin). Only
+  // platform staff may attest; the dual-control rule below additionally
+  // requires the confirmer to be a DIFFERENT staff member.
   attestReading: adminProcedure
     .input(z.object({
       triggerId: z.number().int().positive(),
@@ -129,15 +147,107 @@ export const parametricEngineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const d = await db();
-      const [row] = await d.insert(parametricManualReadings).values({
+      // 2026-10-02 (W10-B2): replay/dedup guard. Before this fix the same
+      // reading could be attested repeatedly, each insert feeding trigger
+      // evaluation → automatic payouts. Uniqueness is enforced on the
+      // natural key (triggerId, metric, observedAt) — a reading of the same
+      // metric for the same trigger at the same observation timestamp is ONE
+      // physical fact; a second attest is a replay and gets CONFLICT with NO
+      // payout-triggering side effect.
+      //
+      // Race safety without a schema change: the F-02 idempotency_records
+      // reservation (unique key derived from the same natural key) serializes
+      // concurrent duplicates — exactly one executor owns the reservation;
+      // the loser reads the already-inserted row and gets CONFLICT.
+      const observedAt = new Date(input.observedAt);
+      const dedupKey = `t${input.triggerId}:${input.metric}:${observedAt.toISOString()}`;
+      const dedupPayload = {
         triggerId: input.triggerId,
         metric: input.metric,
-        value: String(input.value),
-        observedAt: new Date(input.observedAt),
-        attestedBy: ctx.user!.id,
-        note: input.note ?? null,
-      }).returning();
-      return { readingId: row.id, status: "attested" };
+        observedAt: observedAt.toISOString(),
+      };
+      try {
+        const replay = await checkIdempotency(
+          dedupKey,
+          ATTEST_IDEM_JOURNEY,
+          dedupPayload
+        );
+        if (replay !== null && replay !== undefined) {
+          // This exact reading was already attested durably — readings are
+          // NOT replayable (each attest is a distinct auditable act feeding
+          // payouts), so a duplicate is a CONFLICT, never a silent re-feed.
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              `Reading already attested for trigger ${input.triggerId} metric '${input.metric}' at ${observedAt.toISOString()} — duplicate refused`,
+          });
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof IdempotencyInProgressError) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "An identical reading attestation is currently in progress; retry after backoff",
+          });
+        }
+        // Store failure → refuse the attestation (fail-closed).
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Attestation dedup store unavailable — reading refused (fail-closed): " +
+            (error instanceof Error ? error.message : String(error)),
+        });
+      }
+
+      try {
+        // Belt-and-braces under the reservation: a reading row that outlived
+        // its idempotency record (24h TTL) is still a duplicate.
+        const [existing] = await d.select({ id: parametricManualReadings.id })
+          .from(parametricManualReadings)
+          .where(and(
+            eq(parametricManualReadings.triggerId, input.triggerId),
+            eq(parametricManualReadings.metric, input.metric),
+            eq(parametricManualReadings.observedAt, observedAt),
+          ))
+          .limit(1);
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              `Reading already attested for trigger ${input.triggerId} metric '${input.metric}' at ${observedAt.toISOString()} (reading #${existing.id}) — duplicate refused`,
+          });
+        }
+        const [row] = await d.insert(parametricManualReadings).values({
+          triggerId: input.triggerId,
+          metric: input.metric,
+          value: String(input.value),
+          observedAt,
+          attestedBy: ctx.user!.id,
+          note: input.note ?? null,
+        }).returning();
+        // Persist the result so a later duplicate hits the replay path above.
+        await recordIdempotency(
+          dedupKey,
+          ATTEST_IDEM_JOURNEY,
+          { readingId: row.id },
+          dedupPayload
+        );
+        return { readingId: row.id, status: "attested" };
+      } catch (error) {
+        // Release the reservation so a genuinely different (or retried-after-
+        // failure) attest can proceed; CONFLICT duplicates keep their record.
+        if (!(error instanceof TRPCError && error.code === "CONFLICT")) {
+          try {
+            await failIdempotency(
+              dedupKey,
+              ATTEST_IDEM_JOURNEY,
+              error instanceof Error ? error.message : String(error)
+            );
+          } catch { /* best-effort; stale-takeover covers crashes */ }
+        }
+        throw error;
+      }
     }),
 
   confirmReading: adminProcedure
