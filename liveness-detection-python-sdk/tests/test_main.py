@@ -17,11 +17,25 @@ from src.main import app
 
 client = TestClient(app)
 
+# 2026-10-02 (C2-b10): session state now lives in Redis (audit B10). Tests
+# use a REAL Redis and skip when it is unreachable — the store under test is
+# never mocked.
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+
+
+def _redis_or_skip():
+    r = main._get_redis()
+    if r is None:
+        pytest.skip(f"real Redis unreachable at {REDIS_URL} — skipping B10 session-store test")
+    return r
+
 
 @pytest.fixture(autouse=True)
 def reset_sessions():
-    with main._session_lock:
-        main._sessions.clear()
+    r = main._get_redis()
+    if r is not None:
+        for key in r.scan_iter(f"{main._SDK_REDIS_PREFIX}*"):
+            r.delete(key)
     yield
 
 
@@ -36,6 +50,8 @@ def fake_downstream_incomplete(payload):
 
 
 def make_session(monkeypatch, downstream):
+    _redis_or_skip()
+
     def _post(path, payload):
         if path == "/challenge/start":
             return {"session_id": "ds-abc", "challenge": payload["challenge"]}
@@ -82,6 +98,7 @@ class TestLivenessDetection:
         assert resp.status_code == 400
 
     def test_unknown_session_rejected(self):
+        _redis_or_skip()
         resp = client.post("/api/v1/detect",
                            json={"session_id": "LIV-nonexistent", "frame_base64": "AAAA"})
         assert resp.status_code == 404
@@ -113,6 +130,8 @@ class TestLivenessDetection:
         assert resp.status_code == 423
 
     def test_downstream_outage_fails_closed(self, monkeypatch):
+        _redis_or_skip()
+
         def boom(path, payload):
             if path == "/challenge/start":
                 return {"session_id": "ds-x", "challenge": "blink"}
@@ -132,6 +151,66 @@ class TestStats:
         data = client.get("/api/v1/stats").json()
         assert data["active_sessions"] >= 1
         assert "pass_rate" not in data  # no fabricated metrics
+
+
+# ── Redis session persistence (2026-10-02, C2-b10) ───────────────────────────
+
+class TestRedisSessionPersistence:
+    def test_session_persisted_with_ttl(self, monkeypatch):
+        r = _redis_or_skip()
+        sid = make_session(monkeypatch, fake_downstream_incomplete)
+        key = f"{main._SDK_REDIS_PREFIX}{sid}"
+        raw = r.get(key)
+        assert raw is not None, "session must be persisted to Redis"
+        import json as jsonlib
+        sess = jsonlib.loads(raw)
+        assert sess["downstream_id"] == "ds-abc"
+        assert sess["attempts"] == 0 and sess["locked"] is False
+        ttl = r.ttl(key)
+        assert 0 < ttl <= main._SDK_SESSION_TTL
+
+    def test_restart_simulation(self, monkeypatch):
+        """Create a session, simulate a process restart with a brand-new
+        Redis client (no in-process state), then evaluate successfully."""
+        r = _redis_or_skip()
+        sid = make_session(monkeypatch, fake_downstream_completed)
+
+        # "Restart": drop the module's cached client and session knowledge;
+        # a fresh engine instance shares only Redis.
+        main._redis_client = None
+        import redis as redis_lib
+        fresh = redis_lib.from_url(REDIS_URL, decode_responses=True, socket_timeout=5)
+        main._redis_client = fresh
+
+        sess = main._load_session(sid)
+        assert sess is not None, "session must survive a restart via Redis"
+        assert sess["downstream_id"] == "ds-abc"
+
+        resp = client.post("/api/v1/detect",
+                           json={"session_id": sid, "frame_base64": "AAAA"})
+        assert resp.status_code == 200
+        assert resp.json()["decision"] == "pass"
+
+        # Attempt counters / lockout also persist across the "restart".
+        assert main._load_session(sid)["locked"] is True
+        r.delete(f"{main._SDK_REDIS_PREFIX}{sid}")
+
+    def test_creation_fails_loud_when_redis_down(self, monkeypatch):
+        _redis_or_skip()
+        monkeypatch.setattr(main, "_get_redis", lambda: None)
+
+        def _post(path, payload):
+            return {"session_id": "ds-x", "challenge": "blink"}
+        monkeypatch.setattr(main, "_downstream_post", _post)
+        resp = client.post("/api/v1/session/create")
+        assert resp.status_code == 503
+
+    def test_unknown_session_fails_closed(self):
+        _redis_or_skip()
+        resp = client.post("/api/v1/detect",
+                           json={"session_id": "LIV-" + "0" * 32, "frame_base64": "AAAA"})
+        assert resp.status_code == 404
+        assert not resp.json().get("is_live", False)
 
 
 # ── Error Handling ──────────────────────────────────────────────────────────
