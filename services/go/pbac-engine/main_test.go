@@ -149,43 +149,40 @@ func TestPBACAuthorizeEndpoint(t *testing.T) {
 	}
 }
 
-// TestPBACPolicyCRUD: store, fetch, list, delete; invalid effect rejected.
-func TestPBACPolicyCRUD(t *testing.T) {
+// TestPBACPolicyValidation: malformed policies rejected before any store.
+func TestPBACPolicyValidation(t *testing.T) {
 	s := &server{eval: NewEvaluator(defaultPolicies())}
-
-	p := Policy{ID: "test-allow", Name: "t", Effect: "allow", Roles: []string{"user"}, Actions: []string{"read"}}
-	body, _ := json.Marshal(p)
-	w := httptest.NewRecorder()
-	s.handlePolicies(w, httptest.NewRequest(http.MethodPost, "/policies", bytes.NewReader(body)))
-	if w.Code != http.StatusOK {
-		t.Fatalf("store failed: %d %s", w.Code, w.Body.String())
-	}
-
-	w = httptest.NewRecorder()
-	s.handlePolicyByID(w, httptest.NewRequest(http.MethodGet, "/policies/test-allow", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("get failed: %d", w.Code)
-	}
-
-	got, ok := s.eval.Get("test-allow")
-	if !ok || got.Effect != "allow" {
-		t.Fatalf("stored policy missing: %+v", got)
-	}
-
 	bad := Policy{ID: "bad", Effect: "maybe"}
-	body, _ = json.Marshal(bad)
-	w = httptest.NewRecorder()
+	body, _ := json.Marshal(bad)
+	w := httptest.NewRecorder()
 	s.handlePolicies(w, httptest.NewRequest(http.MethodPost, "/policies", bytes.NewReader(body)))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid effect, got %d", w.Code)
 	}
+}
+
+// TestPBACWriteFailClosed (2026-10-02, C2-a9): with no reachable policy
+// store, POST/DELETE must return 5xx and must NOT mutate the in-memory
+// evaluator — the engine never pretends a policy was stored.
+func TestPBACWriteFailClosed(t *testing.T) {
+	s := &server{eval: NewEvaluator(defaultPolicies())} // store nil = DB down
+	p := Policy{ID: "ghost", Name: "t", Effect: "allow", Roles: []string{"user"}, Actions: []string{"read"}}
+	body, _ := json.Marshal(p)
+	w := httptest.NewRecorder()
+	s.handlePolicies(w, httptest.NewRequest(http.MethodPost, "/policies", bytes.NewReader(body)))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for POST without store, got %d", w.Code)
+	}
+	if _, ok := s.eval.Get("ghost"); ok {
+		t.Fatal("in-memory evaluator mutated despite failed durable write")
+	}
 
 	w = httptest.NewRecorder()
-	s.handlePolicyByID(w, httptest.NewRequest(http.MethodDelete, "/policies/test-allow", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("delete failed: %d", w.Code)
+	s.handlePolicyByID(w, httptest.NewRequest(http.MethodDelete, "/policies/authenticated-read", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for DELETE without store, got %d", w.Code)
 	}
-	if _, ok := s.eval.Get("test-allow"); ok {
-		t.Fatal("policy still present after delete")
+	if _, ok := s.eval.Get("authenticated-read"); !ok {
+		t.Fatal("in-memory evaluator lost a policy despite failed durable delete")
 	}
 }

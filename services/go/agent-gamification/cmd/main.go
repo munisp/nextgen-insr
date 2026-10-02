@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -49,8 +50,12 @@ type LeaderboardEntry struct {
 }
 
 var (
+	// 2026-10-02 (C2-a10): `agents` is now only a read-through cache; the
+	// authoritative store is Postgres (store.go). Mutations write to PG
+	// first and update this cache only after the write commits.
 	agents     = make(map[string]*AgentProfile)
 	agentsMu   sync.RWMutex
+	store      *profileStore
 	xpPerLevel = 1000
 	ranks      = []string{"Rookie", "Associate", "Pro", "Elite", "Legend"}
 )
@@ -65,10 +70,32 @@ func rankForLevel(level int) string {
 
 func main() {
 	port := envOr("PORT", "8106")
-	seedAgents()
+
+	// 2026-10-02 (C2-a10): fail-closed boot — the service must not start
+	// without a writable Postgres, otherwise XP/badges/streaks earned during
+	// this process lifetime would be silently lost on restart.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var err error
+	store, err = openProfileStore(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("agent-gamification: cannot start without Postgres: %v", err)
+	}
+	defer store.Close()
+	if err := bootstrapProfiles(ctx, store); err != nil {
+		log.Fatalf("agent-gamification: cannot load profiles: %v", err)
+	}
 
 	mux := http.NewServeMux()
+	registerRoutes(mux)
 
+	log.Printf("Agent Gamification starting on port %s", port)
+	log.Fatal(http.ListenAndServe(":"+port, mux))
+}
+
+// registerRoutes wires all HTTP handlers (extracted from main so tests can
+// exercise the real handlers; 2026-10-02, C2-a10).
+func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -98,18 +125,22 @@ func main() {
 			Reason  string `json:"reason"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		agentsMu.Lock()
-		profile, ok := agents[req.AgentID]
-		if ok {
-			profile.XP += req.XP
-			profile.Level = profile.XP / xpPerLevel
-			profile.Rank = rankForLevel(profile.Level)
+		// 2026-10-02 (C2-a10): write-through — the award is durable in PG
+		// before the success response; if PG is down we fail closed (503)
+		// and the in-memory cache is left untouched.
+		profile, err := store.awardXP(r.Context(), req.AgentID, req.XP)
+		if err != nil {
+			log.Printf("xp/award: persist failed for %q: %v", req.AgentID, err)
+			http.Error(w, `{"error":"persistence unavailable"}`, 503)
+			return
 		}
-		agentsMu.Unlock()
-		if !ok {
+		if profile == nil {
 			http.Error(w, `{"error":"agent not found"}`, 404)
 			return
 		}
+		agentsMu.Lock()
+		agents[profile.AgentID] = profile
+		agentsMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success":    true,
@@ -154,22 +185,45 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"challenges": challenges})
 	})
-
-	log.Printf("Agent Gamification starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
-func seedAgents() {
+// bootstrapProfiles warms the in-memory cache from PG. 2026-10-02 (C2-a10):
+// seedAgents() only runs when the table is empty — before persistence this
+// ran unconditionally at every boot and would have reset earned progress.
+func bootstrapProfiles(ctx context.Context, s *profileStore) error {
+	loaded, err := s.loadProfiles(ctx)
+	if err != nil {
+		return err
+	}
+	if len(loaded) == 0 {
+		seeds := seedAgents()
+		for _, p := range seeds {
+			if err := s.upsertProfile(ctx, p); err != nil {
+				return err
+			}
+			loaded[p.AgentID] = p
+		}
+		log.Printf("agent-gamification: seeded %d agent profiles into empty table", len(seeds))
+	}
+	agentsMu.Lock()
+	agents = loaded
+	agentsMu.Unlock()
+	return nil
+}
+
+func seedAgents() map[string]*AgentProfile {
+	seeded := make(map[string]*AgentProfile)
 	regions := []string{"Lagos", "Abuja", "Kano", "Port Harcourt", "Ibadan"}
 	names := []string{"Chidi Okonkwo", "Amina Bello", "Emeka Nwankwo", "Fatima Yusuf", "Olumide Adeyemi"}
 	for i, name := range names {
 		id := "AGT-" + string(rune('A'+i)) + "001"
-		agents[id] = &AgentProfile{
+		seeded[id] = &AgentProfile{
 			AgentID: id, Name: name, Level: (i + 1) * 3, XP: (i+1)*3*xpPerLevel + 500,
 			Rank: rankForLevel((i + 1) * 3), Region: regions[i], Badges: []string{"onboarded", "first_sale"},
 			Streak: (i + 1) * 5, TotalSales: (i + 1) * 50, MonthSales: (i + 1) * 8,
 		}
 	}
+	return seeded
 }
 
 func envOr(key, def string) string {
