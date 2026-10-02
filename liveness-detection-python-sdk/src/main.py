@@ -217,8 +217,61 @@ MAX_ATTEMPTS = 3
 DOWNSTREAM_TIMEOUT = 10
 
 _session_lock = threading.Lock()
-# local_session_id -> {downstream_id, attempts, locked, challenge}
-_sessions: dict = {}
+
+# ── Persistent session store (2026-10-02, C2-b10) ────────────────────────────
+# Audit B10: `_sessions: dict` was process-local memory, so a restart lost
+# every in-flight verification (downstream binding, attempt counters, lockout)
+# and users had to start over. Session state is now persisted to Redis with a
+# TTL of challenge timeout + margin (same pattern as B9). Creation fails
+# loudly when Redis is unavailable — an untracked session could not be
+# verified after a restart — and unknown/expired sessions fail closed (404).
+_SDK_REDIS_PREFIX = "liveness-sdk:session:"
+_SDK_SESSION_TTL = 300  # 120s challenge timeout (see /api/v1/session/create) + margin
+
+
+def _get_redis():
+    """Return a live Redis client, reconnecting if the import-time client
+    never connected or went stale; None when Redis is unreachable."""
+    global _redis_client
+    if _redis_client is not None:
+        try:
+            _redis_client.ping()
+            return _redis_client
+        except Exception:
+            _redis_client = None
+    try:
+        client = redis.from_url(_redis_url, decode_responses=True, socket_timeout=5)
+        client.ping()
+        _redis_client = client
+        return client
+    except Exception:
+        return None
+
+
+def _require_redis():
+    r = _get_redis()
+    if r is None:
+        # Fail loud (C2-b10): never issue/mutate a session that is not
+        # durably persisted.
+        raise HTTPException(status_code=503,
+                            detail="session store unavailable; refusing untracked liveness session")
+    return r
+
+
+def _load_session(session_id: str) -> Optional[dict]:
+    data = _require_redis().get(f"{_SDK_REDIS_PREFIX}{session_id}")
+    return _json.loads(data) if data else None
+
+
+def _create_session_record(session_id: str, sess: dict) -> None:
+    _require_redis().setex(f"{_SDK_REDIS_PREFIX}{session_id}",
+                           _SDK_SESSION_TTL, _json.dumps(sess))
+
+
+def _save_session_record(session_id: str, sess: dict) -> None:
+    # KEEPTTL: attempts/lockout updates must not extend the session lifetime.
+    _require_redis().set(f"{_SDK_REDIS_PREFIX}{session_id}",
+                         _json.dumps(sess), keepttl=True)
 
 
 def _downstream_post(path: str, payload: dict) -> dict:
@@ -267,12 +320,14 @@ def detect_liveness(req: LivenessRequest):
         raise HTTPException(status_code=400, detail="frame_base64 biometric input is required")
 
     with _session_lock:
-        sess = _sessions.get(req.session_id)
+        sess = _load_session(req.session_id)
         if sess is None:
+            # Fail closed (C2-b10): unknown/expired session → 404, never pass.
             raise HTTPException(status_code=404, detail="unknown session_id")
         if sess["locked"]:
             raise HTTPException(status_code=423, detail="session locked after repeated failures")
         sess["attempts"] += 1
+        _save_session_record(req.session_id, sess)
         attempts = sess["attempts"]
 
     result = _downstream_post("/challenge/frame", {
@@ -294,10 +349,12 @@ def detect_liveness(req: LivenessRequest):
         decision = "pass"
         with _session_lock:
             sess["locked"] = True  # one-shot: a passed session cannot be replayed
+            _save_session_record(req.session_id, sess)
     elif attempts_remaining <= 0:
         decision = "fail"
         with _session_lock:
             sess["locked"] = True  # retry cap reached → lockout
+            _save_session_record(req.session_id, sess)
     else:
         decision = "retry"
 
@@ -314,12 +371,12 @@ def create_session(challenge_type: str = "blink"):
     downstream = _downstream_post("/challenge/start", {"challenge": challenge_type})
     session_id = f"LIV-{secrets.token_hex(16)}"
     with _session_lock:
-        _sessions[session_id] = {
+        _create_session_record(session_id, {
             "downstream_id": downstream["session_id"],
             "attempts": 0,
             "locked": False,
             "challenge": challenge_type,
-        }
+        })
     return {
         "session_id": session_id,
         "challenges": ["blink", "turn_left", "turn_right"],
@@ -329,10 +386,16 @@ def create_session(challenge_type: str = "blink"):
 @app.get("/api/v1/stats")
 def get_stats():
     # Real counters derived from live session state — no fabricated numbers.
-    with _session_lock:
-        total = len(_sessions)
-        locked = sum(1 for s in _sessions.values() if s["locked"])
-        attempts = sum(s["attempts"] for s in _sessions.values())
+    # 2026-10-02 (C2-b10): state now lives in Redis, so scan the store.
+    r = _require_redis()
+    sessions = []
+    for key in r.scan_iter(f"{_SDK_REDIS_PREFIX}*"):
+        data = r.get(key)
+        if data:
+            sessions.append(_json.loads(data))
+    total = len(sessions)
+    locked = sum(1 for s in sessions if s["locked"])
+    attempts = sum(s["attempts"] for s in sessions)
     return {
         "active_sessions": total,
         "locked_sessions": locked,
