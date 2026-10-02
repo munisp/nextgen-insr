@@ -438,6 +438,26 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     }
   );
 
+  // W7-B6 (2026-10-03): Paystack premium-payment webhook. Raw body captured
+  // here; the handler verifies HMAC-SHA512 itself (Paystack's native scheme —
+  // the SHA256 verifyWebhookHmac middleware does not apply). Fail-closed on
+  // missing secret and on any signature mismatch.
+  app.post(
+    "/webhooks/paystack",
+    captureRawBody,
+    async (req, res) => {
+      try {
+        const { handlePaystackWebhook } = await import(
+          "../paystack/webhookHandler"
+        );
+        return await handlePaystackWebhook(req, res);
+      } catch (err) {
+        logger.error("[Paystack Webhook] Handler load error:: " + String(err));
+        res.status(500).json({ error: "Webhook handler unavailable" });
+      }
+    }
+  );
+
   app.post(
     "/webhooks/partner",
     captureRawBody,
