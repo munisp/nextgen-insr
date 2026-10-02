@@ -466,6 +466,11 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
       callerFor(regularUser).merchantPayoutSettlement.initiatePayout({
         merchantId: active.id,
         amount: 5000,
+        // 2026-10-02 (W10-B2-ci): initiatePayout now REQUIRES an idempotency
+        // key (funds-path replay protection, merchantPayoutSettlement.ts).
+        // Unique key per call; the FORBIDDEN role-denial assertion is
+        // unchanged.
+        idempotencyKey: "mcg1-agent-denied-1",
         bankCode: "999",
         accountNumber: "0000000000",
         accountName: "Attacker",
@@ -478,6 +483,9 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
     const res = await callerFor(adminUser).merchantPayoutSettlement.initiatePayout({
       merchantId: active.id,
       amount: 5000,
+      // 2026-10-02 (W10-B2-ci): required idempotency key (unique — this is
+      // the only call in this test expected to actually CREATE a payout).
+      idempotencyKey: "mcg1-admin-payout-1",
       bankCode: "999",
       accountNumber: "0000000000",
       accountName: "Attacker",
@@ -491,6 +499,10 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
       callerFor(adminUser).merchantPayoutSettlement.initiatePayout({
         merchantId: active.id,
         amount: 500_000,
+        // 2026-10-02 (W10-B2-ci): required idempotency key (distinct from the
+        // successful payout above — no replay interaction; the
+        // PRECONDITION_FAILED balance assertion is unchanged).
+        idempotencyKey: "mcg1-balance-gate-1",
       }),
       "PRECONDITION_FAILED"
     );
@@ -501,6 +513,8 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
       callerFor(adminUser).merchantPayoutSettlement.initiatePayout({
         merchantId: pending.id,
         amount: 5000,
+        // 2026-10-02 (W10-B2-ci): required idempotency key (unique per call).
+        idempotencyKey: "mcg1-pending-refuse-1",
       }),
       "PRECONDITION_FAILED"
     );
@@ -523,6 +537,9 @@ describe("merchant onboarding G1 fixes (integration, real DB)", () => {
       callerFor(adminUser).merchantPayoutSettlement.initiatePayout({
         merchantId: active.id,
         amount: 5000,
+        // 2026-10-02 (W10-B2-ci): required idempotency key (unique per call;
+        // the CRIT-3 hold PRECONDITION_FAILED assertion is unchanged).
+        idempotencyKey: "mcg1-hold-blocked-1",
       }),
       "PRECONDITION_FAILED"
     );
