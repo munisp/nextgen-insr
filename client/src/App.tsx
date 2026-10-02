@@ -89,6 +89,11 @@ const MemberBeneficiaries = lazy(
 const MemberEndorsements = lazy(
   () => import("./pages/member/MemberEndorsements")
 );
+// 2026-10-03 (W7-B7): member money & rewards surfaces.
+const MemberWallet = lazy(() => import("./pages/member/MemberWallet"));
+const MemberSavings = lazy(() => import("./pages/member/MemberSavings"));
+const MemberLoyalty = lazy(() => import("./pages/member/MemberLoyalty"));
+const MemberReferrals = lazy(() => import("./pages/member/MemberReferrals"));
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
@@ -1376,6 +1381,12 @@ function AuthenticatedApp() {
         <Route path="/member/endorsements" component={MemberEndorsements} />
         <Route path="/member/claims" component={MemberClaims} />
         <Route path="/member/payments" component={MemberPayments} />
+        {/* 2026-10-03 (W7-B7): wallet/savings/loyalty/referrals — real
+            member-scoped routers; no fabricated funds actions. */}
+        <Route path="/member/wallet" component={MemberWallet} />
+        <Route path="/member/savings" component={MemberSavings} />
+        <Route path="/member/loyalty" component={MemberLoyalty} />
+        <Route path="/member/referrals" component={MemberReferrals} />
         <Route path="/member/profile" component={MemberProfile} />
         <Route path="/super-admin" component={SuperAdminPortal} />
         <Route path="/super-admin/:section" component={SuperAdminPortal} />

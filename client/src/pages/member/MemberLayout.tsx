@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature, RefreshCw, Users, FilePenLine } from "lucide-react";
+import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature, RefreshCw, Users, FilePenLine, Wallet, PiggyBank, Star, UserPlus } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/member/quotes", label: "Quotes", icon: FileSignature },
@@ -32,6 +32,12 @@ const NAV_ITEMS = [
   { href: "/member/endorsements", label: "Endorsements", icon: FilePenLine },
   { href: "/member/claims", label: "Claims", icon: FileText },
   { href: "/member/payments", label: "Payments", icon: CreditCard },
+  // 2026-10-03 (W7-B7): money & rewards surfaces (wallet/savings/loyalty/
+  // referrals) — read-only real backends; no fabricated funds actions.
+  { href: "/member/wallet", label: "Wallet", icon: Wallet },
+  { href: "/member/savings", label: "Savings", icon: PiggyBank },
+  { href: "/member/loyalty", label: "Loyalty", icon: Star },
+  { href: "/member/referrals", label: "Referrals", icon: UserPlus },
   { href: "/member/profile", label: "Profile", icon: User },
 ];
 
