@@ -66,6 +66,7 @@ import {
   validateReinstatement,
   validateWaitingPeriod,
 } from "../lib/policyLifecycle";
+import { computeUnderwritingRiskScore } from "../lib/riskScoring";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, withTbCompensation } from "../tbClient";
 import { getTemporalClient } from "../temporal";
@@ -1157,8 +1158,10 @@ export const insuranceWorkflowsRouter = router({
   assessRisk: protectedProcedure
     .input(z.object({
       policyId: z.number(),
-      riskScore: z.number().min(0).max(100),
-      riskCategory: z.enum(["low", "medium", "high", "declined"]),
+      // 2026-10-02 (A3): caller-supplied `riskScore` / `riskCategory` REMOVED —
+      // a client could self-certify a low risk score (trust-boundary
+      // violation). The score is now computed server-side from real DB inputs
+      // by server/lib/riskScoring.ts and the category derives from its band.
       decision: z.enum(["approved", "approved_with_conditions", "referred", "declined", "counter_offered"]),
       premiumLoading: z.number().optional(),
       exclusions: z.array(z.string()).optional(),
@@ -1203,12 +1206,22 @@ export const insuranceWorkflowsRouter = router({
         });
       }
 
+      // 2026-10-02 (A3): compute the risk score SERVER-SIDE from the policy's
+      // own row + the policyholder's real claims history. Fail-closed: if the
+      // DB lookups fail this throws and NO assessment is persisted — we never
+      // fall back to a default (or caller-supplied) score.
+      const risk = await computeUnderwritingRiskScore(db, {
+        customerId: policy.customerId,
+        coverageType: policy.coverageType ?? null,
+        sumInsured: policy.sumInsured != null ? Number(policy.sumInsured) : null,
+      });
+
       const [assessment] = await db.insert(underwritingAssessments).values({
         policyId: input.policyId,
         underwriterId: ctx.user?.id ?? undefined,
         decision: input.decision,
-        riskScore: String(input.riskScore),
-        riskCategory: input.riskCategory,
+        riskScore: String(risk.score),
+        riskCategory: risk.band,
         premiumLoading: input.premiumLoading ? String(input.premiumLoading) : null,
         exclusions: input.exclusions ?? [],
         conditions: input.conditions ?? [],
@@ -1241,16 +1254,23 @@ export const insuranceWorkflowsRouter = router({
         eventType: "underwriting.decision_made",
         policyId: input.policyId,
         decision: input.decision,
-        riskScore: input.riskScore,
+        riskScore: risk.score,
       });
 
       await emitAuditLog(db, "UNDERWRITING_DECISION", "underwriting_assessment", assessment.id, ctx.user?.id, {
         policyId: input.policyId, decision: input.decision,
         approverUserId: ctx.user?.id ?? null,
         approverRole: callerRole(ctx) ?? null,
+        riskScore: risk.score,
+        riskBand: risk.band,
       });
 
-      return { assessment };
+      return {
+        assessment,
+        riskScore: risk.score,
+        riskBand: risk.band,
+        riskFactors: risk.factors,
+      };
     }),
 
   /** UW-2: Get pending underwriting queue */
