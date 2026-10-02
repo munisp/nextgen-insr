@@ -21,11 +21,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature } from "lucide-react";
+import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature, RefreshCw, Users, FilePenLine } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/member/quotes", label: "Quotes", icon: FileSignature },
   { href: "/member/policies", label: "Policies", icon: ShieldCheck },
+  // 2026-10-02 (W7-B5): policy servicing surfaces.
+  { href: "/member/renewals", label: "Renewals", icon: RefreshCw },
+  { href: "/member/beneficiaries", label: "Beneficiaries", icon: Users },
+  { href: "/member/endorsements", label: "Endorsements", icon: FilePenLine },
   { href: "/member/claims", label: "Claims", icon: FileText },
   { href: "/member/payments", label: "Payments", icon: CreditCard },
   { href: "/member/profile", label: "Profile", icon: User },
