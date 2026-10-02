@@ -57,8 +57,14 @@ export function MemberError({ message }: { message: string }) {
 }
 
 export default function MemberLayout({ children }: { children: ReactNode }) {
-  const { user, loading, error } = useAuth({ redirectOnUnauthenticated: true });
   const [location] = useLocation();
+  // 2026-10-02 (W7-B4): anonymous members bounce to the member-facing
+  // /member/login page (which initiates the real Keycloak SSO flow and
+  // returns here) instead of the raw /api/auth/login API URL.
+  const { user, loading, error } = useAuth({
+    redirectOnUnauthenticated: true,
+    redirectPath: `/member/login?returnTo=${encodeURIComponent(location)}`,
+  });
 
   if (loading) {
     return (
