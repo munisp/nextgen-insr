@@ -42,6 +42,7 @@ import {
   keycloakConfig,
 } from "./keycloak";
 import { logger } from './logger';
+import { sanitizeReturnTo } from "./returnTo";
 import { users } from "../../drizzle/schema";
 import { getDb, invalidateUserBySubCache } from "../db";
 import { invalidatePermifyDecisionsForSubject } from "./permify";
@@ -474,7 +475,10 @@ export function registerKeycloakAuthRoutes(app: Express): void {
       });
       return;
     }
-    const returnTo = (req.query.returnTo as string) || "/";
+    // 2026-10-02, W7-B4 hardening: sanitize returnTo before storing — it is
+    // attacker-controlled and used as a redirect target after login. Fail
+    // closed to '/' on anything that is not a same-origin relative path.
+    const returnTo = sanitizeReturnTo(req.query.returnTo);
     const state = crypto.randomUUID();
     const redirectUri = `${req.protocol}://${req.get("host")}/api/auth/callback`;
 
@@ -507,7 +511,9 @@ export function registerKeycloakAuthRoutes(app: Express): void {
     // Validate state to prevent CSRF
     const cookies = parseCookies(req.headers.cookie ?? "");
     const expectedState = cookies.get(STATE_COOKIE);
-    const returnTo = cookies.get(RETURN_PATH_COOKIE) ?? "/";
+    // 2026-10-02, W7-B4 hardening: re-validate at the redirect site too —
+    // the cookie is client-tamperable between login and callback.
+    const returnTo = sanitizeReturnTo(cookies.get(RETURN_PATH_COOKIE));
 
     if (!expectedState || expectedState !== state) {
       logger.error("[Keycloak] State mismatch — possible CSRF attack");

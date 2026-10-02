@@ -76,6 +76,7 @@ const MemberPolicies = lazy(() => import("./pages/member/MemberPolicies"));
 const MemberClaims = lazy(() => import("./pages/member/MemberClaims"));
 const MemberPayments = lazy(() => import("./pages/member/MemberPayments"));
 const MemberProfile = lazy(() => import("./pages/member/MemberProfile"));
+const MemberLogin = lazy(() => import("./pages/member/MemberLogin"));
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
@@ -903,6 +904,11 @@ const TerminalFleetPage = lazy(() => import("./pages/TerminalFleetPage"));
 // Keycloak/OAuth auth instead. Any route that wraps its page in <DashboardLayout>
 // should be listed here so agents don't need a PIN to reach the admin panel.
 const ADMIN_DASHBOARD_PREFIXES = [
+  // 2026-10-02 (W7-B4): /member/* must bypass the POS AgentLogin gate —
+  // member auth is the Keycloak kc_session cookie, enforced by MemberLayout
+  // (redirects anonymous users to /member/login), not the agent PIN flow.
+  // Without this entry the member portal was unreachable for non-agents.
+  "/member",
   "/agent-float",
   "/settlement-batch",
   "/transaction-map",
@@ -1343,7 +1349,10 @@ function AuthenticatedApp() {
         <Route path="/management/:section" component={ManagementPortal} />
         <Route path="/agent" component={AgentPortal} />
         <Route path="/customer" component={CustomerPortal} />
-        {/* Member portal (member* tRPC routers) */}
+        {/* Member portal (member* tRPC routers). /member/login is the
+            member-facing SSO entry (W7-B4); all other /member/* pages are
+            auth-gated inside MemberLayout and bounce here when anonymous. */}
+        <Route path="/member/login" component={MemberLogin} />
         <Route path="/member">
           <Redirect to="/member/quotes" />
         </Route>
