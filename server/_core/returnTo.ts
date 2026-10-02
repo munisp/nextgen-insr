@@ -38,9 +38,13 @@ export function sanitizeReturnTo(value: unknown): string {
     return DEFAULT_RETURN_PATH;
   }
   // Reject backslashes (browser treats "/\evil.com" as "//evil.com"),
-  // ASCII control characters, and any whitespace.
-  if (/[\x00-\x20\x7f\\]/.test(value)) {
-    return DEFAULT_RETURN_PATH;
+  // ASCII control characters, and any whitespace. Code-point iteration is
+  // used instead of a control-char regex to satisfy no-control-regex.
+  for (const ch of value) {
+    const n = ch.codePointAt(0) as number;
+    if (n <= 0x20 || n === 0x7f || n === 0x5c) {
+      return DEFAULT_RETURN_PATH;
+    }
   }
   return value;
 }
