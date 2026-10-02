@@ -1,13 +1,14 @@
 import { InsuranceIntentClassifier, InsuranceIntent } from "./intent";
 import { PlatformClient, PlatformUnavailableError } from "../clients/platform";
+// 2026-10-02 (C2-b11b12, audit B11): state shape + Redis store live in
+// src/lib/conversationStore.ts (re-exported here for existing imports).
+import {
+  ConversationState,
+  RedisConversationStore,
+  CONVERSATION_IDLE_TIMEOUT_MS,
+} from "../lib/conversationStore";
 
-interface ConversationState {
-  phone: string;
-  intent: InsuranceIntent | null;
-  step: number;
-  data: Record<string, string>;
-  lastActive: number;
-}
+export { ConversationState, RedisConversationStore };
 
 export interface BotResponse {
   text: string;
@@ -76,23 +77,37 @@ const BUTTON_ID_VALUES: Record<string, string> = {
 };
 
 export class ConversationEngine {
-  private states: Map<string, ConversationState> = new Map();
+  // 2026-10-02 (C2-b11b12, audit B11): state now persisted in Redis
+  // (hash + idle TTL) via RedisConversationStore so restarts no longer wipe
+  // multi-step conversations; in-memory only as a loudly-logged outage
+  // fallback. See src/lib/conversationStore.ts.
+  private store: RedisConversationStore;
   private classifier: InsuranceIntentClassifier;
   private platform: PlatformClient | null;
 
-  constructor(classifier: InsuranceIntentClassifier, platform?: PlatformClient) {
+  constructor(
+    classifier: InsuranceIntentClassifier,
+    platform?: PlatformClient,
+    store?: RedisConversationStore
+  ) {
     this.classifier = classifier;
     this.platform = platform ?? null;
+    this.store = store ?? new RedisConversationStore();
   }
 
   async processMessage(phone: string, text: string): Promise<BotResponse> {
-    let state = this.states.get(phone);
-    if (!state || Date.now() - state.lastActive > 10 * 60 * 1000) {
+    let state = await this.store.get(phone);
+    if (!state || Date.now() - state.lastActive > CONVERSATION_IDLE_TIMEOUT_MS) {
       state = { phone, intent: null, step: 0, data: {}, lastActive: Date.now() };
-      this.states.set(phone, state);
     }
     state.lastActive = Date.now();
 
+    const response = await this.dispatch(state, text);
+    await this.store.set(state);
+    return response;
+  }
+
+  private async dispatch(state: ConversationState, text: string): Promise<BotResponse> {
     const normalized = BUTTON_ID_VALUES[text] ?? text;
 
     if (normalized.toLowerCase() === "menu" || normalized === "0") {

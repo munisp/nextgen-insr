@@ -15,11 +15,14 @@
  * validated at startup (src/config.ts) so real endpoints can be wired here
  * once they exist.
  */
-interface ConversationState {
-  chatId: number;
-  language: string;
-  lastActive: number;
-}
+// 2026-10-02 (C2-b11b12, audit B11): state shape + Redis store live in
+// src/lib/conversationStore.ts (re-exported for existing imports).
+import {
+  ConversationState,
+  RedisConversationStore,
+} from "../lib/conversationStore";
+
+export { ConversationState, RedisConversationStore };
 
 interface BotResponse {
   text: string;
@@ -27,11 +30,15 @@ interface BotResponse {
 }
 
 export class ConversationManager {
-  private states: Map<number, ConversationState> = new Map();
+  // 2026-10-02 (C2-b11b12, audit B11): state now persisted in Redis
+  // (hash + idle TTL) via RedisConversationStore so restarts no longer wipe
+  // per-chat state; in-memory only as a loudly-logged outage fallback.
+  private store: RedisConversationStore;
   private apiBase: string;
 
-  constructor(apiBase: string) {
+  constructor(apiBase: string, store?: RedisConversationStore) {
     this.apiBase = apiBase;
+    this.store = store ?? new RedisConversationStore();
   }
 
   /** Base URL of the monolith API (validated at startup). Reserved for real
@@ -40,17 +47,17 @@ export class ConversationManager {
     return this.apiBase;
   }
 
-  private getState(chatId: number): ConversationState {
-    if (!this.states.has(chatId)) {
-      this.states.set(chatId, { chatId, language: "en", lastActive: Date.now() });
-    }
-    const state = this.states.get(chatId)!;
+  private async getState(chatId: number): Promise<ConversationState> {
+    const state =
+      (await this.store.get(chatId)) ??
+      { chatId, language: "en", lastActive: Date.now() };
     state.lastActive = Date.now();
+    await this.store.set(state);
     return state;
   }
 
   async processMessage(chatId: number, text: string, _langCode?: string): Promise<BotResponse> {
-    this.getState(chatId);
+    await this.getState(chatId);
 
     if (text.toLowerCase() === "menu" || text === "0") {
       return {
@@ -86,6 +93,13 @@ export class ConversationManager {
   }
 
   async setLanguage(chatId: number, lang: string): Promise<void> {
-    this.getState(chatId).language = lang;
+    const state = await this.getState(chatId);
+    state.language = lang;
+    await this.store.set(state);
+  }
+
+  /** Test/diagnostic hook: read persisted language for a chat. */
+  async getLanguage(chatId: number): Promise<string> {
+    return (await this.store.get(chatId))?.language ?? "en";
   }
 }

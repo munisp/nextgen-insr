@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "ioredis": "^5.11.1",
     "pg": "^8.12.0",
     "express": "^4.18.2",
     "axios": "^1.6.0",
