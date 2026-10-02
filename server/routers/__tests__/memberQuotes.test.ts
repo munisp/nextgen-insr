@@ -112,17 +112,59 @@ async function createTablesAndSeed() {
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )`);
 
-  // Minimal faithful insurance_products projection (the router selects
-  // id/name/coverageType/minPremium/maxCoverageAmount only).
+  // Minimal faithful insurance_products projection (2026-10-02, A1c: the
+  // router now selects id/productCode/name/coverageType — the fabricated
+  // minPremium/maxCoverageAmount rate derivation is GONE).
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS insurance_products (
       id serial PRIMARY KEY,
+      "productCode" text,
       name varchar(256) NOT NULL,
       "coverageType" coverage_type NOT NULL,
-      "minPremium" numeric(18,2),
-      "maxCoverageAmount" numeric(18,2),
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now()
+    )`);
+
+  // Minimal claims projection (A1c): addToQuoteCart counts the CALLER's real
+  // claims (claims.claimantId = ctx.user.id) for the engine's claims-loading
+  // input. Only the counted column is needed.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS claims (
+      id serial PRIMARY KEY,
+      "claimantId" integer NOT NULL
+    )`);
+
+  // Faithful rating_tables + rating_factors projections (A1c;
+  // drizzle/schema.ts:6403-6453) — premiums resolve through these filed
+  // tables under the strict fail-closed policy.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS rating_tables (
+      id serial PRIMARY KEY,
+      "productCode" text,
+      "coverageClass" text,
+      "effectiveFrom" timestamp NOT NULL,
+      "effectiveTo" timestamp,
+      status varchar(16) NOT NULL DEFAULT 'draft',
+      version integer NOT NULL,
+      "filedBy" integer,
+      "approvedBy" integer,
+      "naicomFilingRef" text,
+      "tenantId" integer,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS rating_factors (
+      id serial PRIMARY KEY,
+      "tableId" integer NOT NULL,
+      "factorType" varchar(32) NOT NULL,
+      "factorKey" text NOT NULL,
+      value numeric(18,6) NOT NULL,
+      "minClamp" numeric(18,6),
+      "maxClamp" numeric(18,6),
+      "sortOrder" integer NOT NULL,
+      "tenantId" integer,
+      "createdAt" timestamp NOT NULL DEFAULT now()
     )`);
 
   // Full policy_quotes column set (schema.additions.ts:470) — addToQuoteCart
@@ -155,10 +197,27 @@ async function createTablesAndSeed() {
       (${FOREIGN_CUSTOMER}, 'Foreign', 'F', '09000000002', 'active', '2')
     ON CONFLICT DO NOTHING`);
 
-  // minPremium 20000 / maxCoverage 1000000 → derived baseRate 0.02.
+  // Seed product WITH productCode (2026-10-02, A1c: the router resolves the
+  // rate via resolveRating(productCode, coverageClass) — fail-closed — so a
+  // filed/active rating table is mandatory; the old minPremium/maxCoverage
+  // derived-rate columns no longer exist).
   await db.execute(sql`
-    INSERT INTO insurance_products (id, name, "coverageType", "minPremium", "maxCoverageAmount")
-    VALUES (${PRODUCT_ID}, 'Family Life Plan', 'life', 20000, 1000000)`);
+    INSERT INTO insurance_products (id, "productCode", name, "coverageType")
+    VALUES (${PRODUCT_ID}, 'MQ-LIFE-001', 'Family Life Plan', 'life')`);
+
+  // Filed NAICOM rating table: base rate 0.02/yr on sum insured → the legacy
+  // expectations (premium 10000, stamp 50, total 10050 for 500000 × 12mo)
+  // are preserved, now sourced from the engine instead of fabricated columns.
+  await db.execute(sql`
+    INSERT INTO rating_tables
+      ("productCode", "coverageClass", "effectiveFrom", status, version,
+       "naicomFilingRef")
+    VALUES ('MQ-LIFE-001', 'life', '2026-01-01T00:00:00Z', 'active', 1,
+            'NAICOM/2026/MQ-LIFE-001')`);
+  await db.execute(sql`
+    INSERT INTO rating_factors ("tableId", "factorType", "factorKey", value, "sortOrder")
+    SELECT id, 'base', 'rate', '0.02', 0 FROM rating_tables
+    WHERE "productCode" = 'MQ-LIFE-001'`);
 
   // Seeded FOREIGN pending quote (IDOR probe target) + a cancelled caller row
   // (must not surface in the pending cart).
@@ -250,7 +309,8 @@ describe("memberQuotes router (2026-10-01, R3-b5)", () => {
       sumInsured: 500000,
       durationMonths: 12,
     });
-    // baseRate = 20000/1000000 = 0.02 → premium 10000, stamp 50, total 10050.
+    // Engine-sourced (2026-10-02, A1c): filed table rate 0.02 × 500000 × 12/12
+    // = premium 10000, stamp 50 (0.5%), total 10050.
     expect(result.premiumAmount).toBe(10000);
     expect(result.stampDuty).toBe(50);
     expect(result.totalPayable).toBe(10050);
