@@ -204,7 +204,16 @@ export async function hydrateChatQueue(): Promise<number> {
     try {
       // Persisted form excludes volatile derived fields; restore with zeros
       // and let recomputeQueuePositions() assign real values below.
-      entry = { position: 0, estimatedWaitMs: 0, ...(JSON.parse(member) as QueueEntry) };
+      // 2026-10-02 (C2-tsc, TS2783): spread-first so no literal key is
+      // statically overwritten; defensive ?? 0 keeps the defaults if a row
+      // predates the exclusion.
+      const parsed = JSON.parse(member) as Omit<QueueEntry, "position" | "estimatedWaitMs"> &
+        Partial<Pick<QueueEntry, "position" | "estimatedWaitMs">>;
+      entry = {
+        ...parsed,
+        position: parsed.position ?? 0,
+        estimatedWaitMs: parsed.estimatedWaitMs ?? 0,
+      };
     } catch {
       logger.error("[AgentOps] Corrupt persisted chat queue entry — skipping (fail-closed, not fabricated)");
       continue;
