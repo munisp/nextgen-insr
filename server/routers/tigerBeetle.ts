@@ -20,6 +20,7 @@ import { tigerBeetleSyncLog, transactions, agents } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
   tbCreateTransfer,
   tbEnsureAgentAccount,
@@ -51,6 +52,44 @@ const TX_CODE = {
   FEE: 900,
 };
 
+/**
+ * 2026-10-02 (W10-B1): agent-identity gate for the ledger surface.
+ * ensureAgentAccount / getAgentBalance previously trusted a caller-supplied
+ * agentId — any authenticated user could provision or read ANY agent's
+ * ledger account/balance (IDOR on a funds surface). The caller's identity is
+ * resolved server-side ONLY (resolveAgentScope precedent,
+ * server/middleware/agentAuth.ts F7-1):
+ *   - an agent_session holder may act ONLY on their own agentId (the JWT
+ *     claim, verified + revocation-checked by getAgentFromCookie — a
+ *     suspended/deleted/unverifiable session resolves to null, fail-closed);
+ *   - a Keycloak admin (no agent session) may query any agent for ops;
+ *   - everything else → FORBIDDEN.
+ * The other procs in this router take no caller-supplied agent identity or
+ * are already admin-only (createTransfer / reconcile / retryPendingSync);
+ * health, getSyncStatus, getSyncLog and getAnalytics expose no per-agent
+ * funds data and stay protectedProcedure.
+ */
+async function assertCallerIsAgent(
+  ctx: { user: { role?: string | null } | null; req?: unknown },
+  agentId: string
+): Promise<void> {
+  const session = ctx.req ? await getAgentFromCookie(ctx.req as never) : null;
+  if (session) {
+    if (session.agentId !== agentId) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Session agent does not match the supplied agentId",
+      });
+    }
+    return;
+  }
+  if (ctx.user?.role === "admin") return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Agent session required — identity must come from the session",
+  });
+}
+
 export const tigerBeetleRouter = router({
   // ── Health & Status ─────────────────────────────────────────────────────────
   health: protectedProcedure.query(async () => {
@@ -74,14 +113,19 @@ export const tigerBeetleRouter = router({
   // ── Account Operations ───────────────────────────────────────────────────────
   ensureAgentAccount: protectedProcedure
     .input(z.object({ agentId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // 2026-10-02 (W10-B1): caller must BE this agent (or admin).
+      await assertCallerIsAgent(ctx, input.agentId);
       const created = await tbEnsureAgentAccount(input.agentId);
       return { success: created, agentId: input.agentId };
     }),
 
   getAgentBalance: protectedProcedure
     .input(z.object({ agentId: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // 2026-10-02 (W10-B1): caller must BE this agent (or admin) — gate
+      // before ANY balance source (TB sidecar or PG fallback) is touched.
+      await assertCallerIsAgent(ctx, input.agentId);
       const balance = await tbGetAgentBalance(input.agentId);
       if (!balance) {
         // Fall back to PostgreSQL float balance

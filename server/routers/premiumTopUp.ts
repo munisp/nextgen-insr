@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, policies, policyLifecycleStates, auditLog } from "../../drizzle/schema";
+import { customers, transactions, policies, policyLifecycleStates, auditLog } from "../../drizzle/schema";
 import { getOrInitLifecycle, validateReinstatement } from "../lib/policyLifecycle";
 import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
@@ -14,11 +14,63 @@ import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { getDb } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount, withTbCompensation } from "../tbClient";
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+type PolicyRow = typeof policies.$inferSelect;
+
+/**
+ * 2026-10-02 (W10-B1): caller→policy ownership gate for the funds surface.
+ * Previously getHistory/topUp trusted a caller-supplied policyId — any
+ * authenticated caller could read ANY policy's payment history (IDOR) or
+ * post a top-up against a foreign policy. The caller is resolved
+ * server-side ONLY (never caller-supplied identity):
+ *   1. admin/supervisor Keycloak role (repo role pattern,
+ *      server/lib/lifecycleWorkflows.ts) → allowed;
+ *   2. the policy's owner: policies.customerId matches ctx.user.id directly
+ *      OR the caller's resolved customers row (customers.keycloakSub =
+ *      String(ctx.user.id) — memberPolicies resolveSessionCustomer /
+ *      dual-identity callerPolicyScope precedent, 2026-10-01 R3);
+ *   3. the selling agent on record: policies.agentId matches the verified
+ *      agent_session identity (getAgentFromCookie — fail-closed, a
+ *      suspended/deleted/unverifiable session resolves to null).
+ * Everything else → NOT_FOUND (no existence leak for foreign rows).
+ * Fail-closed: any lookup failure propagates as an error; access is never
+ * granted on uncertainty.
+ */
+async function assertCallerOwnsPolicy(
+  db: Db,
+  policy: PolicyRow,
+  ctx: { user: { id: number; role?: string | null } | null; req?: unknown }
+): Promise<void> {
+  const role = ctx.user?.role;
+  if (role === "admin" || role === "supervisor") return;
+
+  const userId = ctx.user?.id;
+  if (userId != null) {
+    if (policy.customerId === userId) return;
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.keycloakSub, String(userId)))
+      .limit(1);
+    if (customer && policy.customerId === customer.id) return;
+  }
+
+  const session = ctx.req
+    ? await getAgentFromCookie(ctx.req as never)
+    : null;
+  if (session && policy.agentId != null && session.id === policy.agentId) {
+    return;
+  }
+
+  throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+}
 
 export const premiumTopUpRouter = router({
   topUp: financialProcedure
@@ -32,6 +84,15 @@ export const premiumTopUpRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // 2026-10-02 (W10-B1): caller→policy ownership gate runs BEFORE the
+      // idempotency replay and BEFORE any ledger/payment side effect —
+      // previously any caller could top up (or replay-disclose the
+      // transaction of) a foreign policy. Fail-closed: the gate throws on
+      // lookup failure; nothing below executes for a foreign policyId.
+      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      await assertCallerOwnsPolicy(db, policy, ctx);
 
       // Idempotency: the payment reference binds to exactly one durable
       // effect. Replay must ALSO verify the payload — silently replaying a
@@ -53,8 +114,6 @@ export const premiumTopUpRouter = router({
         return { idempotent: true, transaction: prev };
       }
 
-      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
-      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
       if (!["active", "bound", "lapsed"].includes(policy.status ?? "")) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Policy status '${policy.status}' does not allow premium payment` });
       }
@@ -264,9 +323,18 @@ export const premiumTopUpRouter = router({
 
   getHistory: protectedProcedure
     .input(z.object({ policyId: z.number(), limit: z.number().default(20), offset: z.number().default(0) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // 2026-10-02 (W10-B1): was an IDOR — any authenticated caller could
+      // read ANY policy's premium payment history. Now fail-closed: DB
+      // unavailable → error (never an empty-but-"successful" surface), and
+      // the caller must own the policy (or be admin/supervisor, or be the
+      // selling agent on record). Foreign/missing policyId → NOT_FOUND, no
+      // existence leak, no data returned.
       const db = await getDb();
-      if (!db) return { data: [], total: 0 };
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      await assertCallerOwnsPolicy(db, policy, ctx);
       const results = await db.select().from(premiums)
         .where(eq(premiums.policyId, input.policyId))
         .orderBy(desc(premiums.id)).limit(input.limit).offset(input.offset);
