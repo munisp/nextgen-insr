@@ -102,7 +102,7 @@ export function earnedInPeriod(
   policy: { id: number; annualPremium: string | number; startDate: Date | null; endDate: Date | null },
   periodStart: Date,
   periodEnd: Date,
-): { earned: number; premium: number } {
+): { earned: number; unearned: number; premium: number } {
   if (!policy.startDate || !policy.endDate) {
     throw new Error(
       `[A4 2026-10-02] Policy ${policy.id} is missing startDate/endDate — ` +
