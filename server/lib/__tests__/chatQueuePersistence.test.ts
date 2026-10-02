@@ -13,7 +13,7 @@
  *      simulate a process restart while the durable store survives.
  * Real-Redis ZSET coverage should run in the e2e job (redis:7 service).
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   sortedSetAdd,
@@ -80,6 +80,34 @@ describe("distributedState sorted-set queue primitives (A6)", () => {
 });
 
 describe("agentOperations chatQueue durability (A6)", () => {
+  // 2026-10-02 (C2-ci): the original assertions assumed EXCLUSIVE ownership
+  // of the "chatq:waiting" sorted-set key — true in the local unit-test env
+  // (memory fallback) but FALSE in CI's "Vitest (postgres + redis)" job,
+  // where a REAL shared Redis also receives write-through entries from other
+  // chat test files running concurrently (foreign sessionId 101 polluted the
+  // store; CI job 110648994986). The contract under test is about OUR
+  // entries' durability/ordering/restoration, so all store assertions below
+  // filter to this suite's session ids (501–503); global size assertions are
+  // replaced with membership/relative-order assertions, which are strictly
+  // what the persistence contract guarantees under concurrent load.
+  const OUR_IDS = new Set([501, 502, 503]);
+  const ourEntries = (
+    stored: Array<{ member: string; score: number }>
+  ): number[] =>
+    stored
+      .map(m => (JSON.parse(m.member) as QueueEntry).sessionId)
+      .filter(id => OUR_IDS.has(id));
+
+  beforeAll(async () => {
+    // Remove OUR leftovers (e.g. from a retried job on a reused Redis) —
+    // never flush the whole key (foreign suites share it).
+    const stored = await sortedSetRange("chatq:waiting");
+    for (const m of stored) {
+      const id = (JSON.parse(m.member) as QueueEntry).sessionId;
+      if (OUR_IDS.has(id)) await sortedSetRemove("chatq:waiting", m.member);
+    }
+  });
+
   it("enqueue/dequeue write-through to the durable store, with priority ordering", async () => {
     agentOps.enqueueChat(makeEntry(501, "low", 1_000));
     agentOps.enqueueChat(makeEntry(502, "critical", 2_000));
@@ -89,30 +117,32 @@ describe("agentOperations chatQueue durability (A6)", () => {
     // In-memory queue sorted by priority, then FIFO within a priority.
     expect(agentOps.getQueueStatus().entries.map(e => e.sessionId)).toEqual([503, 502, 501]);
 
-    // Durable store holds all three, head-first.
+    // Durable store holds all three, head-first (relative order of OUR
+    // entries is score-ordered regardless of foreign interleaving).
     const stored = await sortedSetRange("chatq:waiting");
-    const ids = stored.map(m => (JSON.parse(m.member) as QueueEntry).sessionId);
-    expect(ids).toEqual([503, 502, 501]);
-    expect(await sortedSetSize("chatq:waiting")).toBe(3);
+    expect(ourEntries(stored)).toEqual([503, 502, 501]);
 
     agentOps.dequeueChat(502);
     await agentOps.flushChatQueuePersistence();
-    expect(await sortedSetSize("chatq:waiting")).toBe(2);
+    expect(ourEntries(await sortedSetRange("chatq:waiting"))).toEqual([503, 501]);
   });
 
   it("restart simulation: a fresh module instance restores waiting customers via hydrateChatQueue()", async () => {
-    // Capture what was persisted pre-restart (2 entries; 502 was dequeued).
+    // Capture what was persisted pre-restart (OUR 2 entries; 502 dequeued).
     const persisted = await sortedSetRange("chatq:waiting");
-    expect(persisted).toHaveLength(2);
+    expect(ourEntries(persisted)).toEqual([503, 501]);
 
     const { ops } = await simulateRestart(persisted);
     expect(ops.getQueueLength()).toBe(0); // in-memory queue lost on restart
 
     const restored = await ops.hydrateChatQueue();
-    expect(restored).toBe(2);
-    expect(ops.getQueueStatus().entries.map(e => e.sessionId)).toEqual([503, 501]);
-    // Positions recomputed after restore.
-    expect(ops.getQueueStatus().entries.map(e => e.position)).toEqual([1, 2]);
+    expect(restored).toBeGreaterThanOrEqual(2); // ours + any foreign entries
+    // OUR entries restored, in priority order.
+    const ids = ops.getQueueStatus().entries.map(e => e.sessionId);
+    expect(ids.filter(id => OUR_IDS.has(id))).toEqual([503, 501]);
+    // Positions recomputed after restore: strictly increasing 1..N.
+    const positions = ops.getQueueStatus().entries.map(e => e.position);
+    expect(positions).toEqual(positions.map((_, i) => i + 1));
   });
 
   it("hydrateChatQueue is idempotent (dedup by sessionId)", async () => {
@@ -121,9 +151,13 @@ describe("agentOperations chatQueue durability (A6)", () => {
 
     await ops.hydrateChatQueue();
     const second = await ops.hydrateChatQueue();
-    expect(second).toBe(0);
-    expect(ops.getQueueLength()).toBe(2);
-    // Store unchanged (no duplicate writes).
-    expect(await ds.sortedSetSize("chatq:waiting")).toBe(2);
+    expect(second).toBe(0); // every stored entry already present
+    const ids = ops.getQueueStatus().entries.map(e => e.sessionId);
+    expect(ids.filter(id => OUR_IDS.has(id))).toEqual([503, 501]);
+    // Store unchanged by the second hydrate (no duplicate writes): size
+    // identical before and after.
+    const before = await ds.sortedSetSize("chatq:waiting");
+    await ops.hydrateChatQueue();
+    expect(await ds.sortedSetSize("chatq:waiting")).toBe(before);
   });
 });

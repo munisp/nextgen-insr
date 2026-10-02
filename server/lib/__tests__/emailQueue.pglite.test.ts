@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   countPendingEmailsInDb,
@@ -110,11 +110,22 @@ describe("emailQueue — Postgres-durable queue (A4, PGlite restart simulation)"
   });
 
   it("fail-closed: enqueueEmail (public path) throws when the DB is unavailable", async () => {
-    // Unit-test env has no POSTGRES_URL/DATABASE_URL → getDb() returns null →
-    // the queue must REFUSE rather than pretend the job is queued.
-    await expect(
-      enqueueEmail({ to: "x@example.com", subject: "s", html: "<p/>" })
-    ).rejects.toThrow(/fail-closed|unavailable/i);
+    // 2026-10-02 (C2-ci): the original version assumed the unit-test env has
+    // no POSTGRES_URL/DATABASE_URL — FALSE in CI's "Vitest (postgres + redis)"
+    // job, where getDb() returns a REAL database and the enqueue succeeded
+    // (environment-dependent test, CI run 110648994986). Simulate the outage
+    // deterministically instead: spy getDb → null for exactly this call. This
+    // is not mocking the system under test — the SUT is emailQueue's
+    // fail-closed guard, and we force the genuine null-DB input into it.
+    const dbModule = await import("../../db");
+    const spy = vi.spyOn(dbModule, "getDb").mockResolvedValueOnce(null);
+    try {
+      await expect(
+        enqueueEmail({ to: "x@example.com", subject: "s", html: "<p/>" })
+      ).rejects.toThrow(/fail-closed|unavailable/i);
+    } finally {
+      spy.mockRestore();
+    }
     expect(await countPendingEmailsInDb(db)).toBe(1); // nothing slipped in
   });
 
