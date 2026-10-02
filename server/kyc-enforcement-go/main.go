@@ -77,7 +77,7 @@ type Config struct {
 
 func loadConfig() Config {
 	return Config{
-		Port:              envOr("PORT", "8211"),
+		Port: envOr("PORT", "8211"),
 		// DD-LEGACY (F2 #6/#7): wrong/phantom port defaults removed (8104 is
 		// realtime-events; nothing listens on 8131). Empty = not configured;
 		// KYC checks fail closed when the engine is unreachable, and health
@@ -243,13 +243,15 @@ func requiredKYCForLoan(loanType string, amount float64) KYCLevel {
 
 // ── Application State ────────────────────────────────────────────────────────
 
+// AppState holds service configuration and the authoritative Postgres store.
+// 2026-10-02 (C2-a7, audit item A7): the in-memory kycCache/applications/
+// bureauResults maps were removed — a restart used to strand applications in
+// pending_kyc and destroy bureau verification results. All durable state now
+// lives in kycStore (store.go), which fails closed on any PG error.
 type AppState struct {
-	config        Config
-	mu            sync.RWMutex
-	kycCache      map[string]KYCLevel // customerID → verified level
-	applications  map[string]*ApplicationRecord
-	bureauResults map[string]*BureauVerificationResult
-	startTime     time.Time
+	config    Config
+	store     *kycStore
+	startTime time.Time
 }
 
 type ApplicationRecord struct {
@@ -262,13 +264,16 @@ type ApplicationRecord struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func NewAppState(cfg Config) *AppState {
+// NewAppState requires a live store (fail-closed): callers must run initDB
+// (which runs initStore) first; NewAppState never falls back to memory.
+func NewAppState(cfg Config, st *kycStore) *AppState {
+	if st == nil {
+		log.Fatal("FATAL: NewAppState requires a Postgres-backed store (fail-closed)")
+	}
 	return &AppState{
-		config:        cfg,
-		kycCache:      make(map[string]KYCLevel),
-		applications:  make(map[string]*ApplicationRecord),
-		bureauResults: make(map[string]*BureauVerificationResult),
-		startTime:     time.Now(),
+		config:    cfg,
+		store:     st,
+		startTime: time.Now(),
 	}
 }
 
@@ -331,13 +336,15 @@ func (s *AppState) checkTigerBeetleLimits(customerID string, tier AccountTier) (
 
 // ── Core: KYC Status Check (Fail-Closed) ─────────────────────────────────────
 
-func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bool, KYCLevel, bool) {
+func (s *AppState) checkKYCStatus(ctx context.Context, customerID string, requiredLevel KYCLevel) (bool, KYCLevel, bool) {
 	// Returns: (isVerified, currentLevel, gatewayReachable)
 
-	// Check cache first
-	s.mu.RLock()
-	cachedLevel, hasCached := s.kycCache[customerID]
-	s.mu.RUnlock()
+	// Check cache first (PG-backed with TTL). A cache read error degrades to a
+	// live engine query — the engine remains the fail-closed authority.
+	cachedLevel, hasCached, cacheErr := s.store.getCachedLevel(ctx, customerID)
+	if cacheErr != nil {
+		log.Printf("[KYC-Enforcement] KYC level cache read failed for %s: %v — falling back to engine", customerID, cacheErr)
+	}
 
 	if hasCached && isLevelSufficient(cachedLevel, requiredLevel) {
 		return true, cachedLevel, true
@@ -367,11 +374,12 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 	currentLevel := KYCLevel(result.Level)
 	verified := result.Verified && isLevelSufficient(currentLevel, requiredLevel)
 
-	// Cache result
+	// Cache result (durable, TTL-bounded). A cache write failure is logged but
+	// does not fail the check — the engine response remains authoritative.
 	if verified {
-		s.mu.Lock()
-		s.kycCache[customerID] = currentLevel
-		s.mu.Unlock()
+		if err := s.store.setCachedLevel(ctx, customerID, currentLevel); err != nil {
+			log.Printf("[KYC-Enforcement] KYC level cache write failed for %s: %v", customerID, err)
+		}
 	}
 
 	return verified, currentLevel, true
@@ -432,7 +440,7 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// For Tier 2+, check KYC status (FAIL-CLOSED)
-	verified, currentLevel, reachable := s.checkKYCStatus(req.CustomerID, requiredLevel)
+	verified, currentLevel, reachable := s.checkKYCStatus(r.Context(), req.CustomerID, requiredLevel)
 
 	if !reachable {
 		// FAIL CLOSED — KYC gateway unreachable, block the operation
@@ -453,17 +461,27 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 	appID := generateID()
 
 	if !verified {
-		// KYC not verified — save as pending, emit events
-		s.mu.Lock()
-		s.applications[appID] = &ApplicationRecord{
+		// KYC not verified — save as pending (durable), emit events.
+		// FAIL CLOSED (2026-10-02, C2-a7): if the durable write fails we must
+		// not report a tracked application that would vanish on restart.
+		if err := s.store.saveApplication(r.Context(), &ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "account",
 			Status:     "pending_kyc",
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
+		}); err != nil {
+			log.Printf("[KYC-Enforcement] application persist failed: %v — FAIL CLOSED", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":       "storage_unavailable",
+				"message":     "Application could not be durably recorded — no pending application was created (fail-closed)",
+				"fail_closed": true,
+			})
+			return
 		}
-		s.mu.Unlock()
 
 		// Kafka events
 		s.publishKafka("account.application.created", map[string]interface{}{
@@ -500,9 +518,9 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// KYC verified — approve
-	s.mu.Lock()
-	s.applications[appID] = &ApplicationRecord{
+	// KYC verified — approve. FAIL CLOSED (2026-10-02, C2-a7): no durable
+	// write, no approval response.
+	if err := s.store.saveApplication(r.Context(), &ApplicationRecord{
 		ID:          appID,
 		CustomerID:  req.CustomerID,
 		Type:        "account",
@@ -510,8 +528,17 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 		KYCVerified: true,
 		KYCLevel:    currentLevel,
 		CreatedAt:   time.Now(),
+	}); err != nil {
+		log.Printf("[KYC-Enforcement] application persist failed: %v — FAIL CLOSED", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":       "storage_unavailable",
+			"message":     "Application could not be durably recorded — approval not granted (fail-closed)",
+			"fail_closed": true,
+		})
+		return
 	}
-	s.mu.Unlock()
 
 	s.publishKafka("account.opened", map[string]interface{}{
 		"application_id": appID,
@@ -558,7 +585,7 @@ func (s *AppState) handleLoanEnforcement(w http.ResponseWriter, r *http.Request)
 	requiredLevel := requiredKYCForLoan(req.LoanType, req.Amount)
 
 	// FAIL CLOSED check
-	verified, currentLevel, reachable := s.checkKYCStatus(req.CustomerID, requiredLevel)
+	verified, currentLevel, reachable := s.checkKYCStatus(r.Context(), req.CustomerID, requiredLevel)
 
 	if !reachable {
 		w.Header().Set("Content-Type", "application/json")
@@ -578,16 +605,25 @@ func (s *AppState) handleLoanEnforcement(w http.ResponseWriter, r *http.Request)
 	appID := generateID()
 
 	if !verified {
-		s.mu.Lock()
-		s.applications[appID] = &ApplicationRecord{
+		// FAIL CLOSED (2026-10-02, C2-a7): no durable write, no pending loan.
+		if err := s.store.saveApplication(r.Context(), &ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "loan",
 			Status:     "pending_kyc",
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
+		}); err != nil {
+			log.Printf("[KYC-Enforcement] loan application persist failed: %v — FAIL CLOSED", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":       "storage_unavailable",
+				"message":     "Application could not be durably recorded — no pending application was created (fail-closed)",
+				"fail_closed": true,
+			})
+			return
 		}
-		s.mu.Unlock()
 
 		// Kafka events
 		s.publishKafka("loan.application.submitted", map[string]interface{}{
@@ -657,7 +693,7 @@ func (s *AppState) handleKYCCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verified, current, reachable := s.checkKYCStatus(req.CustomerID, req.Level)
+	verified, current, reachable := s.checkKYCStatus(r.Context(), req.CustomerID, req.Level)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -680,22 +716,36 @@ func (s *AppState) handleVerifyCallback(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Update cache
-	s.mu.Lock()
-	s.kycCache[req.CustomerID] = req.Level
-
-	// Approve all pending applications for this customer
-	approved := 0
-	for _, app := range s.applications {
-		if app.CustomerID == req.CustomerID && app.Status == "pending_kyc" {
-			if isLevelSufficient(req.Level, app.KYCLevel) {
-				app.Status = "approved"
-				app.KYCVerified = true
-				approved++
-			}
-		}
+	// Record the verified level durably. FAIL CLOSED (2026-10-02, C2-a7):
+	// this level is authoritative for gating decisions, so a failed write
+	// must error to the caller rather than report a verification that a
+	// restart would silently forget.
+	if err := s.store.setCachedLevel(r.Context(), req.CustomerID, req.Level); err != nil {
+		log.Printf("[KYC-Enforcement] verify-callback level persist failed: %v — FAIL CLOSED", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":       "storage_unavailable",
+			"message":     "Verified level could not be durably recorded — callback rejected (fail-closed)",
+			"fail_closed": true,
+		})
+		return
 	}
-	s.mu.Unlock()
+
+	// Approve all pending applications for this customer whose required level
+	// is satisfied by the verified level (durable UPDATE in PG).
+	approved, err := s.store.approvePendingApplications(r.Context(), req.CustomerID, req.Level)
+	if err != nil {
+		log.Printf("[KYC-Enforcement] pending-application approval failed: %v — FAIL CLOSED", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":       "storage_unavailable",
+			"message":     "Pending applications could not be updated — callback rejected (fail-closed)",
+			"fail_closed": true,
+		})
+		return
+	}
 
 	// Set Permify permissions
 	s.setKYCPermission(req.CustomerID, req.Level)
@@ -726,11 +776,14 @@ func (s *AppState) handleApproveGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	app, exists := s.applications[req.ApplicationID]
-	s.mu.RUnlock()
+	app, err := s.store.getApplication(r.Context(), req.ApplicationID)
+	if err != nil {
+		log.Printf("[KYC-Enforcement] approve-gate lookup failed: %v — FAIL CLOSED", err)
+		http.Error(w, `{"error":"storage_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
 
-	if !exists {
+	if app == nil {
 		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
 		return
 	}
@@ -827,9 +880,20 @@ func (s *AppState) handleBureauVerify(w http.ResponseWriter, r *http.Request) {
 		Timestamp:      time.Now(),
 	}
 
-	s.mu.Lock()
-	s.bureauResults[verificationID] = result
-	s.mu.Unlock()
+	// Persist the result durably. FAIL CLOSED (2026-10-02, C2-a7): a bureau
+	// verification that is not durably stored must not be reported as a
+	// retrievable success.
+	if err := s.store.saveBureauResult(r.Context(), result); err != nil {
+		log.Printf("[KYC-Enforcement] bureau result persist failed: %v — FAIL CLOSED", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":       "storage_unavailable",
+			"message":     "Bureau verification result could not be durably recorded (fail-closed)",
+			"fail_closed": true,
+		})
+		return
+	}
 
 	// Kafka event
 	s.publishKafka("kyc.bureau.verified", map[string]interface{}{
@@ -939,11 +1003,14 @@ func (s *AppState) handleBureauStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	id := parts[3]
 
-	s.mu.RLock()
-	result, exists := s.bureauResults[id]
-	s.mu.RUnlock()
+	result, err := s.store.getBureauResult(r.Context(), id)
+	if err != nil {
+		log.Printf("[KYC-Enforcement] bureau status lookup failed: %v — FAIL CLOSED", err)
+		http.Error(w, `{"error":"storage_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
 
-	if !exists {
+	if result == nil {
 		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
 		return
 	}
@@ -996,7 +1063,7 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec": time.Since(s.startTime).Seconds(),
 		"design":     "fail-closed",
 		"integrations": map[string]string{
-			"kyc_engine":     orNotConfigured(s.config.KYCEngineURL),
+			"kyc_engine": orNotConfigured(s.config.KYCEngineURL),
 			// DD-LEGACY (F2 #6): no sanctions engine is wired in this service —
 			// report honestly instead of advertising a phantom integration.
 			"sanctions":      orNotConfigured(s.config.SanctionsURL),
@@ -1097,6 +1164,11 @@ func (c *circuitBreaker) recordFailure() {
 	}
 }
 
+// initDB connects to Postgres, verifies connectivity, and runs the store
+// DDL. Fail-closed (2026-10-02, C2-a7, audit item A7): any failure is
+// fatal — the service must never run with applications/bureau results in
+// volatile process memory again. Previously this function logged errors and
+// continued, and was never called from main at all.
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -1105,27 +1177,31 @@ func initDB() {
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Printf("database connection failed: %s", err.Error())
-		return
+		log.Fatalf("FATAL: database connection failed: %s", err.Error())
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS kyc_enforcement_records (
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("FATAL: database ping failed (fail-closed, refusing to start): %s", err.Error())
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS kyc_enforcement_records (
 		id SERIAL PRIMARY KEY,
 		name TEXT,
 		status TEXT DEFAULT 'active',
 		data JSONB DEFAULT '{}',
 		created_at TIMESTAMPTZ DEFAULT NOW()
 	)`); err != nil {
-		log.Printf("create table failed: %s", err.Error())
+		log.Fatalf("FATAL: legacy table DDL failed (fail-closed, refusing to start): %s", err.Error())
 	}
-	if err := db.Ping(); err != nil {
-		log.Printf("database ping failed: %s", err.Error())
-	} else {
-		log.Printf("database connected: kyc-enforcement-go")
+	if err := initStore(ctx); err != nil {
+		log.Fatalf("FATAL: store init failed (fail-closed, refusing to start): %s", err.Error())
 	}
+	log.Printf("database connected: kyc-enforcement-go (Postgres authoritative store)")
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
@@ -1717,7 +1793,12 @@ func initMiddleware() {
 
 func main() {
 	cfg := loadConfig()
-	state := NewAppState(cfg)
+
+	// Fail-closed boot (2026-10-02, C2-a7): connect to PG and install the
+	// authoritative store schema BEFORE accepting any traffic. initDB exits
+	// the process if DATABASE_URL is unreachable.
+	initDB()
+	state := NewAppState(cfg, store)
 
 	initMiddleware()
 

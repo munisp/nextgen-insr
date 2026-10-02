@@ -19,15 +19,28 @@ open-eye EAR and real blinks were never detected.
 Fail-loud policy: if OpenCV/MediaPipe are not installed, /challenge/*
 endpoints return 503 and /health reports degraded — no frame is ever
 "liveness-passed" by a stub.
+
+Persistence (2026-10-02, C2-b10): in-flight challenges are persisted to
+Redis with a TTL of challenge lifetime + margin (audit B10) so a service
+restart no longer strands users mid-verification. Challenge creation fails
+loudly when Redis is unavailable — an untracked challenge could never be
+verified after a restart — and lookups of unknown/expired challenges fail
+closed (404, never auto-pass).
 """
 
 import base64
+import json
 import math
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass, field
+from typing import List, Optional
+
+try:
+    import redis
+except ImportError:  # pragma: no cover
+    redis = None
 
 try:
     import numpy as np
@@ -116,7 +129,71 @@ class ChallengeState:
     completed: bool = False
 
 
-_sessions: Dict[str, ChallengeState] = {}
+# ── Persistent challenge store (2026-10-02, C2-b10) ─────────────────────────
+# Audit B10: `_sessions: Dict[str, ChallengeState]` was process-local memory,
+# so every restart lost all in-flight challenges. Same Redis-backed pattern as
+# B9 (kyc-kyb-system/deepface-liveness-engine): JSON under a prefixed key with
+# setex TTL. Unlike B9 there is NO in-memory fallback — a liveness challenge is
+# identity-adjacent, so creation must fail loudly rather than issue a
+# challenge that cannot be verified after a restart.
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_REDIS_PREFIX = "liveness:session:"
+# Challenge lifetime is 120s (client-side timeout); TTL adds margin so an
+# in-flight challenge is never evicted mid-verification.
+_SESSION_TTL = 300
+
+
+class ChallengeStore:
+    """Redis-backed store for in-flight liveness challenges."""
+
+    def __init__(self, redis_client):
+        self._redis = redis_client
+
+    @classmethod
+    def connect(cls, url: Optional[str] = None) -> "ChallengeStore":
+        if redis is None:
+            raise RuntimeError("redis package not installed")
+        client = redis.Redis.from_url(
+            url or REDIS_URL, decode_responses=True, socket_timeout=5,
+        )
+        client.ping()
+        return cls(client)
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return f"{_REDIS_PREFIX}{session_id}"
+
+    def create(self, challenge: str) -> ChallengeState:
+        state = ChallengeState(session_id=uuid.uuid4().hex, challenge=challenge)
+        self._redis.setex(self._key(state.session_id), _SESSION_TTL,
+                          json.dumps(asdict(state)))
+        return state
+
+    def get(self, session_id: str) -> Optional[ChallengeState]:
+        data = self._redis.get(self._key(session_id))
+        if data is None:
+            return None
+        return ChallengeState(**json.loads(data))
+
+    def save(self, state: ChallengeState) -> None:
+        # KEEPTTL: frames must not extend the challenge's original lifetime.
+        self._redis.set(self._key(state.session_id), json.dumps(asdict(state)),
+                        keepttl=True)
+
+    def count(self) -> int:
+        return sum(1 for _ in self._redis.scan_iter(f"{_REDIS_PREFIX}*"))
+
+
+_store: Optional[ChallengeStore] = None
+
+
+def _get_store() -> ChallengeStore:
+    """Lazily connect the module-level store; raises RuntimeError when Redis
+    is unavailable so callers can fail loudly (never silently in-memory)."""
+    global _store
+    if _store is None:
+        _store = ChallengeStore.connect()
+    return _store
 
 
 # ── Challenge evaluation (the noise-tolerant core) ──────────────────────────
@@ -309,6 +386,13 @@ def _get_face_mesh():
 
 # ── HTTP API ─────────────────────────────────────────────────────────────────
 
+def _active_session_count() -> Optional[int]:
+    try:
+        return _get_store().count()
+    except Exception:
+        return None
+
+
 if FastAPI is not None:
     app = FastAPI(title="Liveness Detection Service", version="1.0.0")
 
@@ -326,7 +410,10 @@ if FastAPI is not None:
             "status": "ok" if available else "degraded",
             "service": "liveness-detection",
             "mediapipe_available": available,
-            "active_sessions": len(_sessions),
+            # 2026-10-02 (C2-b10): session count now comes from Redis; None
+            # signals the store is unreachable (creation would 503).
+            "active_sessions": _active_session_count(),
+            "session_store": "redis",
             "challenges": ["blink", "turn_left", "turn_right", "look_up",
                             "look_down", "nod", "smile"],
         }
@@ -336,8 +423,13 @@ if FastAPI is not None:
         if req.challenge not in ("blink", "turn_left", "turn_right",
                                  "look_up", "look_down", "nod", "smile"):
             raise HTTPException(status_code=400, detail=f"unknown challenge {req.challenge}")
-        session = ChallengeState(session_id=uuid.uuid4().hex, challenge=req.challenge)
-        _sessions[session.session_id] = session
+        try:
+            session = _get_store().create(req.challenge)
+        except Exception as exc:
+            # Fail loud (2026-10-02, C2-b10): never issue a challenge that is
+            # not durably persisted — it could not be verified after restart.
+            raise HTTPException(status_code=503,
+                                detail=f"challenge store unavailable: {exc}")
         return {"session_id": session.session_id, "challenge": session.challenge}
 
     @app.post("/challenge/frame")
@@ -347,8 +439,15 @@ if FastAPI is not None:
                 status_code=503,
                 detail="opencv/mediapipe not installed; frames cannot be processed (fail-loud)",
             )
-        session = _sessions.get(req.session_id)
+        try:
+            store = _get_store()
+            session = store.get(req.session_id)
+        except Exception as exc:
+            raise HTTPException(status_code=503,
+                                detail=f"challenge store unavailable: {exc}")
         if session is None:
+            # Fail closed (2026-10-02, C2-b10): unknown/expired challenge →
+            # 404, never an auto-pass.
             raise HTTPException(status_code=404, detail="unknown session_id")
 
         import cv2
@@ -376,6 +475,11 @@ if FastAPI is not None:
         session.pitch_history.append(pitch)
 
         session.completed = _check_challenge(session)
+        try:
+            store.save(session)
+        except Exception as exc:
+            raise HTTPException(status_code=503,
+                                detail=f"challenge store unavailable: {exc}")
         return {
             "session_id": session.session_id,
             "face_detected": True,

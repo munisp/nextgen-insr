@@ -8,12 +8,16 @@ Real behavior:
   verifiable by receivers with the shared secret.
 - Delivery is a real HTTP POST. Non-2xx/transport errors schedule a retry
   via _calculate_next_retry (exponential backoff with jitter, bounded).
-- After max attempts the event moves to the dead_letter_queue (real,
+- After max attempts the event moves to the dead-letter store (real,
   inspectable via /dead-letter) — never silently dropped.
-- Events arrive from Kafka (KAFKA_BROKERS) in deployed mode; Redis
-  (REDIS_URL) holds retry state; Temporal (TEMPORAL_ADDR) can schedule
-  long-backoff retries. Without any of them, the in-process fallback queue
-  still performs real deliveries and honest retries.
+- Events arrive from Kafka (KAFKA_BROKERS) in deployed mode; Temporal
+  (TEMPORAL_ADDR) can schedule long-backoff retries.
+- (2026-10-02, C2-a12) Persistence: subscribers, delivery log, and dead
+  letters live in PostgreSQL (DATABASE_URL; tables webhook_subscriptions,
+  webhook_deliveries with bounded retention, webhook_dead_letters). The
+  service fails closed: boot aborts if the store is unreachable, and
+  subscriber registration / dead-letter enqueue return 503 rather than
+  silently dropping a billing event.
 """
 
 import hashlib
@@ -25,29 +29,42 @@ import random
 import time
 import uuid
 import urllib.request
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+from store import PostgresStore, StoreUnavailable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("billing-webhook-dispatcher")
 
 PORT = int(os.getenv("PORT", "8320"))
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/7")
 TEMPORAL_ADDR = os.getenv("TEMPORAL_ADDR", "localhost:7233")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 MAX_ATTEMPTS = int(os.getenv("WEBHOOK_MAX_ATTEMPTS", "5"))
 BASE_BACKOFF_SECONDS = float(os.getenv("WEBHOOK_BASE_BACKOFF", "2"))
 
-app = FastAPI(title="Billing Webhook Dispatcher", version="1.0.0")
+# (2026-10-02, C2-a12) real PG-backed store; no in-process fallback — a
+# fallback that loses billing events on restart is worse than an outage.
+store = PostgresStore()
 
-# Real subscriber registry + dead-letter queue (in-process; Redis-backed in
-# deployed mode via REDIS_URL).
-_subscribers: Dict[str, Dict[str, Any]] = {}
-dead_letter_queue: List[Dict[str, Any]] = []
-_delivery_log: List[Dict[str, Any]] = []
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Fail-closed boot (2026-10-02, C2-a12): refuse to serve without the store.
+    store.init_schema()
+    yield
+
+
+app = FastAPI(title="Billing Webhook Dispatcher", version="1.0.0", lifespan=lifespan)
+
+
+def _store_unavailable(exc: StoreUnavailable) -> HTTPException:
+    logger.error("store unavailable: %s", exc)
+    return HTTPException(status_code=503, detail=f"webhook store unavailable: {exc}")
 
 
 def _sign_payload(body: bytes, secret: str) -> str:
@@ -94,13 +111,20 @@ class DispatchRequest(BaseModel):
 @app.post("/subscribers")
 def subscribe(req: SubscribeRequest):
     sid = uuid.uuid4().hex[:12]
-    _subscribers[sid] = {"url": req.url, "events": req.events}
-    return {"subscriber_id": sid, **_subscribers[sid]}
+    try:
+        store.add_subscriber(sid, req.url, req.events)
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
+    return {"subscriber_id": sid, "url": req.url, "events": req.events}
 
 
 @app.get("/subscribers")
 def list_subscribers():
-    return {"subscribers": [{"subscriber_id": k, **v} for k, v in _subscribers.items()]}
+    try:
+        subscribers = store.list_subscribers()
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
+    return {"subscribers": [{"subscriber_id": k, **v} for k, v in subscribers.items()]}
 
 
 def _matches(patterns: List[str], event_type: str) -> bool:
@@ -116,12 +140,16 @@ def _matches(patterns: List[str], event_type: str) -> bool:
 def dispatch(req: DispatchRequest):
     if not WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="WEBHOOK_SECRET not configured; refusing to send unsigned webhooks")
+    try:
+        subscribers = store.list_subscribers()
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
     body = json.dumps({"event_type": req.event_type, "payload": req.payload,
                        "dispatched_at": time.time()}).encode()
     targets = (
-        {req.subscriber_id: _subscribers[req.subscriber_id]}
-        if req.subscriber_id and req.subscriber_id in _subscribers
-        else {k: v for k, v in _subscribers.items() if _matches(v["events"], req.event_type)}
+        {req.subscriber_id: subscribers[req.subscriber_id]}
+        if req.subscriber_id and req.subscriber_id in subscribers
+        else {k: v for k, v in subscribers.items() if _matches(v["events"], req.event_type)}
     )
     if not targets:
         return {"dispatched": 0, "reason": "no matching subscribers"}
@@ -134,7 +162,10 @@ def dispatch(req: DispatchRequest):
         if not outcome["delivered"]:
             record["next_retry_at"] = _calculate_next_retry(1)
             record["max_attempts"] = MAX_ATTEMPTS
-        _delivery_log.append(record)
+        try:
+            store.append_delivery(record)
+        except StoreUnavailable as exc:
+            raise _store_unavailable(exc)
         results.append(record)
     return {"dispatched": len(results), "results": results}
 
@@ -142,17 +173,27 @@ def dispatch(req: DispatchRequest):
 @app.post("/retry/{log_index}")
 def retry(log_index: int):
     """Perform the next real delivery attempt for a failed record; moves to
-    the dead_letter_queue after MAX_ATTEMPTS."""
-    if log_index >= len(_delivery_log):
+    the dead-letter store after MAX_ATTEMPTS."""
+    try:
+        record = store.get_delivery_by_index(log_index)
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
+    if record is None:
         raise HTTPException(status_code=404, detail="unknown delivery record")
-    record = _delivery_log[log_index]
     if record.get("delivered"):
+        record.pop("id", None)
         return record
     if record["attempt"] >= MAX_ATTEMPTS:
-        dead_letter_queue.append({**record, "dead_lettered_at": time.time(),
-                                  "reason": "max attempts exhausted"})
-        return {"dead_lettered": True, "record": record}
-    sub = _subscribers.get(record["subscriber_id"])
+        dead = {k: v for k, v in record.items() if k != "id"}
+        try:
+            store.append_dead_letter(dead, time.time(), "max attempts exhausted")
+        except StoreUnavailable as exc:
+            raise _store_unavailable(exc)
+        return {"dead_lettered": True, "record": dead}
+    try:
+        sub = store.get_subscriber(record["subscriber_id"])
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
     if not sub:
         raise HTTPException(status_code=410, detail="subscriber removed")
     body = json.dumps({"event_type": record["event_type"], "retry_of": log_index}).encode()
@@ -162,19 +203,38 @@ def retry(log_index: int):
     record.update(outcome)
     if not outcome["delivered"]:
         record["next_retry_at"] = _calculate_next_retry(record["attempt"])
+    else:
+        record["next_retry_at"] = None
+    try:
+        store.update_delivery(record)
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
+    record.pop("id", None)
     return record
 
 
 @app.get("/dead-letter")
 def dead_letter():
-    return {"count": len(dead_letter_queue), "events": dead_letter_queue}
+    try:
+        events = store.list_dead_letters()
+    except StoreUnavailable as exc:
+        raise _store_unavailable(exc)
+    return {"count": len(events), "events": events}
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "billing-webhook-dispatcher",
-            "subscribers": len(_subscribers),
-            "dead_lettered": len(dead_letter_queue),
+    try:
+        subscribers = len(store.list_subscribers())
+        dead = store.dead_letter_count()
+        store_ok = True
+    except StoreUnavailable:
+        subscribers, dead, store_ok = None, None, False
+    return {"status": "ok" if store_ok else "degraded",
+            "service": "billing-webhook-dispatcher",
+            "store": "postgresql" if store_ok else "unreachable",
+            "subscribers": subscribers,
+            "dead_lettered": dead,
             "signing_configured": bool(WEBHOOK_SECRET)}
 
 

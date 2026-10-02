@@ -34,6 +34,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	_ "github.com/lib/pq"
 	"io"
@@ -65,35 +66,12 @@ type FirmwarePackage struct {
 	CreatedBy      string    `json:"createdBy"`
 }
 
-// In-memory store for demo; replace with PostgreSQL in production.
-var firmwareStore = map[string]*FirmwarePackage{
-	"fw-001": {
-		ID:             "fw-001",
-		Version:        "2.4.1",
-		Model:          "PAX-A920",
-		S3Key:          "firmware/PAX-A920/v2.4.1/firmware.bin",
-		Checksum:       "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		SizeBytes:      4194304,
-		RolloutPercent: 100,
-		ReleaseNotes:   "Security patch CVE-2024-1234; improved NFC stability",
-		IsLatest:       true,
-		CreatedAt:      time.Now().Add(-72 * time.Hour),
-		CreatedBy:      "admin",
-	},
-	"fw-002": {
-		ID:             "fw-002",
-		Version:        "2.4.0",
-		Model:          "PAX-A920",
-		S3Key:          "firmware/PAX-A920/v2.4.0/firmware.bin",
-		Checksum:       "sha256:abc123def456",
-		SizeBytes:      4194304,
-		RolloutPercent: 100,
-		ReleaseNotes:   "Initial stable release",
-		IsLatest:       false,
-		CreatedAt:      time.Now().Add(-168 * time.Hour),
-		CreatedBy:      "admin",
-	},
-}
+// 2026-10-02 (C2-a11): the firmware registry now lives in Postgres
+// (firmware_packages table, see store.go). The previous in-memory
+// firmwareStore map — including the hardcoded fw-001/fw-002 demo seed — was
+// removed: restarts lost all uploaded releases and the demo seed reappeared,
+// serving stale firmware to terminals. Demo rows are intentionally NOT
+// re-seeded into PG; S3 keys must come from real uploads, never fabricated.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -273,6 +251,9 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/ota/latest?model=PAX-A920&deviceSerial=SN123456
 func handleLatest(w http.ResponseWriter, r *http.Request) {
+	if !storeReady(w) {
+		return
+	}
 	// Validate device token
 	token := r.Header.Get("X-Device-Token")
 	if token == "" {
@@ -291,17 +272,15 @@ func handleLatest(w http.ResponseWriter, r *http.Request) {
 		model = "PAX-A920" // default model
 	}
 
-	// Find latest firmware for model
-	var latest *FirmwarePackage
-	for _, fw := range firmwareStore {
-		if fw.Model == model && fw.IsLatest {
-			latest = fw
-			break
+	// Find latest firmware for model (Postgres-backed; 2026-10-02, C2-a11)
+	latest, err := fwStore.latestFirmware(r.Context(), model)
+	if err != nil {
+		if errors.Is(err, errFirmwareNotFound) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("no firmware found for model: %s", model))
+			return
 		}
-	}
-
-	if latest == nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("no firmware found for model: %s", model))
+		log.Printf("[OTA] latest firmware query failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "firmware store unavailable")
 		return
 	}
 
@@ -426,10 +405,18 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := parts[len(parts)-1]
+	if !storeReady(w) {
+		return
+	}
 
-	fw, ok := firmwareStore[id]
-	if !ok {
-		writeError(w, http.StatusNotFound, "firmware not found")
+	fw, err := fwStore.getFirmware(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, errFirmwareNotFound) {
+			writeError(w, http.StatusNotFound, "firmware not found")
+			return
+		}
+		log.Printf("[OTA] firmware lookup failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "firmware store unavailable")
 		return
 	}
 
@@ -454,13 +441,16 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "admin key required")
 		return
 	}
+	if !storeReady(w) {
+		return
+	}
 
 	model := r.URL.Query().Get("model")
-	var packages []*FirmwarePackage
-	for _, fw := range firmwareStore {
-		if model == "" || fw.Model == model {
-			packages = append(packages, fw)
-		}
+	packages, err := fwStore.listFirmware(r.Context(), model)
+	if err != nil {
+		log.Printf("[OTA] list firmware failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "firmware store unavailable")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -474,6 +464,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 func handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !requireAdminKey(r) {
 		writeError(w, http.StatusUnauthorized, "admin key required")
+		return
+	}
+	if !storeReady(w) {
 		return
 	}
 
@@ -510,14 +503,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("fw-%d", time.Now().UnixMilli())
 	s3Key := fmt.Sprintf("firmware/%s/v%s/%s", model, version, header.Filename)
 
-	// Mark previous latest as non-latest
-	for _, fw := range firmwareStore {
-		if fw.Model == model && fw.IsLatest {
-			fw.IsLatest = false
-		}
-	}
-
-	// Create new firmware record
+	// Create new firmware record (write-through to Postgres; clearing the
+	// previous is_latest flag happens atomically in createFirmware's tx).
 	newFw := &FirmwarePackage{
 		ID:             id,
 		Version:        version,
@@ -531,7 +518,13 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:      time.Now(),
 		CreatedBy:      r.Header.Get("X-Admin-User"),
 	}
-	firmwareStore[id] = newFw
+	// Fail-closed: if the registry write fails we return 5xx and report no
+	// success (2026-10-02, C2-a11).
+	if err := fwStore.createFirmware(r.Context(), newFw); err != nil {
+		log.Printf("[OTA] firmware register failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to register firmware package")
+		return
+	}
 
 	// In production: upload data to S3 using AWS SDK
 	log.Printf("[OTA] New firmware uploaded: %s v%s (%d bytes, checksum: %s)", model, version, len(data), checksum)
@@ -554,6 +547,9 @@ func handleRollout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "admin key required")
 		return
 	}
+	if !storeReady(w) {
+		return
+	}
 
 	// Extract ID from path: /api/v1/ota/{id}/rollout
 	parts := strings.Split(r.URL.Path, "/")
@@ -562,12 +558,6 @@ func handleRollout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := parts[len(parts)-2] // second to last segment
-
-	fw, ok := firmwareStore[id]
-	if !ok {
-		writeError(w, http.StatusNotFound, "firmware not found")
-		return
-	}
 
 	var body struct {
 		RolloutPercent int `json:"rolloutPercent"`
@@ -581,7 +571,23 @@ func handleRollout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fw.RolloutPercent = body.RolloutPercent
+	// Write-through rollout update; 404 for unknown id, 5xx on store failure
+	// (2026-10-02, C2-a11).
+	if err := fwStore.setRollout(r.Context(), id, body.RolloutPercent); err != nil {
+		if errors.Is(err, errFirmwareNotFound) {
+			writeError(w, http.StatusNotFound, "firmware not found")
+			return
+		}
+		log.Printf("[OTA] rollout update failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "firmware store unavailable")
+		return
+	}
+	fw, err := fwStore.getFirmware(r.Context(), id)
+	if err != nil {
+		log.Printf("[OTA] firmware reload failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "firmware store unavailable")
+		return
+	}
 	log.Printf("[OTA] Rollout updated: %s v%s → %d%%", fw.Model, fw.Version, fw.RolloutPercent)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -709,8 +715,8 @@ func initDB() {
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Printf("database connection failed: %s", err.Error())
-		return
+		// 2026-10-02 (C2-a11): fail-closed — never boot without a writable PG.
+		log.Fatalf("FATAL: database connection failed: %s", err.Error())
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
@@ -726,9 +732,15 @@ func initDB() {
 		log.Printf("create table failed: %s", err.Error())
 	}
 	if err := db.Ping(); err != nil {
-		log.Printf("database ping failed: %s", err.Error())
-	} else {
-		log.Printf("database connected: ota-service")
+		log.Fatalf("FATAL: database ping failed: %s", err.Error())
+	}
+	log.Printf("database connected: ota-service")
+	// 2026-10-02 (C2-a11): create the firmware registry table and install the
+	// Postgres-backed store; abort boot if the DDL fails (fail-closed).
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := initFirmwareStore(ctx); err != nil {
+		log.Fatalf("FATAL: firmware store init failed: %s", err.Error())
 	}
 }
 
@@ -910,6 +922,8 @@ func main() {
 	if port == "" {
 		port = "8081"
 	}
+
+	initDB() // fail-closed: exits if DATABASE_URL missing/unreachable (C2-a11)
 
 	handler := newRouter()
 

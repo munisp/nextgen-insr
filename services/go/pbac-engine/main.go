@@ -21,13 +21,17 @@
 // Endpoints:
 //   POST /authorize        evaluate one authorization request
 //   GET  /policies         list policies
-//   POST /policies         create/replace a policy
+//   POST /policies         create/replace a policy (write-through to PG; 5xx if DB down)
 //   GET  /policies/{id}    fetch one policy (404 when absent)
-//   DELETE /policies/{id}  remove a policy (404 when absent)
+//   DELETE /policies/{id}  remove a policy (write-through to PG; 404 when absent, 5xx if DB down)
 //   GET  /health           liveness
+//
+// Persistence (2026-10-02, C2-a9): policies are authoritative in Postgres
+// (pbac_policies, store.go); boot fails closed without DATABASE_URL.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -115,6 +119,12 @@ type Decision struct {
 
 // ── Evaluator ───────────────────────────────────────────────────────────────
 
+// Evaluator is the in-memory evaluation copy of the policy set.
+// 2026-10-02 (C2-a9, persistence audit item A9): Postgres (pbac_policies,
+// see store.go) is the AUTHORITATIVE store. This copy is rebuilt from PG at
+// boot and updated write-through ONLY after durable PG writes; evaluation
+// reads stay in-memory for per-request latency. Never treat this map as the
+// source of truth.
 type Evaluator struct {
 	mu       sync.RWMutex
 	policies map[string]Policy
@@ -147,8 +157,10 @@ func (e *Evaluator) Get(id string) (Policy, bool) {
 	return p, ok
 }
 
-// Upsert validates and stores a policy. Invalid policies are rejected loudly.
-func (e *Evaluator) Upsert(p Policy) error {
+// Validate rejects malformed policies loudly. Split from Upsert so the HTTP
+// write path can validate → persist to PG → then commit to memory
+// (write-through, 2026-10-02 C2-a9).
+func (e *Evaluator) Validate(p Policy) error {
 	if p.ID == "" {
 		return errString("policy id is required")
 	}
@@ -159,6 +171,14 @@ func (e *Evaluator) Upsert(p Policy) error {
 		if !validOperator(c.Operator) {
 			return errString("invalid condition operator: " + c.Operator)
 		}
+	}
+	return nil
+}
+
+// Upsert validates and stores a policy. Invalid policies are rejected loudly.
+func (e *Evaluator) Upsert(p Policy) error {
+	if err := e.Validate(p); err != nil {
+		return err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -475,7 +495,8 @@ func defaultPolicies() []Policy {
 // ── HTTP layer ──────────────────────────────────────────────────────────────
 
 type server struct {
-	eval *Evaluator
+	eval  *Evaluator
+	store *policyStore // authoritative PG store; nil only in legacy tests
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -511,10 +532,22 @@ func (s *server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid policy: " + err.Error()})
 			return
 		}
-		if err := s.eval.Upsert(p); err != nil {
+		// 2026-10-02 (C2-a9): write-through — validate, persist to Postgres
+		// FIRST, then update the in-memory evaluator only after durable
+		// success. DB failure → 5xx; we never pretend a policy was stored.
+		if err := s.eval.Validate(p); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if s.store == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errStoreUnavailable.Error()})
+			return
+		}
+		if err := s.store.upsertPolicy(r.Context(), p); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "policy not stored: " + err.Error()})
+			return
+		}
+		_ = s.eval.Upsert(p) // already validated above; cannot fail
 		writeJSON(w, http.StatusOK, map[string]string{"status": "stored", "id": p.ID})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -536,10 +569,23 @@ func (s *server) handlePolicyByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, p)
 	case http.MethodDelete:
-		if !s.eval.Delete(id) {
+		// 2026-10-02 (C2-a9): write-through delete — remove from Postgres
+		// FIRST; the in-memory evaluator is updated only after durable
+		// success. DB failure → 5xx, never a pretend delete.
+		if s.store == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errStoreUnavailable.Error()})
+			return
+		}
+		existed, err := s.store.deletePolicy(r.Context(), id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "policy not deleted: " + err.Error()})
+			return
+		}
+		if !existed {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "policy not found"})
 			return
 		}
+		s.eval.Delete(id)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -562,7 +608,18 @@ func main() {
 	if port == "" {
 		port = "8091"
 	}
-	s := &server{eval: NewEvaluator(defaultPolicies())}
+	// 2026-10-02 (C2-a9): fail-closed boot — DATABASE_URL required, schema
+	// ensured, in-memory evaluator REBUILT from Postgres (PG rows override
+	// defaults; defaults seeded only when pbac_policies is empty). Any DB
+	// failure aborts startup rather than silently serving default policies.
+	store := initPolicyStore()
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	eval, err := buildEvaluatorAtBoot(bootCtx, store)
+	bootCancel()
+	if err != nil {
+		log.Fatalf("pbac-engine: policy load failed, failing closed: %v", err)
+	}
+	s := &server{eval: eval, store: store}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/authorize", s.handleAuthorize)
