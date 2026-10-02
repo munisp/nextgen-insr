@@ -450,7 +450,15 @@ export const agentOnboardingRouter = router({
             message: `Congratulations ${agent.name}! Your InsurePortal POS agent account (${input.agentId}) has been fully activated. You can now process transactions on your terminal.`,
             severity: "low",
           });
-          enqueueEmail({ to: agent.email, subject, html, text });
+          // 2026-10-02 (C2-lib-followup): enqueueEmail is now async (queue
+          // persisted to email_queue PG table). Awaited so the job is durably
+          // queued before we respond; a queue-write failure is logged
+          // error-level but does not roll back the completed activation.
+          try {
+            await enqueueEmail({ to: agent.email, subject, html, text });
+          } catch (err) {
+            console.error("[agentOnboarding] welcome email queue-write failed:", err);
+          }
         }
 
         await writeAuditLog({

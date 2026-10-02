@@ -295,7 +295,9 @@ describe("Security Audit Modules", () => {
   it("should export trackChatAbuse", async () => {
     const mod = await import("../../lib/chatSecurityAudit");
     expect(mod.trackChatAbuse).toBeDefined();
-    const result = mod.trackChatAbuse("192.168.1.1");
+    // 2026-10-01 (C2-mw-followup): trackChatAbuse is now async (B13:
+    // Redis-backed secState store replaced the in-memory Map).
+    const result = await mod.trackChatAbuse("192.168.1.1");
     expect(result).toHaveProperty("blocked");
   });
 

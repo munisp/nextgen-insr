@@ -231,23 +231,70 @@ export function checkGeoVelocity(
 }
 
 // ─── 6. Device Fingerprint Validation ───────────────────────────────────────
-const knownDevices = new Map<string, Set<string>>(); // userId -> set of device fingerprints
+// 2026-10-01 (C2-mw, B5): the trusted-device registry moved from a
+// module-level Map to the PG table `known_devices` — this is trust data, not
+// a cache; a restart used to turn every trusted device into a "new device"
+// fraud signal. FAIL-CLOSED: a missing database throws instead of silently
+// registering devices into thin air.
+//
+// Test hook: PGlite harnesses inject a real drizzle instance via
+// __setKnownDevicesDbForTesting (NOT a mock — real in-process Postgres).
+import { and, eq } from "drizzle-orm";
 
-export function validateDevice(
-  userId: string,
-  fingerprint: string
-): { known: boolean; totalDevices: number } {
-  const devices = knownDevices.get(userId) ?? new Set();
-  const known = devices.has(fingerprint);
-  if (!known) {
-    devices.add(fingerprint);
-    knownDevices.set(userId, devices);
-  }
-  return { known, totalDevices: devices.size };
+import { getDb } from "../db.js";
+import { knownDevices } from "../../drizzle/schema";
+
+type KnownDevicesDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+let testDbOverride: KnownDevicesDb | null = null;
+
+export function __setKnownDevicesDbForTesting(db: unknown): void {
+  testDbOverride = (db as KnownDevicesDb | null) ?? null;
 }
 
-export function getDeviceCount(userId: string): number {
-  return knownDevices.get(userId)?.size ?? 0;
+async function resolveKnownDevicesDb(): Promise<KnownDevicesDb> {
+  if (testDbOverride) return testDbOverride;
+  const db = await getDb();
+  if (!db) {
+    throw new Error(
+      "Known-device registry unavailable: database connection required (fail-closed, 2026-10-01 C2-mw)"
+    );
+  }
+  return db;
+}
+
+export async function validateDevice(
+  userId: string,
+  fingerprint: string
+): Promise<{ known: boolean; totalDevices: number }> {
+  const db = await resolveKnownDevicesDb();
+  const rows = await db
+    .select({ fingerprint: knownDevices.fingerprint })
+    .from(knownDevices)
+    .where(eq(knownDevices.userId, userId));
+  const known = rows.some(r => r.fingerprint === fingerprint);
+  if (!known) {
+    await db.insert(knownDevices).values({ userId, fingerprint });
+  } else {
+    await db
+      .update(knownDevices)
+      .set({ lastSeenAt: new Date() })
+      .where(
+        and(
+          eq(knownDevices.userId, userId),
+          eq(knownDevices.fingerprint, fingerprint)
+        )
+      );
+  }
+  return { known, totalDevices: known ? rows.length : rows.length + 1 };
+}
+
+export async function getDeviceCount(userId: string): Promise<number> {
+  const db = await resolveKnownDevicesDb();
+  const rows = await db
+    .select({ fingerprint: knownDevices.fingerprint })
+    .from(knownDevices)
+    .where(eq(knownDevices.userId, userId));
+  return rows.length;
 }
 
 // ─── 7. PCI-DSS Compliance Checks ──────────────────────────────────────────

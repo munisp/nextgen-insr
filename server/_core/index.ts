@@ -1030,6 +1030,25 @@ async function startServer() {
       .catch(err =>
         logger.warn("[TigerBeetle] System account seeding failed:: " + (err as Error).message)
       );
+    // 2026-10-02 (C2-a6-wire, A6): restore the persisted live-chat waiting
+    // queue from the Redis sorted set (write-through persisted by
+    // agentOperations.enqueueChat/dequeueChat) so waiting customers survive a
+    // restart. Idempotent (dedup by sessionId) and safely concurrent with new
+    // enqueues, so it can run alongside listen(). On failure: error-level log
+    // and CONTINUE serving — the queue degrades to in-memory for new entries
+    // (pre-fix behavior); boot must not crash on Redis unavailability.
+    import("../lib/agentOperations")
+      .then(({ hydrateChatQueue }) => hydrateChatQueue())
+      .then(restored => {
+        if (restored > 0) {
+          logger.info(`[AgentOps] Boot hydration restored ${restored} waiting chat queue entries`);
+        }
+      })
+      .catch(err =>
+        logger.error(
+          `[AgentOps] Chat queue hydration failed — serving with in-memory queue only:: ${(err as Error).message}`
+        )
+      );
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     import("../temporal-worker")

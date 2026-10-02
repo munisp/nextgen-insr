@@ -10,6 +10,17 @@ import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 
 import { logger } from '../_core/logger';
+import { secStateGet, secStateSet } from "../lib/distributedState";
+
+// 2026-10-01 (C2-mw, B4): login-attempt lockouts and card-testing windows
+// moved from module-level Maps to Redis via distributedState secState*
+// (namespaces "ato-login" / "card-test") — previously a process restart
+// unlocked brute-forced accounts and reset card-testing windows.
+// Fallback semantics: if Redis is down the secState store uses an in-memory
+// fallback (logged loudly at error level); the middleware then fails OPEN on
+// store errors (availability — see persistence-audit.md B4 note) but every
+// degradation is logged. Writes that fail on ALL backends throw inside
+// secStateSet and are logged here at error level.
 
 // ── Replay Attack Prevention (Nonce + Idempotency) ───────────────────
 const nonceStore = new Map<string, number>(); // nonce -> timestamp
@@ -89,9 +100,17 @@ interface CardTestWindow {
   windowStart: number;
 }
 
-const cardTestWindows = new Map<string, CardTestWindow>();
+const CARD_TEST_NS = "card-test";
+const CARD_TEST_WINDOW_MS = 300_000; // 5 min window
 
-export function cardTestingDetection(
+interface CardTestWindowSerialized {
+  attempts: number;
+  smallAmounts: number;
+  uniqueCards: string[];
+  windowStart: number;
+}
+
+export async function cardTestingDetection(
   req: Request,
   res: Response,
   next: NextFunction
@@ -103,17 +122,21 @@ export function cardTestingDetection(
     req.socket.remoteAddress ||
     "unknown";
   const now = Date.now();
-  const windowMs = 300_000; // 5 min window
 
-  let window = cardTestWindows.get(ip);
-  if (!window || now - window.windowStart > windowMs) {
-    window = {
-      attempts: 0,
-      smallAmounts: 0,
-      uniqueCards: new Set(),
-      windowStart: now,
-    };
-    cardTestWindows.set(ip, window);
+  let window: CardTestWindow;
+  try {
+    const raw = await secStateGet(CARD_TEST_NS, ip);
+    const stored = raw ? (JSON.parse(raw) as CardTestWindowSerialized) : null;
+    window =
+      stored && now - stored.windowStart <= CARD_TEST_WINDOW_MS
+        ? { ...stored, uniqueCards: new Set(stored.uniqueCards) }
+        : { attempts: 0, smallAmounts: 0, uniqueCards: new Set(), windowStart: now };
+  } catch (err) {
+    // Fail-open on store read error (availability), logged loudly (C2-mw).
+    logger.error(
+      `[CardTest] Store read failed — window tracking degraded for this request: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return next();
   }
 
   // Parse body for transaction indicators
@@ -127,6 +150,23 @@ export function cardTestingDetection(
         window.attempts++;
         if (amount < 500) window.smallAmounts++; // Less than ₦500
         if (cardLast4) window.uniqueCards.add(cardLast4);
+
+        const serialized: CardTestWindowSerialized = {
+          ...window,
+          uniqueCards: Array.from(window.uniqueCards),
+        };
+        try {
+          await secStateSet(
+            CARD_TEST_NS,
+            ip,
+            JSON.stringify(serialized),
+            Math.ceil(CARD_TEST_WINDOW_MS / 1000) + 60
+          );
+        } catch (err) {
+          logger.error(
+            `[CardTest] Store write failed — card-testing window NOT persisted: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
 
         // Card testing indicators:
         // 1. Many small amounts from same IP
@@ -165,12 +205,35 @@ interface LoginAttempt {
   userAgents: Set<string>;
 }
 
-const loginAttempts = new Map<string, LoginAttempt>();
+const ATO_NS = "ato-login";
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_DURATION = 900_000; // 15 min
 const PROGRESSIVE_LOCKOUT_MULTIPLIER = 2;
+// Locked-until is capped at 1 hour (see below); TTL covers the max lockout.
+const ATO_TTL_SECONDS = 3_700;
 
-export function accountTakeoverPrevention(
+interface LoginAttemptSerialized {
+  attempts: number;
+  failures: number;
+  lastAttempt: number;
+  lockedUntil: number;
+  ips: string[];
+  userAgents: string[];
+}
+
+async function persistLoginAttempt(
+  identifier: string,
+  record: LoginAttempt
+): Promise<void> {
+  const serialized: LoginAttemptSerialized = {
+    ...record,
+    ips: Array.from(record.ips),
+    userAgents: Array.from(record.userAgents),
+  };
+  await secStateSet(ATO_NS, identifier, JSON.stringify(serialized), ATO_TTL_SECONDS);
+}
+
+export async function accountTakeoverPrevention(
   req: Request,
   res: Response,
   next: NextFunction
@@ -202,17 +265,26 @@ export function accountTakeoverPrevention(
     identifier = ip;
   }
 
-  let record = loginAttempts.get(identifier);
-  if (!record) {
-    record = {
-      attempts: 0,
-      failures: 0,
-      lastAttempt: now,
-      lockedUntil: 0,
-      ips: new Set(),
-      userAgents: new Set(),
-    };
-    loginAttempts.set(identifier, record);
+  let record: LoginAttempt;
+  try {
+    const raw = await secStateGet(ATO_NS, identifier);
+    const stored = raw ? (JSON.parse(raw) as LoginAttemptSerialized) : null;
+    record = stored
+      ? { ...stored, ips: new Set(stored.ips), userAgents: new Set(stored.userAgents) }
+      : {
+          attempts: 0,
+          failures: 0,
+          lastAttempt: now,
+          lockedUntil: 0,
+          ips: new Set(),
+          userAgents: new Set(),
+        };
+  } catch (err) {
+    // Fail-open on store read error (availability), logged loudly (C2-mw).
+    logger.error(
+      `[ATO] Store read failed — lockout check degraded for this request: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return next();
   }
 
   // Check lockout
@@ -231,6 +303,14 @@ export function accountTakeoverPrevention(
   record.ips.add(ip);
   record.userAgents.add(userAgent);
 
+  try {
+    await persistLoginAttempt(identifier, record);
+  } catch (err) {
+    logger.error(
+      `[ATO] Store write failed — attempt counter NOT persisted: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   // Detect suspicious patterns
   if (record.ips.size > 5) {
     logger.warn(
@@ -246,24 +326,32 @@ export function accountTakeoverPrevention(
       res.statusCode === 403 ||
       (body && (body.error || body.code === "UNAUTHORIZED"))
     ) {
-      record!.failures++;
-      if (record!.failures >= MAX_FAILED_LOGINS) {
+      record.failures++;
+      if (record.failures >= MAX_FAILED_LOGINS) {
         const lockoutMs =
           LOCKOUT_DURATION *
           Math.pow(
             PROGRESSIVE_LOCKOUT_MULTIPLIER,
-            Math.floor(record!.failures / MAX_FAILED_LOGINS) - 1
+            Math.floor(record.failures / MAX_FAILED_LOGINS) - 1
           );
-        record!.lockedUntil = now + Math.min(lockoutMs, 3_600_000); // Max 1 hour
+        record.lockedUntil = now + Math.min(lockoutMs, 3_600_000); // Max 1 hour
         logger.warn(
-          `[ATO] Account ${identifier} locked for ${lockoutMs / 1000}s after ${record!.failures} failures`
+          `[ATO] Account ${identifier} locked for ${lockoutMs / 1000}s after ${record.failures} failures`
         );
       }
     } else if (res.statusCode === 200) {
       // Successful login resets failure count
-      record!.failures = 0;
-      record!.lockedUntil = 0;
+      record.failures = 0;
+      record.lockedUntil = 0;
     }
+    // Persist the post-response record. The response is already being sent,
+    // so a persistence failure cannot change the HTTP result — it is logged
+    // at error level instead of surfacing to the client (2026-10-01, C2-mw).
+    persistLoginAttempt(identifier, record).catch(err => {
+      logger.error(
+        `[ATO] Lockout state write failed for ${identifier} — lockout NOT durable: ${err instanceof Error ? err.message : String(err)}`
+      );
+    });
     return originalJson(body);
   };
 

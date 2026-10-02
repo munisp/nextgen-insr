@@ -7,7 +7,9 @@
  *  3. Device Fingerprinting (model detection, threshold adaptation, history tracking)
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
 import {
   isLockedOut,
   recordLivenessFailure,
@@ -21,39 +23,69 @@ import {
   getDeviceLivenessHistory,
   getAllDeviceHistories,
   getProblematicDevices,
+  __setLivenessPersistenceDbForTesting,
 } from "./middleware/livenessSecurityEnhancements.js";
+
+// 2026-10-01 (C2-mw): B1 cooldowns now use Redis (distributedState) with an
+// in-memory fallback when REDIS_URL is unset (this test environment) — those
+// tests exercise the real fallback path. B2 device history is PG-backed, so a
+// real PGlite Postgres is injected (no mocks).
+
+let pglite: PGlite;
+
+beforeAll(async () => {
+  pglite = new PGlite();
+  await pglite.exec(`
+    CREATE TABLE device_liveness_attempts (
+      id SERIAL PRIMARY KEY,
+      "fingerprintHash" VARCHAR(64) NOT NULL,
+      "deviceModel" VARCHAR(256) NOT NULL,
+      attempts JSONB NOT NULL,
+      "successRate" NUMERIC(7,4) NOT NULL,
+      "avgScore" NUMERIC(7,4) NOT NULL,
+      "lastSeen" TIMESTAMP NOT NULL,
+      "createdAt" TIMESTAMP DEFAULT NOW() NOT NULL,
+      "updatedAt" TIMESTAMP DEFAULT NOW() NOT NULL
+    );
+    CREATE UNIQUE INDEX dla_fingerprint_unique ON device_liveness_attempts ("fingerprintHash");
+  `);
+  __setLivenessPersistenceDbForTesting(drizzle(pglite));
+});
+
+afterAll(async () => {
+  __setLivenessPersistenceDbForTesting(null);
+  await pglite.close();
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. RETRY COOLDOWN TESTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Retry Cooldown", () => {
-  const testUser = `test-user-${Date.now()}`;
-
-  it("should not be locked out initially", () => {
+  it("should not be locked out initially", async () => {
     const userId = `fresh-user-${Date.now()}`;
-    const result = isLockedOut(userId);
+    const result = await isLockedOut(userId);
     expect(result.locked).toBe(false);
     expect(result.failures).toBe(0);
     expect(result.remainingMs).toBe(0);
   });
 
-  it("should track failures without locking before threshold", () => {
+  it("should track failures without locking before threshold", async () => {
     const userId = `track-user-${Date.now()}`;
-    const r1 = recordLivenessFailure(userId);
+    const r1 = await recordLivenessFailure(userId);
     expect(r1.locked).toBe(false);
     expect(r1.failures).toBe(1);
 
-    const r2 = recordLivenessFailure(userId);
+    const r2 = await recordLivenessFailure(userId);
     expect(r2.locked).toBe(false);
     expect(r2.failures).toBe(2);
   });
 
-  it("should lock out after 3 failures", () => {
+  it("should lock out after 3 failures", async () => {
     const userId = `lock-user-${Date.now()}`;
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
-    const r3 = recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    const r3 = await recordLivenessFailure(userId);
 
     expect(r3.locked).toBe(true);
     expect(r3.failures).toBe(3);
@@ -61,49 +93,49 @@ describe("Retry Cooldown", () => {
     expect(r3.remainingMs).toBeLessThanOrEqual(5 * 60 * 1000);
   });
 
-  it("should report locked status when checking", () => {
+  it("should report locked status when checking", async () => {
     const userId = `check-lock-${Date.now()}`;
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
 
-    const status = isLockedOut(userId);
+    const status = await isLockedOut(userId);
     expect(status.locked).toBe(true);
     expect(status.remainingMs).toBeGreaterThan(0);
   });
 
-  it("should reset failures on success", () => {
+  it("should reset failures on success", async () => {
     const userId = `reset-user-${Date.now()}`;
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
 
-    recordLivenessSuccess(userId);
+    await recordLivenessSuccess(userId);
 
-    const status = isLockedOut(userId);
+    const status = await isLockedOut(userId);
     expect(status.locked).toBe(false);
     expect(status.failures).toBe(0);
   });
 
-  it("should allow admin to clear cooldown", () => {
+  it("should allow admin to clear cooldown", async () => {
     const userId = `admin-clear-${Date.now()}`;
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
 
-    expect(isLockedOut(userId).locked).toBe(true);
+    expect((await isLockedOut(userId)).locked).toBe(true);
 
-    const cleared = clearCooldown(userId);
+    const cleared = await clearCooldown(userId);
     expect(cleared).toBe(true);
-    expect(isLockedOut(userId).locked).toBe(false);
+    expect((await isLockedOut(userId)).locked).toBe(false);
   });
 
-  it("should include locked users in cooldown status", () => {
+  it("should include locked users in cooldown status", async () => {
     const userId = `status-user-${Date.now()}`;
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
-    recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
+    await recordLivenessFailure(userId);
 
-    const statuses = getCooldownStatus();
+    const statuses = await getCooldownStatus();
     const found = statuses.find(s => s.userId === userId);
     expect(found).toBeDefined();
     expect(found!.failures).toBe(3);
@@ -291,7 +323,7 @@ describe("Device Fingerprinting", () => {
     expect(thresholds.noiseToleranceFactor).toBeGreaterThanOrEqual(2.0);
   });
 
-  it("should record and retrieve device liveness history", () => {
+  it("should record and retrieve device liveness history", async () => {
     const fp = createDeviceFingerprint({
       userAgent:
         "Mozilla/5.0 (Linux; Android 12; Samsung A04 Build/SP1A) AppleWebKit/537.36",
@@ -302,18 +334,18 @@ describe("Device Fingerprinting", () => {
       pixelRatio: 2,
     });
 
-    recordDeviceLivenessAttempt(fp, true, "active_blink", 0.85);
-    recordDeviceLivenessAttempt(fp, false, "active_blink", 0.35);
-    recordDeviceLivenessAttempt(fp, true, "active_blink", 0.78);
+    await recordDeviceLivenessAttempt(fp, true, "active_blink", 0.85);
+    await recordDeviceLivenessAttempt(fp, false, "active_blink", 0.35);
+    await recordDeviceLivenessAttempt(fp, true, "active_blink", 0.78);
 
-    const history = getDeviceLivenessHistory(fp.fingerprintHash);
+    const history = await getDeviceLivenessHistory(fp.fingerprintHash);
     expect(history).not.toBeNull();
     expect(history!.attempts.length).toBe(3);
     expect(history!.successRate).toBeCloseTo(2 / 3, 2);
     expect(history!.avgScore).toBeCloseTo((0.85 + 0.35 + 0.78) / 3, 2);
   });
 
-  it("should identify problematic devices", () => {
+  it("should identify problematic devices", async () => {
     // Create a device with many failures
     const fp = createDeviceFingerprint({
       userAgent:
@@ -327,16 +359,16 @@ describe("Device Fingerprinting", () => {
 
     // Record 6 failures and 1 success (14% success rate)
     for (let i = 0; i < 6; i++) {
-      recordDeviceLivenessAttempt(
+      await recordDeviceLivenessAttempt(
         fp,
         false,
         "active_blink",
         0.2 + Math.random() * 0.1
       );
     }
-    recordDeviceLivenessAttempt(fp, true, "active_blink", 0.6);
+    await recordDeviceLivenessAttempt(fp, true, "active_blink", 0.6);
 
-    const problematic = getProblematicDevices(5, 0.5);
+    const problematic = await getProblematicDevices(5, 0.5);
     const found = problematic.find(d => d.fingerprint === fp.fingerprintHash);
     expect(found).toBeDefined();
     expect(found!.successRate).toBeLessThan(0.5);
@@ -382,8 +414,8 @@ describe("Device Fingerprinting", () => {
     expect(fp1.fingerprintHash).not.toBe(fp2.fingerprintHash);
   });
 
-  it("should return all device histories for admin dashboard", () => {
-    const histories = getAllDeviceHistories();
+  it("should return all device histories for admin dashboard", async () => {
+    const histories = await getAllDeviceHistories();
     expect(Array.isArray(histories)).toBe(true);
     // Should have entries from previous tests
     expect(histories.length).toBeGreaterThan(0);
