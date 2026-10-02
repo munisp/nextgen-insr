@@ -6567,3 +6567,27 @@ export const knownDevices = pgTable(
   })
 );
 export type KnownDevice = typeof knownDevices.$inferSelect;
+
+/**
+ * A5 (2026-10-02): Post-chat CSAT survey responses (Sprint 64 F13). Replaces
+ * the in-memory `surveyStore` array in server/lib/agentOperations.ts that
+ * silently lost customer feedback on every restart. One row per submitted
+ * survey; `categories` holds the feedback tags (e.g. ["helpful","fast"]).
+ */
+export const csatSurveys = pgTable(
+  "csat_surveys",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("sessionId").notNull(),
+    userId: varchar("userId", { length: 128 }).notNull(),
+    rating: integer("rating").notNull(), // 1-5 (clamped by submitSurvey)
+    comment: text("comment").notNull(),
+    categories: jsonb("categories").$type<string[]>().notNull(),
+    submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  },
+  t => ({
+    sessionIdx: index("csat_session_idx").on(t.sessionId),
+    submittedIdx: index("csat_submitted_idx").on(t.submittedAt),
+  })
+);
+export type CsatSurvey = typeof csatSurveys.$inferSelect;

@@ -29,6 +29,7 @@ import {
   agents,
   naicomReports,
   complianceFilings,
+  reinsuranceTreaties,
 } from "../../drizzle/schema";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
@@ -77,13 +78,68 @@ async function submitToNaicom(endpoint: string, data: Record<string, unknown>): 
 }
 
 // ── Report Data Builders ──────────────────────────────────────────────────────
-async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>, period: string) {
+// (2026-10-02, A4) All figures below are computed from real rows. The previous
+// implementation fabricated regulator-facing numbers with hardcoded multipliers
+// (premiumsEarned = 95%, ceded = 15%, recoveries = 15%, solvency floor =
+// max(premiums×20%, ₦15M)) — those fabrications are removed. Anything not
+// derivable from real data is reported as null with an INSUFFICIENT_DATA
+// marker rather than guessed.
+
+// Genuine NAICOM statutory constant: ₦15,000,000 minimum paid-up capital /
+// solvency margin floor for insurance companies under the Nigerian Insurance
+// Act 2003 / NAICOM operational guidelines. Kept as a constant, not computed.
+const NAICOM_MINIMUM_SOLVENCY_MARGIN = 15_000_000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Pro-rata temporis earned premium for a policy within a reporting period.
+ * Fail-closed (2026-10-02, A4): a policy without both dates, or with an
+ * inverted term, makes the whole report generation throw — we never guess
+ * regulatory figures.
+ */
+export function earnedInPeriod(
+  policy: { id: number; annualPremium: string | number; startDate: Date | null; endDate: Date | null },
+  periodStart: Date,
+  periodEnd: Date,
+): { earned: number; unearned: number; premium: number } {
+  if (!policy.startDate || !policy.endDate) {
+    throw new Error(
+      `[A4 2026-10-02] Policy ${policy.id} is missing startDate/endDate — ` +
+      `cannot compute pro-rata earned premium for NAICOM report (fail-closed)`
+    );
+  }
+  const start = policy.startDate.getTime();
+  const end = policy.endDate.getTime();
+  const termDays = (end - start) / DAY_MS;
+  if (termDays <= 0) {
+    throw new Error(
+      `[A4 2026-10-02] Policy ${policy.id} has a non-positive term ` +
+      `(${policy.startDate.toISOString()} → ${policy.endDate.toISOString()}) — fail-closed`
+    );
+  }
+  const premium = parseFloat(String(policy.annualPremium));
+  const overlapStart = Math.max(start, periodStart.getTime());
+  const overlapEnd = Math.min(end, periodEnd.getTime());
+  const overlapDays = Math.max(0, (overlapEnd - overlapStart) / DAY_MS);
+  // (2026-10-02, A4-r2) UPR at period end = only the portion of the term
+  // falling AFTER the period ends. Premium elapsed before the period is
+  // neither earned-this-period nor unearned-at-period-end.
+  const remainingDays = Math.max(0, (end - periodEnd.getTime()) / DAY_MS);
+  return {
+    earned: premium * (overlapDays / termDays),
+    unearned: premium * (remainingDays / termDays),
+    premium,
+  };
+}
+
+export async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>, period: string) {
   if (!db) throw new Error("Database unavailable");
   const [year, month] = period.split("-").map(Number);
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0, 23, 59, 59);
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-  const [premiumData, claimsData, policyData, agentData] = await Promise.all([
+  const [premiumData, claimsData, policyData, agentData, overlappingPolicies, activeTreaties, paidClaimsRows] = await Promise.all([
     // Total premiums collected
     db.select({
       total: sum(transactions.amount),
@@ -108,11 +164,93 @@ async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>,
     // Active agents
     db.select({ count: count() }).from(agents)
       .where(eq(agents.isActive, true)),
+    // (2026-10-02, A4) Real policy rows overlapping the reporting period —
+    // basis for pro-rata temporis earned premium / UPR.
+    db.select({
+      id: policies.id,
+      coverageType: policies.coverageType,
+      annualPremium: policies.annualPremium,
+      startDate: policies.startDate,
+      endDate: policies.endDate,
+    }).from(policies).where(and(
+      lte(policies.startDate, endDate),
+      gte(policies.endDate, startDate),
+    )),
+    // (2026-10-02, A4) Real reinsurance treaties active during the period.
+    // cessionPercentage is a percent (0–100) per drizzle/schema.ts comment.
+    db.select({
+      id: reinsuranceTreaties.id,
+      coverageType: reinsuranceTreaties.coverageType,
+      cessionPercentage: reinsuranceTreaties.cessionPercentage,
+      endDate: reinsuranceTreaties.endDate,
+    }).from(reinsuranceTreaties).where(and(
+      eq(reinsuranceTreaties.isActive, true),
+      lte(reinsuranceTreaties.startDate, endDate),
+    )),
+    // Claims paid in period with their policy coverage class, for computing
+    // real reinsurance recoveries under active treaties.
+    db.select({
+      paidAmount: claims.paidAmount,
+      coverageType: policies.coverageType,
+    }).from(claims)
+      .innerJoin(policies, eq(claims.policyId, policies.id))
+      .where(and(
+        gte(claims.createdAt, startDate),
+        lte(claims.createdAt, endDate),
+        eq(claims.status, "paid"),
+      )),
   ]);
 
   const totalPremiums = parseFloat(String(premiumData[0]?.total ?? 0));
   const totalClaims = parseFloat(String(claimsData[0]?.total ?? 0));
   const lossRatio = totalPremiums > 0 ? (totalClaims / totalPremiums) * 100 : 0;
+
+  // (2026-10-02, A4) Cession rate per coverage class: sum of cession
+  // percentages of treaties active during the period. Treaties with no
+  // coverageType apply to all classes. Treaties whose endDate has passed
+  // before the period starts are excluded; endDate NULL = open-ended.
+  const treatiesInPeriod = activeTreaties.filter(
+    t => !t.endDate || t.endDate.getTime() >= startDate.getTime(),
+  );
+  const cessionRateByClass = new Map<string, number>();
+  let allClassRate = 0;
+  for (const t of treatiesInPeriod) {
+    const pct = parseFloat(String(t.cessionPercentage ?? 0)) / 100;
+    if (!(pct > 0)) continue;
+    if (t.coverageType) {
+      cessionRateByClass.set(
+        t.coverageType,
+        (cessionRateByClass.get(t.coverageType) ?? 0) + pct,
+      );
+    } else {
+      allClassRate += pct;
+    }
+  }
+  const rateFor = (coverageType: string) =>
+    allClassRate + (cessionRateByClass.get(coverageType) ?? 0);
+
+  // (2026-10-02, A4) Earned premium + UPR from real policy rows
+  // (pro-rata temporis). Throws fail-closed on missing/invalid dates.
+  let premiumsEarned = 0;
+  let unearnedPremiumReserve = 0;
+  let reinsurancePremiumsCeded = 0; // honest zero when no treaties exist
+  for (const p of overlappingPolicies) {
+    const { earned, unearned } = earnedInPeriod(p, startDate, endDate);
+    premiumsEarned += earned;
+    // (2026-10-02, A4-r2) UPR counts only term days AFTER the period end.
+    unearnedPremiumReserve += unearned;
+    // Cession applies to the earned premium of policies in the treaty class.
+    reinsurancePremiumsCeded += earned * rateFor(p.coverageType);
+  }
+
+  // (2026-10-02, A4) Real reinsurance recoveries: paid claims ceded under
+  // active treaties for the matching coverage class. Zero when no treaty
+  // covers the class — honest zero, never a flat 15%.
+  let reinsuranceRecoveries = 0;
+  for (const c of paidClaimsRows) {
+    const paid = parseFloat(String(c.paidAmount ?? 0));
+    reinsuranceRecoveries += paid * rateFor(c.coverageType);
+  }
 
   return {
     reportType: "MONTHLY_ACTIVITY",
@@ -121,16 +259,17 @@ async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>,
     // Section A: Premium Income
     sectionA: {
       grossPremiumWritten: totalPremiums,
-      premiumsEarned: totalPremiums * 0.95, // Simplified unearned premium reserve
-      reinsurancePremiumsCeded: totalPremiums * 0.15, // 15% reinsurance
-      netPremiumsEarned: totalPremiums * 0.80,
+      premiumsEarned, // pro-rata temporis over real policy rows (A4)
+      unearnedPremiumReserve,
+      reinsurancePremiumsCeded, // real treaty-derived; 0 when no treaties (A4)
+      netPremiumsEarned: premiumsEarned - reinsurancePremiumsCeded,
       transactionCount: premiumData[0]?.count ?? 0,
     },
     // Section B: Claims
     sectionB: {
       grossClaimsPaid: totalClaims,
-      reinsuranceRecoveries: totalClaims * 0.15,
-      netClaimsPaid: totalClaims * 0.85,
+      reinsuranceRecoveries, // real treaty-derived; 0 when no treaties (A4)
+      netClaimsPaid: totalClaims - reinsuranceRecoveries,
       claimsCount: claimsData[0]?.count ?? 0,
       lossRatio: lossRatio.toFixed(2),
     },
@@ -140,10 +279,19 @@ async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>,
       activeAgents: agentData[0]?.count ?? 0,
     },
     // Section D: Solvency
+    // (2026-10-02, A4) No admitted-assets/liabilities tables exist in the
+    // schema, so the actual solvency margin CANNOT be computed honestly.
+    // Reported as null with an explicit INSUFFICIENT_DATA marker — never a
+    // fabricated floor formula. minimumSolvencyMargin is a genuine NAICOM
+    // statutory constant (see NAICOM_MINIMUM_SOLVENCY_MARGIN above).
     sectionD: {
-      minimumSolvencyMargin: 15_000_000, // ₦15M NAICOM minimum
-      actualSolvencyMargin: Math.max(totalPremiums * 0.20, 15_000_000),
-      solvencyRatio: Math.max(20, (totalPremiums * 0.20 / 15_000_000) * 100).toFixed(2),
+      minimumSolvencyMargin: NAICOM_MINIMUM_SOLVENCY_MARGIN,
+      actualSolvencyMargin: null as number | null,
+      solvencyRatio: null as number | null,
+      dataStatus: "INSUFFICIENT_DATA" as const,
+      dataStatusNote:
+        "Admitted assets/liabilities not modelled in schema (2026-10-02, A4) — " +
+        "actual solvency margin withheld rather than fabricated.",
     },
   };
 }

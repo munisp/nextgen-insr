@@ -1,6 +1,10 @@
 // TypeScript enabled — Sprint 96 security audit
+import { eq } from "drizzle-orm";
 import { logger } from "../_core/logger";
 import { sortedSetAdd, sortedSetRange, sortedSetRemove } from "./distributedState";
+// 2026-10-02 (A5): CSAT surveys persist to PG (csat_surveys) — fail-closed.
+import { getDb } from "../db.js";
+import { csatSurveys } from "../../drizzle/schema";
 
 /**
  * Sprint 64 — Agent Operations Module
@@ -278,31 +282,75 @@ export interface SurveyResponse {
   submittedAt: number;
 }
 
-// 2026-10-01 (C2-lib): DEFERRED — surveyStore is persistence-audit row A5,
-// still in-memory. Fix requires a NEW drizzle table (csat_surveys) and
-// drizzle/schema.ts is owned by a concurrent agent this round; scheduled next round.
-const surveyStore: SurveyResponse[] = [];
+// 2026-10-02 (A5): COMPLETE — the in-memory `surveyStore` array (persistence-
+// audit row A5, deferred 2026-10-01) is REMOVED. Survey responses are
+// compliance-relevant customer feedback and now persist to the PG table
+// csat_surveys (appended to drizzle/schema.ts). FAIL-CLOSED: if the database
+// is unavailable these functions THROW instead of silently dropping feedback.
+//
+// Test hook: PGlite harnesses inject a real (in-process Postgres) drizzle
+// instance via __setSurveyPersistenceDbForTesting. This is NOT a mock —
+// queries execute against a real database.
+type SurveyDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+let surveyTestDbOverride: SurveyDb | null = null;
 
-export function submitSurvey(
+export function __setSurveyPersistenceDbForTesting(db: unknown): void {
+  surveyTestDbOverride = (db as SurveyDb | null) ?? null;
+}
+
+async function resolveSurveyDb(): Promise<SurveyDb> {
+  if (surveyTestDbOverride) return surveyTestDbOverride;
+  const db = await getDb();
+  if (!db) {
+    // Fail-closed (2026-10-02, A5): never silently drop customer feedback.
+    throw new Error(
+      "Survey persistence unavailable: database connection required (fail-closed, A5)"
+    );
+  }
+  return db;
+}
+
+function rowToSurvey(row: typeof csatSurveys.$inferSelect): SurveyResponse {
+  return {
+    sessionId: row.sessionId,
+    userId: row.userId,
+    rating: row.rating,
+    comment: row.comment,
+    categories: row.categories,
+    submittedAt: row.submittedAt.getTime(),
+  };
+}
+
+export async function submitSurvey(
   response: Omit<SurveyResponse, "submittedAt">
-): SurveyResponse {
+): Promise<SurveyResponse> {
+  const db = await resolveSurveyDb();
   const survey: SurveyResponse = {
     ...response,
     rating: Math.max(1, Math.min(5, Math.round(response.rating))),
     submittedAt: Date.now(),
   };
-  surveyStore.push(survey);
+  await db.insert(csatSurveys).values({
+    sessionId: survey.sessionId,
+    userId: survey.userId,
+    rating: survey.rating,
+    comment: survey.comment,
+    categories: survey.categories,
+    submittedAt: new Date(survey.submittedAt),
+  });
   return survey;
 }
 
-export function getSurveyStats(): {
+export async function getSurveyStats(): Promise<{
   totalResponses: number;
   averageRating: number;
   ratingDistribution: Record<number, number>;
   topFeedbackCategories: Array<{ category: string; count: number }>;
   npsScore: number;
-} {
-  const total = surveyStore.length;
+}> {
+  const db = await resolveSurveyDb();
+  const surveyRows = (await db.select().from(csatSurveys)).map(rowToSurvey);
+  const total = surveyRows.length;
   if (total === 0) {
     return {
       totalResponses: 0,
@@ -313,12 +361,12 @@ export function getSurveyStats(): {
     };
   }
 
-  const avg = surveyStore.reduce((s, r) => s + r.rating, 0) / total;
+  const avg = surveyRows.reduce((s, r) => s + r.rating, 0) / total;
   const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  surveyStore.forEach(r => dist[r.rating]++);
+  surveyRows.forEach(r => dist[r.rating]++);
 
   const catMap = new Map<string, number>();
-  surveyStore.forEach(r =>
+  surveyRows.forEach(r =>
     r.categories.forEach(c => catMap.set(c, (catMap.get(c) || 0) + 1))
   );
   const topCats = Array.from(catMap.entries())
@@ -327,8 +375,8 @@ export function getSurveyStats(): {
     .slice(0, 5);
 
   // NPS: promoters (4-5) minus detractors (1-2) as percentage
-  const promoters = surveyStore.filter(r => r.rating >= 4).length;
-  const detractors = surveyStore.filter(r => r.rating <= 2).length;
+  const promoters = surveyRows.filter(r => r.rating >= 4).length;
+  const detractors = surveyRows.filter(r => r.rating <= 2).length;
   const nps = Math.round(((promoters - detractors) / total) * 100);
 
   return {
@@ -340,10 +388,16 @@ export function getSurveyStats(): {
   };
 }
 
-export function getSurveyForSession(
+export async function getSurveyForSession(
   sessionId: number
-): SurveyResponse | undefined {
-  return surveyStore.find(s => s.sessionId === sessionId);
+): Promise<SurveyResponse | undefined> {
+  const db = await resolveSurveyDb();
+  const rows = await db
+    .select()
+    .from(csatSurveys)
+    .where(eq(csatSurveys.sessionId, sessionId))
+    .limit(1);
+  return rows[0] ? rowToSurvey(rows[0]) : undefined;
 }
 
 // ─── F14: Chat Routing Rules Engine ─────────────────────────────────────────

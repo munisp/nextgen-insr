@@ -283,6 +283,7 @@ import {
   getQueueStatus,
   submitSurvey,
   getSurveyStats,
+  __setSurveyPersistenceDbForTesting,
   evaluateRoutingRules,
   getEscalationChain,
   getNextEscalationLevel,
@@ -349,24 +350,47 @@ describe("Sprint 64 — Agent Operations (F11-F15)", () => {
     expect(status.totalWaiting).toBeGreaterThanOrEqual(1);
   });
 
-  it("F13: submitSurvey and getSurveyStats", () => {
-    submitSurvey({
-      sessionId: 200,
-      userId: "user-s1",
-      rating: 5,
-      comment: "Great!",
-      categories: ["helpful"],
-    });
-    submitSurvey({
-      sessionId: 201,
-      userId: "user-s2",
-      rating: 4,
-      comment: "Good",
-      categories: ["helpful", "fast"],
-    });
-    const stats = getSurveyStats();
-    expect(stats.totalResponses).toBeGreaterThanOrEqual(2);
-    expect(stats.averageRating).toBeGreaterThan(0);
+  it("F13: submitSurvey and getSurveyStats", async () => {
+    // 2026-10-02 (A5): submitSurvey/getSurveyStats are now ASYNC and PG-backed
+    // (fail-closed — the in-memory surveyStore is gone). Inject a REAL PGlite
+    // (in-process Postgres) drizzle instance; no mocks.
+    const { PGlite } = await import("@electric-sql/pglite");
+    const { drizzle } = await import("drizzle-orm/pglite");
+    const pglite = new PGlite();
+    await pglite.exec(`
+      CREATE TABLE csat_surveys (
+        id SERIAL PRIMARY KEY,
+        "sessionId" INTEGER NOT NULL,
+        "userId" VARCHAR(128) NOT NULL,
+        rating INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        categories JSONB NOT NULL,
+        "submittedAt" TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    __setSurveyPersistenceDbForTesting(drizzle(pglite));
+    try {
+      await submitSurvey({
+        sessionId: 200,
+        userId: "user-s1",
+        rating: 5,
+        comment: "Great!",
+        categories: ["helpful"],
+      });
+      await submitSurvey({
+        sessionId: 201,
+        userId: "user-s2",
+        rating: 4,
+        comment: "Good",
+        categories: ["helpful", "fast"],
+      });
+      const stats = await getSurveyStats();
+      expect(stats.totalResponses).toBeGreaterThanOrEqual(2);
+      expect(stats.averageRating).toBeGreaterThan(0);
+    } finally {
+      __setSurveyPersistenceDbForTesting(null);
+      await pglite.close();
+    }
   });
 
   it("F14: evaluateRoutingRules routes fraud to security", () => {

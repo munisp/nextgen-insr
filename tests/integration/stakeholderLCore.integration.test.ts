@@ -189,7 +189,9 @@ describe("L-S-2/L-P-2 assessRisk: underwriter gate + state guard", () => {
     const p = await seedPolicy({ policyNumber: "L-CORE-UW-1", status: "draft" });
     await expectTrpcError(
       callerFor(regularUser).insuranceWorkflows.assessRisk({
-        policyId: p.id, riskScore: 10, riskCategory: "low", decision: "approved",
+        // 2026-10-02 (A3): riskScore/riskCategory removed from the contract —
+        // the score is server-computed (server/lib/riskScoring.ts).
+        policyId: p.id, decision: "approved",
       }),
       "FORBIDDEN"
     );
@@ -201,7 +203,9 @@ describe("L-S-2/L-P-2 assessRisk: underwriter gate + state guard", () => {
   it("active underwriter stakeholder can bind a draft policy; terminal states are guarded", async () => {
     const p = await seedPolicy({ policyNumber: "L-CORE-UW-2", status: "draft" });
     const res = await callerFor(underwriterUser).insuranceWorkflows.assessRisk({
-      policyId: p.id, riskScore: 20, riskCategory: "low", decision: "approved",
+      // 2026-10-02 (A3): caller-supplied riskScore/riskCategory removed — now
+      // computed server-side from the policyholder's real claims history.
+      policyId: p.id, decision: "approved",
     });
     expect(res.assessment).toBeTruthy();
     const db = (await getDb())!;
@@ -210,7 +214,8 @@ describe("L-S-2/L-P-2 assessRisk: underwriter gate + state guard", () => {
     // A decided policy cannot be re-assessed (state guard).
     await expectTrpcError(
       callerFor(adminUser).insuranceWorkflows.assessRisk({
-        policyId: p.id, riskScore: 90, riskCategory: "declined", decision: "declined",
+        // 2026-10-02 (A3): riskScore/riskCategory no longer caller-supplied.
+        policyId: p.id, decision: "declined",
       }),
       "CONFLICT"
     );
@@ -219,7 +224,8 @@ describe("L-S-2/L-P-2 assessRisk: underwriter gate + state guard", () => {
   it("staff decline cancels a draft policy", async () => {
     const p = await seedPolicy({ policyNumber: "L-CORE-UW-3", status: "quoted" });
     await callerFor(supervisorUser).insuranceWorkflows.assessRisk({
-      policyId: p.id, riskScore: 95, riskCategory: "declined", decision: "declined",
+      // 2026-10-02 (A3): riskScore/riskCategory no longer caller-supplied.
+      policyId: p.id, decision: "declined",
     });
     const db = (await getDb())!;
     const [after] = await db.select().from(policies).where(eq(policies.id, p.id));

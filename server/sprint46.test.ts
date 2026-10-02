@@ -380,7 +380,11 @@ describe("Sprint 46: Data Integrity", () => {
     // 2026-10-02 (C2 middleware persistence wave): +3 tables
     // device_liveness_attempts, geo_ip_correlations, known_devices
     // (in-memory Map → PG persistence fixes B2/B3/B5). 271 + 3 = 274.
-    expect(stats.totalTables).toBe(274);
+    // 2026-10-02 (A5): +1 table csat_surveys (in-memory surveyStore array →
+    // PG persistence for Sprint 64 F13 post-chat CSAT surveys). 274 + 1 =
+    // 275. Honest-count drift, not a weakening — the gate still counts
+    // information_schema at runtime; measured number wins.
+    expect(stats.totalTables).toBe(275);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
