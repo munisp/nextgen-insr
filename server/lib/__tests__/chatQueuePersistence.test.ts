@@ -22,7 +22,11 @@ import {
   sortedSetSize,
 } from "../distributedState";
 import * as agentOps from "../agentOperations";
-import type { QueueEntry } from "../agentOperations";
+
+// 2026-10-02 (C2-lint): QueueEntry referenced through the namespace import —
+// a separate `import type` from the same module tripped the
+// import/no-duplicates ratchet (baseline is never regenerated).
+type QueueEntry = agentOps.QueueEntry;
 
 type AgentOpsModule = typeof agentOps;
 type DistributedStateModule = typeof import("../distributedState");

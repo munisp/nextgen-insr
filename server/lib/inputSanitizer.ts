@@ -199,7 +199,12 @@ export const zodSchemas = {
 // "sanitizer-rl") — limits used to reset on every restart. On Redis outage
 // the store falls back to in-memory (logged loudly); availability is
 // prioritized over fail-closed for rate limiting.
-import { secStateGet, secStateSet } from "./distributedState";
+import {
+  csrfStore,
+  csrfValidate,
+  secStateGet,
+  secStateSet,
+} from "./distributedState";
 
 const RL_NS = "sanitizer-rl";
 
@@ -255,8 +260,6 @@ export async function checkRateLimit(
 // rather than duplicated. Active sessions no longer fail CSRF validation
 // after a restart when Redis is up. validateCsrfToken keeps its session-long
 // (non-consuming) semantics via csrfValidate's { consume: false } option.
-import { csrfStore, csrfValidate } from "./distributedState";
-
 const CSRF_TTL_MS = 3_600_000; // 1 hour
 
 export async function generateCsrfToken(sessionId: string): Promise<string> {

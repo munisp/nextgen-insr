@@ -132,7 +132,9 @@ export async function trackChatAbuse(ipAddress: string): Promise<{
 }> {
   const now = Date.now();
   const raw = await secStateGet(ABUSE_NS, ipAddress);
-  let record: AbuseRecord = raw
+  // 2026-10-02 (C2-lint): const — the binding is never reassigned, only its
+  // properties mutate (prefer-const ratchet; baseline is never regenerated).
+  const record: AbuseRecord = raw
     ? (JSON.parse(raw) as AbuseRecord)
     : { count: 0, firstSeen: now, lastSeen: now, blocked: false };
 
