@@ -1,0 +1,6 @@
+# 2026-10-02 (C2-ci): embedded-sdk persistence tests fetch a loopback-only
+# test server (http://127.0.0.1:<ephemeral>) — react-insecure-request is a
+# false positive here; no real network traffic. Semgrep GitHub App does not
+# honor inline nosemgrep in this repo's configuration, so exclude this one
+# test file only.
+services/typescript/embedded-sdk/src/store.test.ts

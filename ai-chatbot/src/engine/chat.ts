@@ -1,5 +1,11 @@
 import { KnowledgeBase } from "../knowledge/base";
 import { LanguageDetector, SupportedLanguage } from "../language/detector";
+// 2026-10-02 (C2-b11b12, audit B12): sessions persisted in Redis (hash + idle
+// TTL, history capped at HISTORY_CAP) so restarts no longer wipe chat
+// context; in-memory only as a loudly-logged outage fallback.
+import { RedisSessionStore, HISTORY_CAP } from "../lib/sessionStore";
+
+export { RedisSessionStore, HISTORY_CAP };
 
 interface ChatResponse {
   reply: string;
@@ -13,22 +19,26 @@ interface ChatResponse {
 export class ChatEngine {
   private kb: KnowledgeBase;
   private langDetector: LanguageDetector;
-  private sessions: Map<string, { language: SupportedLanguage; history: string[] }> = new Map();
+  // 2026-10-02 (C2-b11b12, audit B12): was `sessions: Map<sessionId, ...>` —
+  // lost on restart. Now Redis-backed with TTL + capped history.
+  private store: RedisSessionStore;
 
-  constructor(kb: KnowledgeBase, langDetector: LanguageDetector) {
+  constructor(kb: KnowledgeBase, langDetector: LanguageDetector, store?: RedisSessionStore) {
     this.kb = kb;
     this.langDetector = langDetector;
+    this.store = store ?? new RedisSessionStore();
   }
 
   async respond(sessionId: string, message: string, preferredLang?: string): Promise<ChatResponse> {
     const lang = (preferredLang as SupportedLanguage) || this.langDetector.detect(message);
 
-    let session = this.sessions.get(sessionId);
-    if (!session) {
-      session = { language: lang, history: [] };
-      this.sessions.set(sessionId, session);
-    }
+    const session = (await this.store.get(sessionId)) ?? { language: lang, history: [] };
     session.history.push(message);
+    // Bound history in memory too (store.set also enforces HISTORY_CAP).
+    if (session.history.length > HISTORY_CAP) {
+      session.history = session.history.slice(-HISTORY_CAP);
+    }
+    await this.store.set(sessionId, session);
 
     const faqMatch = this.kb.findAnswer(message, lang);
     if (faqMatch) {
