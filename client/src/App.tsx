@@ -1,7 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch, useLocation } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { usePosStore } from "./store/posStore";
 import { useTerminalSocket } from "./hooks/useSocket";
@@ -69,6 +69,13 @@ const Ifrs17Dashboard = lazy(() => import("./pages/Ifrs17Dashboard"));
 const ManagementPortal = lazy(() => import("./pages/ManagementPortal"));
 const AgentPortal = lazy(() => import("./pages/AgentPortal"));
 const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
+// Member portal (/member/*) — member-facing pages wired to the member* tRPC
+// routers (W7-B1). Auth-gated inside MemberLayout.
+const MemberQuotes = lazy(() => import("./pages/member/MemberQuotes"));
+const MemberPolicies = lazy(() => import("./pages/member/MemberPolicies"));
+const MemberClaims = lazy(() => import("./pages/member/MemberClaims"));
+const MemberPayments = lazy(() => import("./pages/member/MemberPayments"));
+const MemberProfile = lazy(() => import("./pages/member/MemberProfile"));
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
@@ -1336,6 +1343,15 @@ function AuthenticatedApp() {
         <Route path="/management/:section" component={ManagementPortal} />
         <Route path="/agent" component={AgentPortal} />
         <Route path="/customer" component={CustomerPortal} />
+        {/* Member portal (member* tRPC routers) */}
+        <Route path="/member">
+          <Redirect to="/member/quotes" />
+        </Route>
+        <Route path="/member/quotes" component={MemberQuotes} />
+        <Route path="/member/policies" component={MemberPolicies} />
+        <Route path="/member/claims" component={MemberClaims} />
+        <Route path="/member/payments" component={MemberPayments} />
+        <Route path="/member/profile" component={MemberProfile} />
         <Route path="/super-admin" component={SuperAdminPortal} />
         <Route path="/super-admin/:section" component={SuperAdminPortal} />
         {/* Merchant & Developer portals */}
