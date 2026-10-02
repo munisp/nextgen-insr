@@ -28,10 +28,11 @@
  * id + customerId + status pending, zero rows changed on any miss).
  */
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  claims,
   customers,
   insuranceProducts,
   policyQuotes,
@@ -39,6 +40,23 @@ import {
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import type { DrizzleDb } from "../lib/memberGuards";
+import {
+  RatingUnavailableError,
+  resolveRating,
+} from "../lib/ratingEngine";
+
+/**
+ * 2026-10-02 (A1c): the claims-loading input is ALWAYS the caller's real
+ * claims count from the DB (claims.claimantId = ctx.user.id — the
+ * memberClaims.ts scoping rule). A client-supplied count is never accepted.
+ */
+async function callerClaimsCount(d: DrizzleDb, userId: number): Promise<number> {
+  const [{ n }] = await d
+    .select({ n: count() })
+    .from(claims)
+    .where(eq(claims.claimantId, userId));
+  return Number(n);
+}
 
 async function db(): Promise<DrizzleDb> {
   const d = await getDb();
@@ -123,10 +141,17 @@ export const memberQuotesRouter = router({
   /**
    * Member variant of addToCart: adds a quote pinned to the CALLER's
    * customers.id (input carries no customerId — there is nothing to trust or
-   * overwrite). Premium math copied verbatim from the source
-   * (insurancePolicyQuoteManager.addToCart, 2026-10-01 R3-b5 copy):
-   * insurance_products has no baseRate column; derive from
-   * minPremium / maxCoverageAmount, 2% fallback, 0.5% stamp duty.
+   * overwrite).
+   *
+   * 2026-10-02 (A1c): HONEST REWRITE of the pricing math. The R3-b5 copy
+   * derived a "base rate" from minPremium / maxCoverageAmount with a 2%
+   * fallback constant — a fabricated rate, never filed. Premiums now resolve
+   * through the filed rating tables (server/lib/ratingEngine.ts, stage A1)
+   * under the approved strict fail-closed policy: when no active rating
+   * table covers this product, the proc throws PRECONDITION_FAILED and adds
+   * NO quote — a quote priced from a fabricated constant is a regulatory
+   * mis-pricing risk, worse than no quote at all. Duration pro-rating of the
+   * annual rate and the response shape are preserved from the old contract.
    */
   addToQuoteCart: protectedProcedure
     .input(
@@ -144,10 +169,9 @@ export const memberQuotesRouter = router({
       const [product] = await d
         .select({
           id: insuranceProducts.id,
+          productCode: insuranceProducts.productCode,
           name: insuranceProducts.name,
           coverageType: insuranceProducts.coverageType,
-          minPremium: insuranceProducts.minPremium,
-          maxCoverageAmount: insuranceProducts.maxCoverageAmount,
         })
         .from(insuranceProducts)
         .where(eq(insuranceProducts.id, input.productId))
@@ -158,14 +182,36 @@ export const memberQuotesRouter = router({
           message: "Insurance product not found",
         });
 
-      const maxCov = Number(product.maxCoverageAmount ?? 0);
-      const baseRate =
-        maxCov > 0 ? Number(product.minPremium ?? 0) / maxCov : 0.02;
+      // 2026-10-02 (A1c): resolve through the filed rating tables — no
+      // derived/fabricated base rate. claimsCount is the caller's REAL count
+      // from the DB; age/ncd are omitted (no server-side source of truth on
+      // this pre-bind path — documented per design doc §A1).
+      const claimsCount = await callerClaimsCount(d, ctx.user.id);
+      let rating;
+      try {
+        rating = await resolveRating(d, {
+          productCode: product.productCode ?? undefined,
+          coverageClass: product.coverageType ?? undefined,
+          sumInsured: input.sumInsured,
+          claimsCount,
+        });
+      } catch (err) {
+        if (err instanceof RatingUnavailableError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: err.message,
+          });
+        }
+        throw err;
+      }
+
+      // Duration adjustment: rating tables hold ANNUAL rates; pro-rate the
+      // engine's premium and stamp duty by durationMonths/12 (same
+      // pro-rating as the pre-A1c contract and insuranceProductCatalog A1b).
+      const durationFactor = input.durationMonths / 12;
       const premiumAmount =
-        Math.round(
-          input.sumInsured * baseRate * (input.durationMonths / 12) * 100
-        ) / 100;
-      const stampDuty = Math.round(premiumAmount * 0.005 * 100) / 100;
+        Math.round(rating.premiumAfterFloor * durationFactor * 100) / 100;
+      const stampDuty = Math.round(rating.stampDuty * durationFactor * 100) / 100;
 
       const [quote] = await d
         .insert(policyQuotes)
