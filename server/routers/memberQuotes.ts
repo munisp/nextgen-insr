@@ -11,8 +11,11 @@
  * getSummary all trust a CALLER-SUPPLIED customerId
  * (insurancePolicyQuoteManager.ts:23/32, :46/69, :99/105, :111/118), and
  * removeItem (:88-95) cancels ANY quoteId with no ownership check at all.
- * The source router stays untouched (agents/admins legitimately use the cart
- * with an explicit customerId); this member variant binds
+ * 2026-10-02 UPDATE: the source router has since been hardened too — its
+ * procs now derive the caller scope from the agent_session cookie (agents
+ * see/touch only their own + assigned customers' quotes via
+ * customers.preferredAgentId; admin role bypass; foreign rows → NOT_FOUND).
+ * This member variant still binds
  * policyQuotes.customerId = resolved customers.id
  * (customers.keycloakSub = String(ctx.user.id)) — the id is derived from the
  * session, NEVER from input. The member input schemas carry NO customerId/
