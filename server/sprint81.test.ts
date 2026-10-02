@@ -218,7 +218,10 @@ describe("Sprint 81 — Billing Webhook Dispatcher", () => {
     );
     expect(content).toContain("_sign_payload");
     expect(content).toContain("hmac");
-    expect(content).toContain("dead_letter_queue");
+    // 2026-10-02 (C2-ci/A12): dead-letter queue is now PG-persisted
+    // (webhook_dead_letters table via append_dead_letter) — strictly stronger
+    // than the old in-memory dead_letter_queue, contract preserved.
+    expect(content).toContain("append_dead_letter");
     expect(content).toContain("_calculate_next_retry");
     expect(content).toContain("exponential");
   });
@@ -233,7 +236,10 @@ describe("Sprint 81 — Billing Webhook Dispatcher", () => {
       "utf-8"
     );
     expect(content).toContain("KAFKA_BROKERS");
-    expect(content).toContain("REDIS_URL");
+    // 2026-10-02 (C2-ci/A12): Redis queue removed — subscriptions, deliveries
+    // and dead letters are persisted in PostgreSQL (DATABASE_URL). Kafka
+    // ingress + Temporal long-backoff scheduling unchanged.
+    expect(content).toContain("DATABASE_URL");
     expect(content).toContain("TEMPORAL_ADDR");
   });
 });

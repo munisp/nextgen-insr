@@ -2,3 +2,6 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 pydantic>=2.5.0
 psycopg2-binary>=2.9.9
+# 2026-10-02 (C2-ci): httpx required by fastapi.testclient.TestClient used in
+# test_main.py fail-closed boot test; CI installs only this file.
+httpx>=0.25.0
