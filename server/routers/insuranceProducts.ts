@@ -99,8 +99,18 @@ export const insuranceProductsRouter = router({
         tenure: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        // 2026-10-02 (A2): fail-closed role gate — elevated role only
+        // (admin or supervisor; unknown/missing role → FORBIDDEN).
+        const role = ctx.user?.role;
+        if (role !== "admin" && role !== "supervisor") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Product creation requires an elevated role (admin or supervisor)",
+          });
+        }
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         const productId = "INS-" + crypto.randomUUID().toUpperCase();
@@ -108,7 +118,10 @@ export const insuranceProductsRouter = router({
           key: "insurance_product_" + productId,
           value: JSON.stringify({
             ...input,
-            status: "active",
+            // 2026-10-02 (A2): draft lifecycle — created products start as
+            // draft; zod strips any caller-supplied `status`, so "active"
+            // can never be smuggled in at creation.
+            status: "draft",
             createdAt: new Date().toISOString(),
           }),
         });
@@ -139,8 +152,17 @@ export const insuranceProductsRouter = router({
         status: z.enum(["active", "suspended", "discontinued"]).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        // 2026-10-02 (A2): fail-closed role gate on lifecycle mutation too.
+        const role = ctx.user?.role;
+        if (role !== "admin" && role !== "supervisor") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Product lifecycle changes require an elevated role (admin or supervisor)",
+          });
+        }
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         const rows = await db
@@ -151,6 +173,23 @@ export const insuranceProductsRouter = router({
         if (rows.length === 0)
           return { success: false, error: "Product not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
+        // 2026-10-02 (A2): enforce draft → active → suspended/discontinued
+        // lifecycle; illegal transitions rejected fail-closed.
+        if (input.status !== undefined) {
+          const allowed: Record<string, string[]> = {
+            draft: ["active", "discontinued"],
+            active: ["suspended", "discontinued"],
+            suspended: ["active", "discontinued"],
+            discontinued: [],
+          };
+          const from = String(existing.status ?? "draft");
+          if (!(allowed[from] ?? []).includes(input.status)) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `Illegal product status transition ${from} → ${input.status}`,
+            });
+          }
+        }
         const updated = {
           ...existing,
           ...input,

@@ -54,6 +54,10 @@ import {
 import { policyQuotes } from "../../drizzle/schema.additions";
 import { router, protectedProcedure } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
+import {
+  PRODUCT_CODE_REGEX,
+  naicomClassFor,
+} from "../lib/niiraTaxonomy";
 import { publishInsuranceEvent } from "../daprClient";
 import { getDb, withClientTransaction } from "../db";
 import {
@@ -2240,10 +2244,23 @@ export const insuranceWorkflowsRouter = router({
   // ADMIN WORKFLOWS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** AD-1: Create insurance product */
+  /** AD-1: Create insurance product
+   *  2026-10-02 (A2 — product creation governance):
+   *  - ROLE GATE: elevated role required (admin or supervisor — the repo's
+   *    established elevated pair, cf. server/lib/lifecycleWorkflows.ts);
+   *    unknown/missing role → FORBIDDEN (fail-closed).
+   *  - productCode format enforced (server/lib/niiraTaxonomy.ts).
+   *  - coverageType zod enum mirrors the coverage_type pgEnum — unknown
+   *    classes rejected by input parsing (fail-closed).
+   *  - LIFECYCLE: products are created DRAFT (isActive=false). The schema's
+   *    lifecycle signal is the isActive boolean; no approval procedure exists
+   *    in this router, so activation is not fabricated here — creation is
+   *    never active and no caller-supplied isActive is accepted.
+   *  - Response exposes the NAICOM class for the coverage type.
+   */
   createProduct: protectedProcedure
     .input(z.object({
-      productCode: z.string(),
+      productCode: z.string().regex(PRODUCT_CODE_REGEX, "Invalid productCode format"),
       name: z.string(),
       description: z.string().optional(),
       coverageType: z.enum(["life", "health", "motor", "property", "liability", "marine", "aviation", "agriculture", "credit", "travel", "micro", "group_life", "annuity", "pension"]),
@@ -2257,6 +2274,14 @@ export const insuranceWorkflowsRouter = router({
       naicomProductCode: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // A2: fail-closed role gate — only admin/supervisor may create products.
+      const role = ctx.user?.role;
+      if (role !== "admin" && role !== "supervisor") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Product creation requires an elevated role (admin or supervisor)",
+        });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
@@ -2271,7 +2296,7 @@ export const insuranceWorkflowsRouter = router({
         maxAge: input.maxAge ?? null,
         waitingPeriodDays: input.waitingPeriodDays ?? 0,
         policyTermMonths: input.policyTermMonths ?? 12,
-        isActive: true,
+        isActive: false, // A2: draft lifecycle — never active at creation
         regulatoryApprovalRef: input.regulatoryApprovalRef ?? null,
         naicomProductCode: input.naicomProductCode ?? null,
         createdAt: new Date(),
@@ -2282,7 +2307,7 @@ export const insuranceWorkflowsRouter = router({
         productCode: input.productCode, name: input.name,
       });
 
-      return { product };
+      return { product, naicomClass: naicomClassFor(input.coverageType) };
     }),
 
   /** AD-2: Get platform-wide insurance dashboard */
