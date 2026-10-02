@@ -229,6 +229,14 @@ export const ENV = {
   // ── Public application base URL (certificate/portal links) ─────────────────
   appUrl: optEnv("APP_URL", "https://insureportal.ng"),
 
+  // ── Premium payment gateway (Paystack) — W7-B6 (2026-10-03) ──────────────
+  // Secret key: NO default, never logged. Unset → every member premium
+  // payment initiation/verification fails closed (PRECONDITION_FAILED).
+  // baseUrl is overridable so tests point at a real local wire server.
+  paystackSecretKey: optEnv("PAYSTACK_SECRET_KEY", ""),
+  paystackBaseUrl: optEnv("PAYSTACK_BASE_URL", "https://api.paystack.co"),
+  paystackCallbackUrl: optEnv("PAYSTACK_CALLBACK_URL"),
+
   // ── Lakehouse analytics ingestion endpoint ─────────────────────────────────
   lakehouseUrl: optEnv("LAKEHOUSE_URL", "http://minio:9000"),
   slackWebhookUrl: optEnv("SLACK_WEBHOOK_URL", ""),
