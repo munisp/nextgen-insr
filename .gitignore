@@ -1,5 +1,6 @@
 kyc-kyb-system/identity-matching-engine/target/
 
+
 # Python
 __pycache__/
 *.py[cod]
@@ -73,3 +74,10 @@ logs/
 # Temp files
 *.tmp
 *.temp
+
+# 2026-10-03 (W8-B2): whatsapp-bot vendors its built @insureportal/channel-core
+# dependency (file: vendor/channel-core) so the bot stays standalone-installable
+# (its Docker context is just whatsapp-bot/). The vendored build output must be
+# committed. This negation must stay LAST — later generic `dist/` rules would
+# re-ignore it (2026-10-03, verify-w8b2 finding; validated via git check-ignore).
+!whatsapp-bot/vendor/channel-core/dist/

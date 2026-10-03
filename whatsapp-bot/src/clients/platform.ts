@@ -1,51 +1,29 @@
 // 2026-10-01 (R1a): Real client for the platform monolith's tRPC API.
-// Replaces the fabricated claim refs / payment receipts / policy statuses
-// that this service previously invented locally. Configuration is read once
-// at startup and is FAIL-FAST: PLATFORM_API_URL has no localhost default and
-// PLATFORM_SERVICE_TOKEN is required. Every call honestly propagates failure
-// (PlatformUnavailableError) — callers must fail closed and never invent data.
+// 2026-10-03 (W8-B2): transport + config DELEGATED to @insureportal/channel-core
+// (generalized from this very file — same superjson wire format, same
+// fail-fast config, same PlatformUnavailableError semantics, plus an
+// x-channel-service attribution header). What stays here is whatsapp-specific:
+//   - loadPlatformConfig(env) binds serviceName="whatsapp-bot" so the
+//     fail-closed error messages name this service exactly as before;
+//   - PlatformClient gains the catalog procedures this bot's motor-quote flow
+//     uses (listMotorProducts / calculatePremium).
+// Every call honestly propagates failure (PlatformUnavailableError) — callers
+// must fail closed and never invent data.
+import {
+  PlatformClient as CorePlatformClient,
+  PlatformConfig,
+  PlatformConfigError,
+  PlatformUnavailableError,
+  loadPlatformConfig as coreLoadPlatformConfig,
+} from "@insureportal/channel-core";
 
-export interface PlatformConfig {
-  baseUrl: string;
-  serviceToken: string;
-  timeoutMs: number;
-}
+export { PlatformConfig, PlatformConfigError, PlatformUnavailableError };
 
-export class PlatformConfigError extends Error {}
-
-export class PlatformUnavailableError extends Error {
-  readonly statusCode?: number;
-  constructor(message: string, statusCode?: number) {
-    super(message);
-    this.name = "PlatformUnavailableError";
-    this.statusCode = statusCode;
-  }
-}
-
+/** Fail-fast env config; service identity is fixed to this bot. */
 export function loadPlatformConfig(
   env: NodeJS.ProcessEnv = process.env
 ): PlatformConfig {
-  const rawUrl = (env.PLATFORM_API_URL ?? "").trim();
-  if (!rawUrl) {
-    // Fail-fast: no silent localhost fallback in production code.
-    throw new PlatformConfigError(
-      "PLATFORM_API_URL is not configured — whatsapp-bot cannot reach the " +
-        "platform API and must not start (fail-closed)."
-    );
-  }
-  const serviceToken = (env.PLATFORM_SERVICE_TOKEN ?? "").trim();
-  if (!serviceToken) {
-    throw new PlatformConfigError(
-      "PLATFORM_SERVICE_TOKEN is not configured — whatsapp-bot cannot " +
-        "authenticate to the platform API and must not start (fail-closed)."
-    );
-  }
-  const timeoutMs = Number(env.PLATFORM_API_TIMEOUT_MS ?? 8000);
-  return {
-    baseUrl: rawUrl.replace(/\/+$/, ""),
-    serviceToken,
-    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8000,
-  };
+  return coreLoadPlatformConfig("whatsapp-bot", env);
 }
 
 export interface CatalogProduct {
@@ -64,58 +42,7 @@ export interface PremiumCalculation {
   [key: string]: unknown;
 }
 
-export class PlatformClient {
-  private readonly cfg: PlatformConfig;
-
-  constructor(cfg: PlatformConfig) {
-    this.cfg = cfg;
-  }
-
-  /** GET-style tRPC query against /api/trpc/<procedure> (superjson wire format). */
-  private async query<T>(procedure: string, input: unknown): Promise<T> {
-    const url =
-      `${this.cfg.baseUrl}/api/trpc/${procedure}` +
-      `?input=${encodeURIComponent(JSON.stringify({ json: input }))}`;
-    let resp: Response;
-    try {
-      resp = await fetch(url, {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${this.cfg.serviceToken}`,
-          "content-type": "application/json",
-        },
-        signal: AbortSignal.timeout(this.cfg.timeoutMs),
-      });
-    } catch (err) {
-      throw new PlatformUnavailableError(
-        `platform unreachable for ${procedure}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-    }
-    if (!resp.ok) {
-      throw new PlatformUnavailableError(
-        `platform rejected ${procedure} with HTTP ${resp.status}`,
-        resp.status
-      );
-    }
-    let body: any;
-    try {
-      body = await resp.json();
-    } catch {
-      throw new PlatformUnavailableError(
-        `platform returned non-JSON for ${procedure}`
-      );
-    }
-    if (body?.error) {
-      throw new PlatformUnavailableError(
-        `platform error for ${procedure}: ${JSON.stringify(body.error).slice(0, 300)}`
-      );
-    }
-    // superjson: { result: { data: { json: ... } } }
-    return body?.result?.data?.json as T;
-  }
-
+export class PlatformClient extends CorePlatformClient {
   /** List active motor insurance products from the real catalog. */
   async listMotorProducts(): Promise<CatalogProduct[]> {
     const result = await this.query<{ data: CatalogProduct[]; total: number }>(
