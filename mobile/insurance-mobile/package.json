@@ -54,6 +54,10 @@
     "transformIgnorePatterns": [
       "node_modules/(?!(react-native|@react-native|@react-navigation|react-native-app-auth|@react-native-async-storage|react-native-biometrics|superjson|copy-anything)/)"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/__tests__/harness.tsx"
+    ],
     "moduleFileExtensions": [
       "ts",
       "tsx",

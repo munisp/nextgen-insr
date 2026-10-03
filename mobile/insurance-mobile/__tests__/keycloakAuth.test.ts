@@ -24,13 +24,24 @@ beforeEach(async () => {
 
 describe('buildOidcConfig', () => {
   it('builds an authorization-code + PKCE config with offline_access', () => {
-    const cfg = buildOidcConfig('https://auth.example.com/realms/x', 'client-1', 'app://cb');
+    // 2026-10-03 (W9-B6): honest-contract rewrite — buildOidcConfig now
+    // enforces the PINNED_DOMAINS domain allowlist fail-closed, so a custom
+    // issuer MUST be an allowlisted host (auth.example.com is correctly
+    // rejected now; that rejection is pinned by the test below).
+    const cfg = buildOidcConfig('https://auth.insureportal.ng/realms/x', 'client-1', 'app://cb');
     expect(cfg).toEqual({
-      issuer: 'https://auth.example.com/realms/x',
+      issuer: 'https://auth.insureportal.ng/realms/x',
       clientId: 'client-1',
       redirectUrl: 'app://cb',
       scopes: ['openid', 'profile', 'email', 'offline_access'],
     });
+  });
+
+  it('refuses a non-allowlisted issuer host (W9-B6 domain allowlist, fail-closed)', () => {
+    expect(() => buildOidcConfig('https://auth.example.com/realms/x', 'c', 'app://cb'))
+      .toThrow(/domainAllowlist.*BLOCKED/);
+    expect(() => buildOidcConfig('https://auth.insureportal.ng.evil.com/realms/x', 'c', 'app://cb'))
+      .toThrow(/BLOCKED/);
   });
 });
 

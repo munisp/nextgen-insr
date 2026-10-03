@@ -52,6 +52,11 @@ export const TRPC_BASE_URL = requireEnv(
  * never crashes against a hypothetical non-superjson deployment.
  */
 import superjson, { type SuperJSONResult } from 'superjson';
+// 2026-10-03 (W9-B6): every tRPC egress passes through the PINNED_DOMAINS
+// domain allowlist (fail-closed, checked BEFORE any network I/O). This is
+// domain-allowlisting, NOT TLS certificate pinning — true pinning needs the
+// native layer; see services/domainAllowlist.ts.
+import { guardedFetch } from './services/domainAllowlist';
 
 function unwrapTrpcData<T>(data: unknown): T {
   if (
@@ -66,7 +71,7 @@ function unwrapTrpcData<T>(data: unknown): T {
 
 /** tRPC-over-HTTP helpers (v10 + superjson envelope: {result:{data:{json,meta?}}} / {error}). */
 export async function trpcQuery<T>(procedure: string, input: unknown, token?: string | null): Promise<T> {
-  const res = await fetch(
+  const res = await guardedFetch(
     `${TRPC_BASE_URL}/${procedure}?input=${encodeURIComponent(JSON.stringify({ json: input ?? null }))}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );
@@ -78,7 +83,7 @@ export async function trpcQuery<T>(procedure: string, input: unknown, token?: st
 }
 
 export async function trpcMutation<T>(procedure: string, input: unknown, token?: string | null): Promise<T> {
-  const res = await fetch(`${TRPC_BASE_URL}/${procedure}`, {
+  const res = await guardedFetch(`${TRPC_BASE_URL}/${procedure}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
