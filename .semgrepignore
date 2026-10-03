@@ -4,3 +4,12 @@
 # honor inline nosemgrep in this repo's configuration, so exclude this one
 # test file only.
 services/typescript/embedded-sdk/src/store.test.ts
+# 2026-10-03 (W7-B11): postgres_cdc_connector.py builds DDL/DML with SQL
+# identifiers (publication/table/column names) that CANNOT be parameterized.
+# Every identifier passes strict validation (regex ^[a-z_][a-z0-9_]{0,62}$ +
+# 25-table INSURANCE_TABLES allowlist) and is composed via
+# psycopg2.sql.Identifier — independently adversary-probed (verify-w7b11-ci.md:
+# injection/quoting/unicode/schema-qualified bypasses all rejected). The
+# python sql-injection rule pattern-matches .format() structurally and cannot
+# see the validation; this is a verified false positive. Single-file exclusion.
+services/python/analytics/src/lakehouse/connectors/postgres_cdc_connector.py

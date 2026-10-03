@@ -22,6 +22,15 @@
  * other assertions (billingProduction/resilienceHardening routers, K8s
  * manifest, middleware integration, Rust src/main.rs) run green 2026-09-12.
  * ═══════════════════════════════════════════════════════════════════════════
+ * HONEST-CONTRACT EXTENSION — 2026-10-03 (W7-B11, chore/retire-insureportal):
+ * the newly extracted services/go/infra-go uses a third legitimate delivered
+ * layout, `cmd/server/main.go` (verified real: func main at
+ * cmd/server/main.go:45). The Go-entrypoint assertion now accepts
+ * `cmd/<subdir>/main.go` (exactly one level deep, glob cmd/*​/main.go) as a
+ * third accepted layout alongside `cmd/main.go` and root `main.go`. The
+ * assertion still proves a real Go entrypoint exists for EVERY service —
+ * nothing weakened, no service exempted, no assertion removed.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 // @ts-nocheck — Sprint 83 tests
 import { describe, it, expect } from "vitest";
@@ -213,8 +222,11 @@ describe("Sprint 83: K8s Manifests", () => {
 });
 
 describe("Sprint 83: Service Completeness", () => {
-  it("should have all Go services with a real entrypoint (cmd/main.go or root main.go)", () => {
+  it("should have all Go services with a real entrypoint (main.go, cmd/main.go, or cmd/<subdir>/main.go)", () => {
     // HONEST-CONTRACT REWRITE 2026-09-12: accept the two delivered layouts.
+    // HONEST-CONTRACT EXTENSION 2026-10-03 (W7-B11): also accept the third
+    // delivered layout cmd/<subdir>/main.go (exactly one level deep) used by
+    // services/go/infra-go (cmd/server/main.go).
     const fs = require("fs");
     const path = require("path");
     const goDir = require("path").resolve(__dirname, "../services/go");
@@ -224,11 +236,24 @@ describe("Sprint 83: Service Completeness", () => {
     });
 
     for (const dir of dirs) {
-      const rootMain = path.join(goDir, dir, "main.go");
-      const cmdMain = path.join(goDir, dir, "cmd", "main.go");
+      const svcDir = path.join(goDir, dir);
+      const rootMain = path.join(svcDir, "main.go");
+      const cmdMain = path.join(svcDir, "cmd", "main.go");
+      // glob equivalent of cmd/*​/main.go: exactly one subdirectory level.
+      const cmdDir = path.join(svcDir, "cmd");
+      const cmdSubMain =
+        fs.existsSync(cmdDir) &&
+        fs.statSync(cmdDir).isDirectory() &&
+        fs.readdirSync(cmdDir).some((sub: string) => {
+          const subMain = path.join(cmdDir, sub, "main.go");
+          return (
+            fs.existsSync(subMain) &&
+            fs.statSync(path.join(cmdDir, sub)).isDirectory()
+          );
+        });
       expect(
-        fs.existsSync(rootMain) || fs.existsSync(cmdMain),
-        `services/go/${dir} must have cmd/main.go or main.go`
+        fs.existsSync(rootMain) || fs.existsSync(cmdMain) || cmdSubMain,
+        `services/go/${dir} must have main.go, cmd/main.go, or cmd/<subdir>/main.go`
       ).toBe(true);
     }
   });

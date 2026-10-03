@@ -1,35 +1,7 @@
 version: 2
 updates:
-  # ── InsurePortal Node.js (pnpm) ────────────────────────────────────────────
-  - package-ecosystem: "npm"
-    directory: "/insureportal"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Africa/Lagos"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "javascript"
-    groups:
-      opentelemetry:
-        patterns:
-          - "@opentelemetry/*"
-      drizzle:
-        patterns:
-          - "drizzle-*"
-      trpc:
-        patterns:
-          - "@trpc/*"
-      security:
-        patterns:
-          - "helmet"
-          - "express-rate-limit"
-          - "cors"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+  # 2026-10-03 (W7-B11): npm entry for "/insureportal" removed — the deprecated
+  # nested insureportal/ tree is retired; root app "/" entry below is canonical.
 
   # ── Root Node.js ──────────────────────────────────────────────────────────
   - package-ecosystem: "npm"
@@ -96,8 +68,10 @@ updates:
       - "go"
 
   # ── Python (pip) ──────────────────────────────────────────────────────────
+  # 2026-10-03 (W7-B11): path moved from /insureportal/services/python-analytics
+  # to /services/python/analytics (sole-copy extraction from deprecated tree).
   - package-ecosystem: "pip"
-    directory: "/insureportal/services/python-analytics"
+    directory: "/services/python/analytics"
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -118,16 +92,8 @@ updates:
       - "rust"
 
   # ── Docker images ─────────────────────────────────────────────────────────
-  - package-ecosystem: "docker"
-    directory: "/insureportal"
-    schedule:
-      interval: "weekly"
-      day: "thursday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "docker"
-
+  # 2026-10-03 (W7-B11): docker entry for "/insureportal" removed — deprecated
+  # tree retired; moved service Dockerfiles live under /services/{go,rust,python}.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

@@ -1115,7 +1115,8 @@ services:
   # ── Go Infrastructure Service (TigerBeetle bridge, Fluvio bridge, Temporal client) ──
   go-infra:
     build:
-      context: ./insureportal/services/infra-go
+      # 2026-10-03 (W7-B11): moved from ./insureportal/services/infra-go (deprecated tree retired)
+      context: ./services/go/infra-go
       dockerfile: Dockerfile
     image: insureportal/go-infra:latest
     container_name: insureportal-go-infra
@@ -1153,7 +1154,8 @@ services:
   # ── Rust Middleware (audit pipeline, rate-limit, WAF bridge) ─────────────
   rust-middleware:
     build:
-      context: ./insureportal/services/rust-middleware
+      # 2026-10-03 (W7-B11): moved from ./insureportal/services/rust-middleware (deprecated tree retired)
+      context: ./services/rust/middleware
       dockerfile: Dockerfile
     image: insureportal/rust-middleware:latest
     container_name: insureportal-rust-middleware
@@ -1184,7 +1186,8 @@ services:
   # ── Python Analytics Service (Lakehouse ETL, Actuarial, IFRS17, Fraud ML) ──
   python-analytics:
     build:
-      context: ./insureportal/services/python-analytics
+      # 2026-10-03 (W7-B11): moved from ./insureportal/services/python-analytics (deprecated tree retired)
+      context: ./services/python/analytics
       dockerfile: Dockerfile
     image: insureportal/python-analytics:latest
     container_name: insureportal-python-analytics
