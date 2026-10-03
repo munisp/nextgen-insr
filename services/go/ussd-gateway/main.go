@@ -160,8 +160,12 @@ func main() {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "healthy", "service": "ussd-gateway"})
 	})
-	router.GET("/api/v1/ussd/sessions", listActiveSessions)
-	router.GET("/api/v1/ussd/stats", getUSSDStats)
+	// Security (2026-10-03): these admin endpoints expose active session data
+	// and stats but were unauthenticated. They now reuse the exact callback
+	// shared-secret check (ussdCallbackAuth / USSD_CALLBACK_TOKEN, DD-TSSEC
+	// A7-16): fail-closed 503 when unconfigured, 401 on missing/invalid token.
+	router.GET("/api/v1/ussd/sessions", ussdCallbackAuth(), listActiveSessions)
+	router.GET("/api/v1/ussd/stats", ussdCallbackAuth(), getUSSDStats)
 
 	port := os.Getenv("PORT")
 	if port == "" {

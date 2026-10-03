@@ -15,11 +15,17 @@ import {
 import { getDb } from "../db";
 
 // MOCKWARE FIX: processInput previously returned a canned menu and the
-// session/transaction/analytics endpoints returned hardcoded data. Session
-// handling is now wired to the real Go ussd-gateway via ussdGatewayAdapter
-// and fails loudly when the gateway is unreachable; transactions are read
-// from the real transactions table; analytics come from the gateway or are
-// honest zeros.
+// session/transaction/analytics endpoints returned hardcoded data.
+// Transactions are read from the real transactions table; analytics come
+// from the gateway or are honest zeros.
+//
+// 2026-10-03 reconciliation: the ussdGatewayAdapter paths were stale
+// (neither live gateway implements REST session creation or a JSON
+// callback). processInput therefore fails loudly with PRECONDITION_FAILED
+// until a gateway-native JSON session API exists — no canned menus, no
+// silent calls to non-existent paths. listSessions similarly fails closed
+// (gateway exposes counts only, identifiers withheld); analytics uses the
+// real /api/v1/ussd/stats payload.
 
 export const ussdGatewayRouter = router({
   list: protectedProcedure
@@ -270,12 +276,18 @@ export const ussdGatewayRouter = router({
         error: result.error ?? "USSD gateway unavailable",
       };
     }
+    // 2026-10-03: map the REAL /api/v1/ussd/stats fields; the gateway does
+    // not report amounts, durations, or a completion rate — honest zeros.
+    const completionRate =
+      result.data.totalSessions > 0
+        ? result.data.completedSessions / result.data.totalSessions
+        : 0;
     return {
-      totalTransactions: result.data.completedToday ?? 0,
+      totalTransactions: result.data.completedSessions ?? 0,
       totalAmount: 0, // gateway does not report amounts
       activeSessions: result.data.activeSessions ?? 0,
-      avgSessionDuration: Math.round((result.data.avgDurationMs ?? 0) / 1000),
-      completionRate: 0, // not reported by the gateway
+      avgSessionDuration: 0, // not reported by the gateway
+      completionRate,
       degraded: false,
     };
   }),

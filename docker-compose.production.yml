@@ -673,6 +673,36 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
       <<: *hc-defaults
 
+  # ── SMS Service (Node.js/TypeScript) ─────────────────────────────────────
+  # Added 2026-10-03: sms-service was absent from every compose file. Port
+  # 8097 (8095 is float-reconciler). All /api/* endpoints require
+  # SMS_SERVICE_API_KEY and the service refuses to start without it
+  # (fail-closed, see sms-service/src/auth.ts).
+  sms-service:
+    build:
+      context: ./sms-service
+      dockerfile: Dockerfile
+    container_name: insureportal-sms
+    <<: *restart-policy
+    profiles: [app, all]
+    networks: [insureportal-infra, insureportal-app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PORT: 8097
+      SMS_SERVICE_API_KEY: ${SMS_SERVICE_API_KEY:?SMS_SERVICE_API_KEY must be set — sms-service fails closed without it}
+      DATABASE_URL: ${DATABASE_URL}
+      TERMII_API_KEY: ${TERMII_API_KEY:-}
+      TERMII_SENDER_ID: ${TERMII_SENDER_ID:-}
+      AT_API_KEY: ${AT_API_KEY:-}
+      AT_USERNAME: ${AT_USERNAME:-}
+      AT_SENDER_ID: ${AT_SENDER_ID:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8097/health"]
+      <<: *hc-defaults
+
   # ── WhatsApp Notification Bot (Node.js/TypeScript) ───────────────────────
   # Repointed 2026-08-12: phantom ./services/python/whatsapp-service did not
   # exist. Real service: ./whatsapp-bot (Node.js/TypeScript).

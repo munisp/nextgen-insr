@@ -19,6 +19,9 @@ interface ServiceConfig {
   timeout: number;
   retries: number;
   healthPath: string;
+  // Optional per-service auth headers (2026-10-03), resolved per request so
+  // env changes are picked up; never logged.
+  authHeaders?: () => Record<string, string>;
 }
 
 interface CircuitBreakerState {
@@ -88,11 +91,23 @@ const SERVICE_REGISTRY: Record<string, ServiceConfig> = {
   },
   "ussd-gateway": {
     name: "ussd-gateway",
-    baseUrl: process.env.USSD_GATEWAY_URL || "http://localhost:8088",
+    // Reconciled 2026-10-03: default was :8088, which no gateway listens on.
+    // The adapter's callers (ussdGatewayAdapter) need the sessions/stats
+    // endpoints that only services/go/ussd-gateway implements
+    // (/api/v1/ussd/sessions, /api/v1/ussd/stats, :8082 in docker-compose.yaml).
+    // The root ./ussd-gateway (:8092 in docker-compose.production.yml) serves
+    // a different route surface (/ussd, /api/v1/sessions/{id}, ...).
+    baseUrl: process.env.USSD_GATEWAY_URL || "http://localhost:8082",
     timeout: 10000,
     retries: 2,
-    // service registers GET /health (services/go/ussd-gateway/cmd/main.go:134)
+    // service registers GET /health (services/go/ussd-gateway/main.go)
     healthPath: "/health",
+    // 2026-10-03: admin endpoints on services/go/ussd-gateway now require the
+    // USSD_CALLBACK_TOKEN shared secret (X-Callback-Token header). When the
+    // env var is unset the gateway fails closed with 503 — never bypassed.
+    authHeaders: () => ({
+      "X-Callback-Token": process.env.USSD_CALLBACK_TOKEN ?? "",
+    }),
   },
   "ussd-tx-processor": {
     name: "ussd-tx-processor",
@@ -295,6 +310,7 @@ export class GoServiceAdapter {
           "Content-Type": "application/json",
           "X-Request-Source": "insurance-portal-node",
           "X-Service-Name": this.config.name,
+          ...(this.config.authHeaders ? this.config.authHeaders() : {}),
         };
 
         const response = await fetchWithTimeout(url, {
