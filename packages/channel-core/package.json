@@ -1,0 +1,19 @@
+{
+  "name": "@insureportal/channel-core",
+  "version": "0.1.0",
+  "description": "Shared channel-bot core: conversation store, channel engine, platform tRPC client (extracted from whatsapp-bot/telegram-bot/ai-chatbot triplication)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ioredis": "^5.11.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.0",
+    "vitest": "^2.1.0"
+  }
+}
