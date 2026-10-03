@@ -10,6 +10,8 @@
 import TelegramBot from "node-telegram-bot-api";
 import { ConversationManager } from "../engine/conversation";
 import { InsuranceCommandHandler } from "./commands";
+// 2026-10-03 (W8-B7): canonical conversation-ID extractor (fail-closed).
+import { telegramChatId } from "@insureportal/channel-core";
 
 export class CallbackHandler {
   private commandHandler: InsuranceCommandHandler;
@@ -19,7 +21,10 @@ export class CallbackHandler {
   }
 
   async handle(query: TelegramBot.CallbackQuery) {
-    const chatId = query.message!.chat.id;
+    // 2026-10-03 (W8-B7): was query.message!.chat.id — the non-null assert
+    // could key state under undefined; the canonical extractor throws
+    // (fail-closed) on a malformed callback instead.
+    const chatId = telegramChatId(query.message);
     const data = query.data || "";
     await this.bot.answerCallbackQuery(query.id);
 

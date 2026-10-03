@@ -31,6 +31,75 @@ export class PlatformUnavailableError extends Error {
   }
 }
 
+// 2026-10-03 (W8-B7): sane-bounds for the request timeout. Values outside
+// this range are a config error, not something to silently coerce.
+export const PLATFORM_TIMEOUT_MIN_MS = 100;
+export const PLATFORM_TIMEOUT_MAX_MS = 120_000;
+export const PLATFORM_TIMEOUT_DEFAULT_MS = 8000;
+
+/**
+ * Validate a fully-formed config object (fail-closed at construction so a
+ * bad config never defers to a first-call failure). Throws
+ * PlatformConfigError naming the exact problem. Returns the normalized cfg.
+ */
+export function validatePlatformConfig(cfg: PlatformConfig): PlatformConfig {
+  if (!cfg || typeof cfg !== "object") {
+    throw new PlatformConfigError("platform config is missing entirely");
+  }
+  const name = (cfg.serviceName ?? "").trim();
+  if (!name) {
+    throw new PlatformConfigError(
+      "platform config has no serviceName — the platform API could not " +
+        "attribute this caller (fail-closed)."
+    );
+  }
+  const rawUrl = (cfg.baseUrl ?? "").trim();
+  if (!rawUrl) {
+    throw new PlatformConfigError(
+      `platform baseUrl is not configured — ${name} cannot reach the ` +
+        "platform API and must not start (fail-closed)."
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new PlatformConfigError(
+      `platform baseUrl for ${name} is not a valid URL: ${JSON.stringify(rawUrl)}`
+    );
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new PlatformConfigError(
+      `platform baseUrl for ${name} must be http(s), got ` +
+        JSON.stringify(parsed.protocol)
+    );
+  }
+  if (!(cfg.serviceToken ?? "").trim()) {
+    throw new PlatformConfigError(
+      `platform serviceToken is not configured — ${name} cannot ` +
+        "authenticate to the platform API and must not start (fail-closed)."
+    );
+  }
+  if (
+    typeof cfg.timeoutMs !== "number" ||
+    !Number.isFinite(cfg.timeoutMs) ||
+    cfg.timeoutMs < PLATFORM_TIMEOUT_MIN_MS ||
+    cfg.timeoutMs > PLATFORM_TIMEOUT_MAX_MS
+  ) {
+    throw new PlatformConfigError(
+      `platform timeoutMs for ${name} must be a number in ` +
+        `[${PLATFORM_TIMEOUT_MIN_MS}, ${PLATFORM_TIMEOUT_MAX_MS}], got ` +
+        JSON.stringify(cfg.timeoutMs)
+    );
+  }
+  return {
+    ...cfg,
+    baseUrl: rawUrl.replace(/\/+$/, ""),
+    serviceName: name,
+    serviceToken: cfg.serviceToken.trim(),
+  };
+}
+
 /**
  * Load config from env, fail-fast. `serviceName` identifies the caller in
  * error messages and the x-channel-service header so the monolith can
@@ -55,13 +124,33 @@ export function loadPlatformConfig(
         "authenticate to the platform API and must not start (fail-closed)."
     );
   }
-  const timeoutMs = Number(env.PLATFORM_API_TIMEOUT_MS ?? 8000);
-  return {
-    baseUrl: rawUrl.replace(/\/+$/, ""),
+  // 2026-10-03 (W8-B7): an explicitly-set but invalid timeout is now a loud
+  // config error instead of a silent fallback to the default.
+  const rawTimeout = (env.PLATFORM_API_TIMEOUT_MS ?? "").trim();
+  let timeoutMs = PLATFORM_TIMEOUT_DEFAULT_MS;
+  if (rawTimeout) {
+    const n = Number(rawTimeout);
+    if (
+      !Number.isFinite(n) ||
+      n < PLATFORM_TIMEOUT_MIN_MS ||
+      n > PLATFORM_TIMEOUT_MAX_MS
+    ) {
+      throw new PlatformConfigError(
+        `PLATFORM_API_TIMEOUT_MS=${JSON.stringify(rawTimeout)} is invalid — ` +
+          `must be a number in [${PLATFORM_TIMEOUT_MIN_MS}, ${PLATFORM_TIMEOUT_MAX_MS}] ` +
+          `(fail-closed; ${serviceName} must not start with a guessed timeout).`
+      );
+    }
+    timeoutMs = n;
+  }
+  // validatePlatformConfig normalizes (trailing slashes, whitespace) and
+  // re-checks every field, so this path and the DI path share one contract.
+  return validatePlatformConfig({
+    baseUrl: rawUrl,
     serviceToken,
-    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8000,
+    timeoutMs,
     serviceName,
-  };
+  });
 }
 
 /** Factory for callers that already hold config (tests, DI containers). */
@@ -73,7 +162,9 @@ export class PlatformClient {
   private readonly cfg: PlatformConfig;
 
   constructor(cfg: PlatformConfig) {
-    this.cfg = cfg;
+    // 2026-10-03 (W8-B7): validate at construction (fail-closed) so a
+    // misconfigured client throws here, not on the first call.
+    this.cfg = validatePlatformConfig(cfg);
   }
 
   private headers(): Record<string, string> {

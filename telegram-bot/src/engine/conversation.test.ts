@@ -13,7 +13,14 @@ import { ConversationManager } from "./conversation";
 import { RedisConversationStore } from "../lib/conversationStore";
 import { closeRedisClients } from "../lib/redisClient";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://:redis_dev@localhost:6379";
+// 2026-10-03 (W8-B7): fail-closed guard — tests refuse to run against
+// any Redis not on the test allowlist (loopback 6399/6379 or an exact
+// CHANNEL_CORE_TEST_REDIS_URL match), so a misconfigured env can never
+// touch shared/prod data.
+import { assertTestRedisUrl } from "@insureportal/channel-core";
+const REDIS_URL = assertTestRedisUrl(
+  process.env.REDIS_URL ?? "redis://:redis_dev@localhost:6379"
+);
 
 async function redisReachable(): Promise<boolean> {
   const probe = new Redis(REDIS_URL, {

@@ -1,4 +1,5 @@
 import { ConversationStore } from "./conversationStore";
+import { FlowDefinition } from "./flows";
 import { ReplyTemplateConfig } from "./replies";
 import { ChannelMessage, ConversationState, Intent, Reply, SessionContext } from "./types";
 export type IntentHandler = (ctx: SessionContext, msg: ChannelMessage, state: ConversationState) => Promise<Reply> | Reply;
@@ -21,6 +22,12 @@ export interface ChannelEngineDeps {
     classify?: (text: string) => Intent;
     /** Intent handlers; missing entries fall through to unknownIntentReply. */
     handlers: Record<string, IntentHandler>;
+    /**
+     * Multi-step flow definitions keyed by intent id (2026-10-03, W8-B7). An
+     * intent present here but NOT in `handlers` auto-starts its flow; an
+     * in-progress flow continues via the flow machine instead of dispatch.
+     */
+    flows?: Record<string, FlowDefinition>;
     /** Idle timeout after which in-progress flows are reset (default 10 min). */
     idleTimeoutMs?: number;
     /** Now() override for tests. */

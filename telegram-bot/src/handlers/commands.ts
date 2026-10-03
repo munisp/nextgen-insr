@@ -10,6 +10,9 @@
  */
 import TelegramBot from "node-telegram-bot-api";
 import { ConversationManager } from "../engine/conversation";
+// 2026-10-03 (W8-B7): canonical conversation-ID extractor (fail-closed) for
+// state-key derivation; sendMessage addressing stays on msg.chat.id.
+import { telegramChatId } from "@insureportal/channel-core";
 import {
   AGENT_LOCATOR_UNAVAILABLE,
   CLAIM_FILE_UNAVAILABLE,
@@ -108,7 +111,7 @@ export class InsuranceCommandHandler {
       this.bot.sendMessage(msg.chat.id, "Supported languages: en (English), ha (Hausa), yo (Yoruba), ig (Igbo)");
       return;
     }
-    await this.conversation.setLanguage(msg.chat.id, lang);
+    await this.conversation.setLanguage(telegramChatId(msg), lang);
     this.bot.sendMessage(msg.chat.id, `🌐 Language set to *${supported[lang]}*`, { parse_mode: "Markdown" });
   }
 }

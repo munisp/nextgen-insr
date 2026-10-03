@@ -1,6 +1,14 @@
 import { Request, Response } from "express";
 import { ConversationEngine } from "../engine/conversation";
 import { WhatsAppClient } from "../clients/whatsapp";
+// 2026-10-03 (W8-B7): conversation-ID extraction is now channel-core's
+// canonical whatsappConversationId() (fail-closed: a message without a valid
+// E.164 `from` is skipped with a loud log instead of keying state under
+// "undefined", which would merge strangers' conversations into one key).
+import {
+  ConversationIdError,
+  whatsappConversationId,
+} from "@insureportal/channel-core";
 
 export class WhatsAppWebhookHandler {
   private engine: ConversationEngine;
@@ -26,7 +34,18 @@ export class WhatsAppWebhookHandler {
 
           const messages = change.value?.messages || [];
           for (const message of messages) {
-            const from = message.from;
+            // 2026-10-03 (W8-B7): canonical extractor; invalid identity skips
+            // this message (loudly) rather than corrupting shared state.
+            let from: string;
+            try {
+              from = whatsappConversationId(message);
+            } catch (err) {
+              if (err instanceof ConversationIdError) {
+                console.error(`[whatsapp-bot] dropping unidentifiable message: ${err.message}`);
+                continue;
+              }
+              throw err;
+            }
             const text = message.text?.body || "";
             const messageType = message.type;
 

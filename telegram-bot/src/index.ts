@@ -13,6 +13,11 @@ import { CLAIM_EVIDENCE_UNSUPPORTED, SERVICE_ERROR } from "./messages";
 import { InsuranceCommandHandler } from "./handlers/commands";
 import { ConversationManager } from "./engine/conversation";
 import { CallbackHandler } from "./handlers/callbacks";
+// 2026-10-03 (W8-B7): conversation-ID extraction is now channel-core's
+// canonical telegramChatId() — same numeric chat.id semantics as before, but
+// fail-closed (throws ConversationIdError, caught by the safe() wrapper)
+// instead of keying state under an absent/NaN id.
+import { telegramChatId } from "@insureportal/channel-core";
 
 const app = express();
 app.use(express.json());
@@ -33,7 +38,7 @@ function safe(chatIdOf: (msg: TelegramBot.Message) => number, fn: (msg: Telegram
     }
   };
 }
-const chatId = (msg: TelegramBot.Message) => msg.chat.id;
+const chatId = (msg: TelegramBot.Message) => telegramChatId(msg);
 
 // Register commands
 bot.onText(/\/start/, safe(chatId, (msg) => commandHandler.handleStart(msg)));
@@ -64,7 +69,7 @@ bot.on("callback_query", async (query) => {
 bot.on("message", (msg) => {
   if (msg.text?.startsWith("/")) return; // skip commands
   if (!msg.text) return; // photos/documents/locations handled below
-  conversationManager.processMessage(msg.chat.id, msg.text, msg.from?.language_code).then((response) => {
+  conversationManager.processMessage(telegramChatId(msg), msg.text, msg.from?.language_code).then((response) => {
     if (response.keyboard) {
       bot.sendMessage(msg.chat.id, response.text, {
         reply_markup: { inline_keyboard: response.keyboard },
