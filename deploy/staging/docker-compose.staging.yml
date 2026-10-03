@@ -262,37 +262,9 @@ services:
   # ║                 CORE APPLICATION SERVICES                    ║
   # ╚══════════════════════════════════════════════════════════════╝
 
-  portal:
-    build:
-      context: ../../customer-portal-full
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=staging
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=ngapp
-      - KEYCLOAK_CLIENT_ID=ngapp-portal
-      - TEMPORAL_ADDRESS=temporal:7233
-      - OPENSEARCH_URL=http://opensearch:9200
-      - PERMIFY_ADDRESS=http://permify:3476
-      - TIGERBEETLE_ADDRESS=tigerbeetle:3000
-      - DEMO_MODE=false
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - ngapp-net
+  # 2026-10-03 (W7-B11): `portal` service (customer-portal-full) removed —
+  # retired in favour of the monolith member portal (/member/*, W7-B1..B10).
+  # See docs/CUSTOMER_PORTAL_RETIREMENT.md.
 
   # ── Core Insurance Engines ──
   claims-adjudication-engine:

@@ -53,21 +53,22 @@ while true; do
     echo "--- Container Status ---"
     check_container_status "insurance-postgres"
     check_container_status "insurance-redis"
-    check_container_status "customer-portal"
+    # 2026-10-03 (W7-B11): customer-portal container check removed — service retired.
     check_container_status "telco-service"
     check_container_status "fraud-database"
     check_container_status "insurance-nginx"
     echo ""
     
     echo "--- Service Health ---"
-    check_service_health "Customer Portal" "http://localhost:3000"
+    # 2026-10-03 (W7-B11): Customer Portal health check removed — service retired;
+    # member portal now lives in the monolith (/member/*).
     check_service_health "Telco Service" "http://localhost:8010/docs"
     check_service_health "Fraud Database" "http://localhost:8011/docs"
     echo ""
     
     echo "--- Resource Usage ---"
     docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
-        insurance-postgres insurance-redis customer-portal telco-service fraud-database insurance-nginx 2>/dev/null || echo "No containers running"
+        insurance-postgres insurance-redis telco-service fraud-database insurance-nginx 2>/dev/null || echo "No containers running"
     echo ""
     
     echo "Press Ctrl+C to exit"

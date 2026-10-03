@@ -69,30 +69,10 @@ else
 fi
 echo ""
 
-# Run migrations for customer portal
-echo "======================================"
-echo "Running Customer Portal Migrations"
-echo "======================================"
-echo ""
-
-if [ -d "/home/ubuntu/customer-portal-full" ]; then
-    cd /home/ubuntu/customer-portal-full
-    
-    if [ -f "package.json" ]; then
-        echo "Running drizzle migrations..."
-        export DATABASE_URL=$DATABASE_URL
-        pnpm db:push 2>&1 | tee /tmp/portal-migration.log
-        
-        if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "✓ Customer portal schema applied successfully"
-        else
-            echo "⚠️  Warning: Portal migrations may have failed"
-            echo "Check /tmp/portal-migration.log for details"
-        fi
-    fi
-else
-    echo "⚠️  Warning: Customer portal not found"
-fi
+# 2026-10-03 (W7-B11): Customer Portal migration block removed — it cd'd into
+# /home/ubuntu/customer-portal-full and ran `pnpm db:push`; that app is retired
+# (succeeded by the monolith member portal, /member/*). Member-portal schema is
+# managed by the monolith's own drizzle migrations from the repo root.
 echo ""
 
 # Setup telco service database

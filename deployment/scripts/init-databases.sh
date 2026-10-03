@@ -43,6 +43,9 @@ echo ""
 echo "Creating databases..."
 
 # Customer Portal Database
+# 2026-10-03 (W7-B11): customer-portal-full is retired, but this DB is still
+# created so any existing customer_portal data survives; drop only after data
+# has been migrated into the monolith DB (see docs/CUSTOMER_PORTAL_RETIREMENT.md).
 PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d postgres -c "CREATE DATABASE customer_portal;" 2>/dev/null || echo "  - customer_portal already exists"
 
 # Telco Service Database
@@ -54,13 +57,11 @@ PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d postgres -c "CRE
 echo "✓ All databases created"
 echo ""
 
-# Initialize Customer Portal Schema
-echo "Initializing customer portal schema..."
-cd /home/ubuntu/customer-portal-full
-export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/customer_portal"
-pnpm db:push
-echo "✓ Customer portal schema initialized"
-echo ""
+# 2026-10-03 (W7-B11): customer-portal schema init removed — customer-portal-full/
+# is retired (succeeded by the monolith member portal, /member/*). The schema push
+# ran `pnpm db:push` from /home/ubuntu/customer-portal-full, which no longer exists.
+# The `customer_portal` database itself is intentionally still created above so any
+# existing data is preserved; migrate data into the monolith DB before dropping it.
 
 # Initialize Telco Service Schema
 echo "Initializing telco service schema..."
@@ -86,13 +87,9 @@ print('✓ Fraud database schema initialized')
 "
 echo ""
 
-# Seed customer portal with test data
-echo "Seeding customer portal with test data..."
-cd /home/ubuntu/customer-portal-full
-export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/customer_portal"
-node server/seed.mjs
-echo "✓ Customer portal seeded"
-echo ""
+# 2026-10-03 (W7-B11): customer-portal seeding removed — it ran
+# customer-portal-full/server/seed.mjs, retired with the portal. Use the monolith's
+# seed scripts (root seed.mjs) for member-portal data.
 
 echo "=== Database Initialization Complete ==="
 echo ""
