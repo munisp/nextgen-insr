@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, RefreshControl } from 'react-native';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
 // 2026-10-01 (R1c): was wallet.* (nonexistent) on hardcoded localhost —
@@ -10,13 +9,17 @@ import { useOfflineSync } from '../services/offlineSync';
 // fallback. A real balance is shown only when the server returned one;
 // offline we show the last CACHED balance, clearly labelled with its age;
 // with neither, we show an honest error state — never a made-up zero.
-import { trpcQuery } from '../config';
+// 2026-10-03 (W9-B4): customerWalletSystem.getBalance/getTransactions verified
+// member-safe before keeping (server/routers/customerWalletSystem.ts — both
+// resolve the session customer server-side from ctx.user.id; same procedures
+// the web member portal MemberWallet.tsx uses). Routed through memberTrpc for
+// Bearer + 401 refresh-retry consistency with the member* surfaces.
+import { memberQuery } from '../services/memberTrpc';
 
 interface WalletBalance { balance: number; currency: string }
 interface WalletResult extends WalletBalance { fromCache: boolean }
 
 export function DigitalWalletScreen() {
-  const { token } = useAuth();
   const { getCachedData, setCachedData } = useOfflineSync();
   const [topupAmount, setTopupAmount] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
@@ -25,8 +28,8 @@ export function DigitalWalletScreen() {
     queryKey: ['wallet.balance'],
     queryFn: async () => {
       try {
-        const data = await trpcQuery<WalletBalance>(
-          'customerWalletSystem.getBalance', null, token,
+        const data = await memberQuery<WalletBalance>(
+          'customerWalletSystem.getBalance', null,
         );
         await setCachedData('wallet', data, 60000);
         return { ...data, fromCache: false };
@@ -45,8 +48,8 @@ export function DigitalWalletScreen() {
   const { data: transactions, isError: txError, refetch: refetchTx } = useQuery({
     queryKey: ['wallet.transactions'],
     queryFn: async () => {
-      const result = await trpcQuery<{ transactions: any[]; total: number }>(
-        'customerWalletSystem.getTransactions', { limit: 50 }, token,
+      const result = await memberQuery<{ transactions: any[]; total: number }>(
+        'customerWalletSystem.getTransactions', { limit: 50 },
       );
       return result?.transactions ?? [];
     },

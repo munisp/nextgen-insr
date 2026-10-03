@@ -35,7 +35,36 @@ export const TRPC_BASE_URL = requireEnv(
   `http://${DEV_HOST}:3000`,
 ) + '/api/trpc';
 
-/** tRPC-over-HTTP helpers (v10 shape: {result:{data}} / {error}). */
+/**
+ * 2026-10-03 (W9-B4 round 2): the monolith tRPC server is configured with
+ * `transformer: superjson` (server/_core/trpc.ts:12), so a success response
+ * is `{result:{data:{json:<payload>, meta?}}}` — `result.data` is the
+ * superjson ENVELOPE, not the payload. The web client never sees this
+ * because @trpc/client is configured with the same transformer and
+ * deserializes natively; mobile calls over raw HTTP and must replicate that
+ * contract manually. Returning `result.data` unwrapped (the pre-round-2 bug)
+ * silently delivered `{json: payload}` to every screen, rendering empty or
+ * broken data without erroring.
+ *
+ * `unwrapTrpcData` deserializes the envelope with superjson (which also
+ * restores meta-typed values such as Dates — matching the web client's
+ * behavior exactly). A bare non-envelope payload is returned as-is so this
+ * never crashes against a hypothetical non-superjson deployment.
+ */
+import superjson, { type SuperJSONResult } from 'superjson';
+
+function unwrapTrpcData<T>(data: unknown): T {
+  if (
+    data !== null &&
+    typeof data === 'object' &&
+    'json' in (data as Record<string, unknown>)
+  ) {
+    return superjson.deserialize(data as SuperJSONResult) as T;
+  }
+  return data as T;
+}
+
+/** tRPC-over-HTTP helpers (v10 + superjson envelope: {result:{data:{json,meta?}}} / {error}). */
 export async function trpcQuery<T>(procedure: string, input: unknown, token?: string | null): Promise<T> {
   const res = await fetch(
     `${TRPC_BASE_URL}/${procedure}?input=${encodeURIComponent(JSON.stringify({ json: input ?? null }))}`,
@@ -45,7 +74,7 @@ export async function trpcQuery<T>(procedure: string, input: unknown, token?: st
   if (!res.ok || json?.error) {
     throw new Error(json?.error?.message || `Request failed (HTTP ${res.status})`);
   }
-  return json?.result?.data as T;
+  return unwrapTrpcData<T>(json?.result?.data);
 }
 
 export async function trpcMutation<T>(procedure: string, input: unknown, token?: string | null): Promise<T> {
@@ -61,5 +90,5 @@ export async function trpcMutation<T>(procedure: string, input: unknown, token?:
   if (!res.ok || json?.error) {
     throw new Error(json?.error?.message || `Request failed (HTTP ${res.status})`);
   }
-  return json?.result?.data as T;
+  return unwrapTrpcData<T>(json?.result?.data);
 }

@@ -1,285 +1,41 @@
 /**
- * TelematicsScreen.tsx
- * UBI (Usage-Based Insurance) telematics dashboard for mobile.
- * Shows driving score, trip history, and premium adjustment.
+ * TelematicsScreen.tsx — 2026-10-03 (W9-B4): HONEST UNAVAILABLE STATE.
+ *
+ * This screen previously called telematics.getDrivingScore /
+ * telematics.getHistory / telematics.recordEvent (innovationRouters.ts).
+ * Those are policy-linked UBI surfaces; per the W9-B4 mobile rewire, only
+ * the hardened member* routers (server/routers/member*.ts) are member-safe
+ * channels for this app, and NO member* telematics procedure exists. Rather
+ * than leave calls to a non-member router on a funds-adjacent (premium
+ * adjustment) surface, the screen now fails loud with an honest unavailable
+ * state. No score, trip, or premium-adjustment figure is fabricated.
+ *
+ * Server gap (feeds W9-B5): to restore this screen, the monolith would need
+ * a memberTelematics router — myDrivingScore/myTrips scoped by
+ * assertPolicyOwnershipDual, and a member-safe trip-ingest mutation with
+ * device attestation (recordEvent trusts client-supplied metrics today).
  */
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from "react-native";
-// 2026-10-01 (R1c): was relative fetch("/api/trpc/...") with a HARDCODED
-// policyId:1 (cross-customer data leak / wrong policy). Now uses the
-// centralized tRPC base URL and derives the policy from the user's REAL
-// policy list; shows an honest empty state when no policy exists.
-import { trpcQuery, trpcMutation } from "../config";
-import { policyApi } from "../services/api";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const TOKEN_KEY = '@insureportal/auth_token';
-
-async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
-}
-
-/** Resolve the user's first active policy ID via the BFF policy passthrough.
- *  Returns null when the user has no policies (honest empty state). */
-async function resolvePolicyId(): Promise<number | null> {
-  const res = await policyApi.list();
-  const policies: any[] = res.data?.policies ?? res.data ?? [];
-  if (!Array.isArray(policies) || policies.length === 0) return null;
-  const active = policies.find((p) => p.status === 'active') ?? policies[0];
-  const id = Number(active?.id);
-  return Number.isFinite(id) && id > 0 ? id : null;
-}
-
-interface TripEvent {
-  id: number;
-  eventType: string;
-  drivingScore: number;
-  distanceKm: number;
-  recordedAt: string;
-}
-
-interface DrivingScoreData {
-  score: number;
-  events: number;
-  hardBrakes: number;
-  speedingEvents: number;
-  premiumAdjustmentPct: number;
-  recommendation: string;
-}
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
 
 const TelematicsScreen: React.FC = () => {
-  const [scoreData, setScoreData] = useState<DrivingScoreData | null>(null);
-  const [trips, setTrips] = useState<TripEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [tracking, setTracking] = useState(false);
-  const [policyId, setPolicyId] = useState<number | null>(null);
-
-  const fetchData = async () => {
-    try {
-      // 2026-10-01 (R1c): derive the REAL policy — never hardcode policyId.
-      const pid = await resolvePolicyId();
-      setPolicyId(pid);
-      if (pid == null) {
-        setScoreData(null);
-        setTrips([]);
-        return;
-      }
-      const token = await getToken();
-      const score = await trpcQuery<DrivingScoreData>(
-        "telematics.getDrivingScore", { policyId: pid, periodDays: 30 }, token,
-      ).catch(() => null);
-      setScoreData(score);
-
-      const history = await trpcQuery<TripEvent[]>(
-        "telematics.getHistory", { policyId: pid, limit: 20 }, token,
-      ).catch(() => []);
-      setTrips(Array.isArray(history) ? history : []);
-    } catch (err) {
-      console.error("Failed to fetch telematics data:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, []);
-
-  const getScoreColor = (score: number) => {
-    if (score >= 85) return "#22c55e";
-    if (score >= 70) return "#f59e0b";
-    return "#ef4444";
-  };
-
-  const getScoreLabel = (score: number) => {
-    if (score >= 85) return "Excellent";
-    if (score >= 70) return "Good";
-    if (score >= 55) return "Fair";
-    return "Needs Improvement";
-  };
-
-  const startTracking = () => {
-    setTracking(true);
-    Alert.alert(
-      "Trip Tracking Started",
-      "Your driving is being monitored. Drive safely to earn discounts!",
-      [{ text: "OK" }]
-    );
-  };
-
-  const stopTracking = async () => {
-    setTracking(false);
-    if (policyId == null) return;
-    try {
-      const token = await getToken();
-      await trpcMutation("telematics.recordEvent", {
-        policyId,
-        deviceId: "mobile-gps",
-        eventType: "trip_end",
-        // TODO(2026-10-01, R1c): wire real GPS trip metrics; distance/duration
-        // omitted rather than fabricated.
-      }, token);
-      fetchData();
-    } catch {}
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading telematics data...</Text>
-      </View>
-    );
-  }
-
-  // 2026-10-01 (R1c): honest empty state — no policy, no telematics.
-  if (policyId == null) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.loadingText}>
-          No insurance policy found on your account. Telematics requires an
-          active policy — once you have one, your driving score appears here.
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
-    >
-      {/* Driving Score Card */}
-      <View style={styles.scoreCard}>
-        <Text style={styles.scoreTitle}>Your Driving Score</Text>
-        <View style={[styles.scoreCircle, { borderColor: getScoreColor(scoreData?.score ?? 0) }]}>
-          <Text style={[styles.scoreNumber, { color: getScoreColor(scoreData?.score ?? 0) }]}>
-            {scoreData?.score ?? "--"}
-          </Text>
-          <Text style={styles.scoreMax}>/100</Text>
-        </View>
-        <Text style={[styles.scoreLabel, { color: getScoreColor(scoreData?.score ?? 0) }]}>
-          {getScoreLabel(scoreData?.score ?? 0)}
-        </Text>
-
-        {/* Premium Adjustment */}
-        {scoreData && (
-          <View style={[
-            styles.adjustmentBadge,
-            { backgroundColor: scoreData.premiumAdjustmentPct < 0 ? "#dcfce7" : scoreData.premiumAdjustmentPct > 0 ? "#fee2e2" : "#f3f4f6" }
-          ]}>
-            <Text style={[
-              styles.adjustmentText,
-              { color: scoreData.premiumAdjustmentPct < 0 ? "#16a34a" : scoreData.premiumAdjustmentPct > 0 ? "#dc2626" : "#6b7280" }
-            ]}>
-              {scoreData.premiumAdjustmentPct < 0
-                ? `${Math.abs(scoreData.premiumAdjustmentPct)}% Premium Discount`
-                : scoreData.premiumAdjustmentPct > 0
-                ? `${scoreData.premiumAdjustmentPct}% Premium Loading`
-                : "No Premium Change"}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Stats Row */}
-      {scoreData && (
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{scoreData.events}</Text>
-            <Text style={styles.statLabel}>Total Events</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: "#ef4444" }]}>{scoreData.hardBrakes}</Text>
-            <Text style={styles.statLabel}>Hard Brakes</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: "#f59e0b" }]}>{scoreData.speedingEvents}</Text>
-            <Text style={styles.statLabel}>Speeding</Text>
-          </View>
-        </View>
-      )}
-
-      {/* Trip Tracking Button */}
-      <TouchableOpacity
-        style={[styles.trackButton, { backgroundColor: tracking ? "#ef4444" : "#3b82f6" }]}
-        onPress={tracking ? stopTracking : startTracking}
-      >
-        <Text style={styles.trackButtonText}>
-          {tracking ? "Stop Trip" : "Start Trip Tracking"}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Tips */}
-      <View style={styles.tipsCard}>
-        <Text style={styles.tipsTitle}>Tips to Improve Your Score</Text>
-        <Text style={styles.tip}>• Avoid hard braking — leave more following distance</Text>
-        <Text style={styles.tip}>• Stay within speed limits, especially at night</Text>
-        <Text style={styles.tip}>• Drive during off-peak hours when possible</Text>
-        <Text style={styles.tip}>• Score 85+ to earn a 15% premium discount</Text>
-      </View>
-
-      {/* Trip History */}
-      <Text style={styles.sectionTitle}>Recent Trips</Text>
-      {trips.length === 0 ? (
-        <Text style={styles.emptyText}>No trips recorded yet. Start tracking to earn discounts.</Text>
-      ) : (
-        trips.slice(0, 10).map((trip) => (
-          <View key={trip.id} style={styles.tripCard}>
-            <View style={styles.tripRow}>
-              <Text style={styles.tripType}>{trip.eventType.replace("_", " ").toUpperCase()}</Text>
-              <Text style={[styles.tripScore, { color: getScoreColor(trip.drivingScore) }]}>
-                Score: {trip.drivingScore}/100
-              </Text>
-            </View>
-            <Text style={styles.tripMeta}>
-              {trip.distanceKm ? `${trip.distanceKm} km` : ""} •{" "}
-              {new Date(trip.recordedAt).toLocaleDateString()}
-            </Text>
-          </View>
-        ))
-      )}
-    </ScrollView>
+    <View style={styles.center}>
+      <Text style={styles.title}>Telematics Unavailable</Text>
+      <Text style={styles.body}>
+        Driving-score and trip tracking are not available on this channel yet.
+        Your premium is never adjusted by unverified data — any usage-based
+        discount is applied only through your agent after verified telematics
+        review.
+      </Text>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc", padding: 16 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: { marginTop: 8, color: "#6b7280" },
-  scoreCard: { backgroundColor: "#fff", borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  scoreTitle: { fontSize: 16, fontWeight: "600", color: "#374151", marginBottom: 16 },
-  scoreCircle: { width: 120, height: 120, borderRadius: 60, borderWidth: 8, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  scoreNumber: { fontSize: 36, fontWeight: "800" },
-  scoreMax: { fontSize: 14, color: "#9ca3af" },
-  scoreLabel: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
-  adjustmentBadge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  adjustmentText: { fontSize: 14, fontWeight: "600" },
-  statsRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-  statCard: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 16, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
-  statValue: { fontSize: 24, fontWeight: "700", color: "#1f2937" },
-  statLabel: { fontSize: 12, color: "#6b7280", marginTop: 4 },
-  trackButton: { borderRadius: 12, padding: 16, alignItems: "center", marginBottom: 16 },
-  trackButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  tipsCard: { backgroundColor: "#eff6ff", borderRadius: 12, padding: 16, marginBottom: 16 },
-  tipsTitle: { fontSize: 14, fontWeight: "700", color: "#1d4ed8", marginBottom: 8 },
-  tip: { fontSize: 13, color: "#374151", marginBottom: 4 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#1f2937", marginBottom: 12 },
-  emptyText: { color: "#9ca3af", textAlign: "center", padding: 24 },
-  tripCard: { backgroundColor: "#fff", borderRadius: 12, padding: 16, marginBottom: 8, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  tripRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  tripType: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  tripScore: { fontSize: 14, fontWeight: "600" },
-  tripMeta: { fontSize: 12, color: "#9ca3af" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: "#f8fafc" },
+  title: { fontSize: 18, fontWeight: "700", color: "#1f2937", marginBottom: 12 },
+  body: { fontSize: 14, color: "#6b7280", textAlign: "center", lineHeight: 22 },
 });
 
 export default TelematicsScreen;

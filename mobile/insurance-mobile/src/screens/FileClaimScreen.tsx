@@ -10,13 +10,12 @@ import { useOfflineSync } from '../services/offlineSync';
 // procedure (caller's active policies only), and online submission calls
 // the real memberClaims.fileClaim mutation (server re-verifies policy
 // ownership). Offline submissions are queued — and labelled as queued.
-import { trpcQuery, trpcMutation } from '../config';
+// 2026-10-03 (W9-B4): routed through memberTrpc (Bearer + 401 refresh-retry).
 import { claimsApi } from '../services/api';
-import { useAuth } from '../store/authStore';
+import { memberQuery, memberMutation } from '../services/memberTrpc';
 
 export function FileClaimScreen({ navigation }: { navigation: any }) {
   const { enqueue, state } = useOfflineSync();
-  const { token } = useAuth();
   const [form, setForm] = useState({ type: '', description: '', amount: '', policyNumber: '' });
   const [evidence, setEvidence] = useState<Array<{ uri: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -28,8 +27,12 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
   const { data: policies, isLoading: policiesLoading } = useQuery<any[]>({
     queryKey: ['memberClaims.myPoliciesPicker'],
     queryFn: async () => {
-      const rows = await trpcQuery<any[]>('memberClaims.myPoliciesPicker', null, token);
-      return Array.isArray(rows) ? rows : [];
+      // 2026-10-03 (W9-B4 round 2): myPoliciesPicker returns
+      // `{ policies: rows }` (server/routers/memberClaims.ts:224), not a
+      // bare array — the pre-round-2 Array.isArray check silently rendered
+      // an empty picker. Read the real shape.
+      const res = await memberQuery<{ policies: any[] }>('memberClaims.myPoliciesPicker', null);
+      return res?.policies ?? [];
     },
   });
 
@@ -57,14 +60,14 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
           setSubmitting(false);
           return;
         }
-        await trpcMutation('memberClaims.fileClaim', {
+        await memberMutation('memberClaims.fileClaim', {
           policyId: selectedPolicyId,
           claimType: form.type,
           incidentDate: new Date().toISOString(),
           claimedAmount,
           incidentDescription: form.description,
           documents: [],
-        }, token);
+        });
         Alert.alert('Claim Filed', 'Your claim was submitted and accepted by the server.', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);

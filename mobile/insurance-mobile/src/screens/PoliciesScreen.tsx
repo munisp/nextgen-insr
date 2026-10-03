@@ -4,15 +4,18 @@ import { useQuery } from '@tanstack/react-query';
 import { policyApi } from '../services/api';
 import { useOfflineSync } from '../services/offlineSync';
 
+// 2026-10-03 (W9-B4): shape matches the mapped memberPolicies.myPolicies
+// rows (services/api.ts mapMemberPolicy) — numeric id, nullable provider,
+// nullable dates. No invented fields.
 interface Policy {
-  id: string;
+  id: number;
   policyNumber: string;
   type: string;
-  provider: string;
-  status: 'active' | 'expired' | 'pending' | 'cancelled';
+  provider: string | null;
+  status: string;
   premiumAmount: number;
-  startDate: string;
-  endDate: string;
+  startDate: string | Date | null;
+  endDate: string | Date | null;
   coverageAmount: number;
 }
 
@@ -62,7 +65,7 @@ export function PoliciesScreen({ navigation }: { navigation: any }) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.policyCard} onPress={() => navigation.navigate('PolicyDetail', { policyId: item.id })}>
             <View style={styles.policyHeader}>
@@ -72,12 +75,14 @@ export function PoliciesScreen({ navigation }: { navigation: any }) {
               </View>
             </View>
             <Text style={styles.policyNumber}>{item.policyNumber}</Text>
-            <Text style={styles.provider}>{item.provider}</Text>
+            {item.provider && <Text style={styles.provider}>{item.provider}</Text>}
             <View style={styles.policyFooter}>
               <Text style={styles.premium}>₦{item.premiumAmount?.toLocaleString()}/yr</Text>
               <Text style={styles.coverage}>Coverage: ₦{(item.coverageAmount / 1_000_000).toFixed(1)}M</Text>
             </View>
-            <Text style={styles.dates}>{new Date(item.startDate).toLocaleDateString()} — {new Date(item.endDate).toLocaleDateString()}</Text>
+            <Text style={styles.dates}>
+              {item.startDate ? new Date(item.startDate).toLocaleDateString() : '—'} — {item.endDate ? new Date(item.endDate).toLocaleDateString() : '—'}
+            </Text>
           </TouchableOpacity>
         )}
         ListEmptyComponent={<Text style={styles.empty}>{isLoading ? 'Loading...' : 'No policies found'}</Text>}

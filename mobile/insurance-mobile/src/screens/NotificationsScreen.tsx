@@ -1,15 +1,17 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
 // 2026-10-01 (R1c): was dashboard.notifications (nonexistent) on a hardcoded
 // localhost URL — rewired to the real mounted notificationInbox.list.
-import { trpcQuery } from '../config';
+// 2026-10-03 (W9-B4): notificationInbox.list verified member-safe before
+// keeping (server/routers/notificationInbox.ts — recipientId is forced to
+// String(ctx.user.id), F-12 wave-4b hardened; same procedure the web member
+// portal MemberNotifications.tsx uses). Routed through memberTrpc.
+import { memberQuery } from '../services/memberTrpc';
 
 export function NotificationsScreen() {
-  const { token } = useAuth();
   const { getCachedData, setCachedData } = useOfflineSync();
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -17,8 +19,8 @@ export function NotificationsScreen() {
     queryKey: ['notifications'],
     queryFn: async () => {
       try {
-        const result = await trpcQuery<{ notifications: any[]; total: number }>(
-          'notificationInbox.list', { limit: 50, offset: 0 }, token,
+        const result = await memberQuery<{ notifications: any[]; total: number }>(
+          'notificationInbox.list', { limit: 50, offset: 0 },
         );
         const data = result?.notifications ?? [];
         await setCachedData('notifications', data, 300000);

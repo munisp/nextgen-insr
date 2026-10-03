@@ -100,27 +100,35 @@ describe('response interceptor — 401 refresh retry', () => {
   });
 });
 
+// 2026-10-03 (W9-B4): honest-contract rewrite — premiumApi.pay and
+// policyApi.renew are no longer honest-failure stubs: W9-B4 wired REAL
+// member procedures (memberPayments.initiatePremiumPayment /
+// memberRenewals.requestRenewal). Their behavior is covered by the new
+// memberRewire.test.ts suite; the stubs' throw-tests are removed because
+// the contract changed. claimsApi.getTimeline remains a real stub.
 describe('honest unavailable APIs (no fabricated success)', () => {
-  it('premiumApi.pay throws an honest unavailable error', async () => {
-    await expect(premiumApi.pay('p1', {})).rejects.toThrow('not available');
-  });
-  it('policyApi.renew throws an honest unavailable error', async () => {
-    await expect(policyApi.renew('p1')).rejects.toThrow('not available');
+  it('premiumApi.calculate throws an honest unavailable error (no member premium calculator exists)', async () => {
+    await expect(premiumApi.calculate({})).rejects.toThrow('not available');
   });
   it('claimsApi.getTimeline throws an honest unavailable error', async () => {
     await expect(claimsApi.getTimeline('c1')).rejects.toThrow('not available');
   });
+  it('policyApi.getDocuments throws an honest unavailable error', async () => {
+    await expect(policyApi.getDocuments('1')).rejects.toThrow('not available');
+  });
 });
 
-describe('policyApi.getById — derived from the real list route', () => {
-  it('returns the matching policy from /api/v1/policies', async () => {
-    withAdapter(jest.fn(ok({ policies: [{ id: 7, type: 'Motor' }, { id: 9, type: 'Health' }] })));
-    const res = await policyApi.getById('9');
-    expect(res.data).toEqual({ id: 9, type: 'Health' });
-  });
-  it('throws an honest not-found error instead of fabricating a policy', async () => {
-    withAdapter(jest.fn(ok({ policies: [{ id: 7 }] })));
-    await expect(policyApi.getById('42')).rejects.toThrow('not found');
+// 2026-10-03 (W9-B4): honest-contract rewrite — policyApi.getById no longer
+// derives detail from the BFF list route; it calls the real
+// memberPolicies.myPolicy tRPC procedure (see memberRewire.test.ts for the
+// full member* rewiring coverage). These axios-adapter tests are replaced.
+describe('policyApi.getById — input validation (fail-closed)', () => {
+  it('rejects a non-numeric id without hitting the network', async () => {
+    const fetchSpy = jest.fn();
+    (global as any).fetch = fetchSpy;
+    await expect(policyApi.getById('not-a-number')).rejects.toThrow('not found');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    delete (global as any).fetch;
   });
 });
 
@@ -129,9 +137,17 @@ describe('claimsApi.list — rewired to memberClaims.myClaims (tRPC)', () => {
     await AsyncStorage.multiSet([
       [TOKEN_KEY, 'kc-at'], [REFRESH_KEY, 'rt'], [EXPIRES_KEY, String(Date.now() + 3600_000)],
     ]);
+    // 2026-10-03 (W9-B4 round 2): honest-contract rewrite. The pre-round-2
+    // mock was `{result:{data:[...]}}` — doubly fabricated: the real server
+    // wraps the payload in the superjson envelope `{result:{data:{json}}}`
+    // (server/_core/trpc.ts:12 transformer), and myClaims returns
+    // `{claims, count}` (server/routers/memberClaims.ts:111), never a bare
+    // array. Both defects passed silently under the old mock.
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ result: { data: [{ id: 1, claimNumber: 'CLM-1' }] } }),
+      json: async () => ({
+        result: { data: { json: { claims: [{ id: 1, claimNumber: 'CLM-1' }], count: 1 } } },
+      }),
     });
     const fetchSpy = (global as any).fetch as jest.Mock;
     const res = await claimsApi.list();
