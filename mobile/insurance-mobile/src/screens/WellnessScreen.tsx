@@ -15,13 +15,12 @@ import {
   TextInput,
   Alert,
 } from "react-native";
-// 2026-10-01 (R1c): was relative fetch("/api/trpc/...") which can never
-// resolve in a native app — rewired to the centralized tRPC base URL with
-// the user's auth token. Procedures (healthWearables.*) are real and mounted.
-import { trpcQuery, trpcMutation } from "../config";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const TOKEN_KEY = '@insureportal/auth_token';
+// 2026-10-03 (W9-B4): healthWearables.* verified member-safe before keeping
+// — ingestReading and getWellnessSummary (server/routers/innovationRouters.ts)
+// both scope strictly by customerId = ctx.user.id (server-derived, never
+// client-supplied). Routed through memberTrpc so Bearer attachment and the
+// 401 → Keycloak refresh → retry path match every other member surface.
+import { memberQuery, memberMutation } from "../services/memberTrpc";
 
 interface WellnessSummary {
   score: number;
@@ -53,9 +52,8 @@ const WellnessScreen: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
-      const data = await trpcQuery<WellnessSummary>(
-        "healthWearables.getWellnessSummary", { periodDays: 30 }, token,
+      const data = await memberQuery<WellnessSummary>(
+        "healthWearables.getWellnessSummary", { periodDays: 30 },
       );
       setSummary(data ?? null);
     } catch (err) {
@@ -70,8 +68,7 @@ const WellnessScreen: React.FC = () => {
 
   const submitManualReading = async () => {
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
-      const result = await trpcMutation<{ wellnessScore?: number; rewardPoints?: number }>(
+      const result = await memberMutation<{ wellnessScore?: number; rewardPoints?: number }>(
         "healthWearables.ingestReading",
         {
           deviceType: "manual",
@@ -82,7 +79,6 @@ const WellnessScreen: React.FC = () => {
           heartRateAvg: manualData.heartRateAvg ? parseInt(manualData.heartRateAvg) : undefined,
           bmi: manualData.bmi ? parseFloat(manualData.bmi) : undefined,
         },
-        token,
       );
       Alert.alert(
         "Reading Submitted",

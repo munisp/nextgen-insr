@@ -2,11 +2,15 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // 2026-10-01 (R1c): base URL comes from centralized config (build-time env,
 // localhost fallback only behind __DEV__) — no hardcoded endpoints here.
-import { API_BASE_URL, trpcQuery, trpcMutation } from '../config';
+import { API_BASE_URL } from '../config';
 // 2026-10-01 (W9-B3): tokens now come from the real Keycloak OIDC flow
 // (see keycloakAuth.ts). The previous refresh interceptor POSTed to
 // /api/v1/auth/refresh on the Go BFF — a route that does not exist.
 import { getValidAccessToken, refreshAccessToken, clearTokens } from './keycloakAuth';
+// 2026-10-03 (W9-B4): member* tRPC calls go through memberTrpc (Bearer +
+// 401 → Keycloak refresh → one retry, fail-closed).
+import { memberQuery, memberMutation } from './memberTrpc';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE = API_BASE_URL;
 
@@ -73,26 +77,73 @@ api.interceptors.response.use(
  *  the ONLY /api/v1 routes that exist are mobile_sessions, device/register,
  *  sync/pull, sync/push, sync, and policies. Every other path below is
  *  marked with its real availability — nothing here pretends to work. */
+/** 2026-10-03 (W9-B4): row shape returned by memberPolicies.myPolicies /
+ *  myPolicy (server/routers/memberPolicies.ts:112,175 — caller-scoped,
+ *  NOT_FOUND on foreign id). */
+interface MemberPolicyRow {
+  id: number;
+  policyNumber: string;
+  status: string;
+  coverageType: string | null;
+  sumInsured: string | null;
+  annualPremium: string | null;
+  startDate: string | Date | null;
+  endDate: string | Date | null;
+  renewalDate?: string | Date | null;
+  certificateNumber?: string | null;
+  productId: number | null;
+  productName: string | null;
+  productDescription?: string | null;
+  currency: string;
+}
+
+/** Map the real memberPolicies row onto the legacy screen shape. No fields
+ *  are invented: type/provider come from the real coverageType/productName,
+ *  amounts from the recorded annualPremium/sumInsured columns. */
+function mapMemberPolicy(r: MemberPolicyRow) {
+  return {
+    id: r.id,
+    policyNumber: r.policyNumber,
+    type: r.coverageType ?? r.productName ?? 'Policy',
+    provider: r.productName ?? null,
+    status: r.status,
+    premiumAmount: Number(r.annualPremium ?? 0),
+    coverageAmount: Number(r.sumInsured ?? 0),
+    startDate: r.startDate,
+    endDate: r.endDate,
+    renewalDate: r.renewalDate ?? null,
+    certificateNumber: r.certificateNumber ?? null,
+    productDescription: r.productDescription ?? null,
+    currency: r.currency ?? 'NGN',
+  };
+}
+
+// 2026-10-03 (W9-B4): rewired OFF the Go BFF /api/v1/policies passthrough
+// onto the hardened memberPolicies router (server/routers/memberPolicies.ts).
+// myPolicies/myPolicy scope rows to the caller (dual identity space);
+// myPolicy answers NOT_FOUND for foreign ids (non-enumerating).
 export const policyApi = {
-  // EXISTS on the BFF (user-scoped passthrough, Keycloak JWT middleware).
-  list: () => api.get('/api/v1/policies'),
-  // 2026-10-01 (W9-B3): GET /api/v1/policies/:id does NOT exist on the BFF.
-  // Detail is derived client-side from the real list response (same source,
-  // no fabrication). Throws an honest error when the policy is not found.
-  getById: async (id: string) => {
-    const res = await api.get('/api/v1/policies');
-    const policies: any[] = res.data?.policies ?? res.data ?? [];
-    const match = Array.isArray(policies) ? policies.find((p) => String(p.id) === String(id)) : null;
-    if (!match) throw new Error(`Policy ${id} not found in your account`);
-    return { data: match };
+  list: async () => {
+    const res = await memberQuery<{ policies: MemberPolicyRow[]; count: number }>(
+      'memberPolicies.myPolicies', { limit: 50, offset: 0 },
+    );
+    return { data: { policies: (res?.policies ?? []).map(mapMemberPolicy), count: res?.count ?? 0 } };
   },
-  // 2026-10-01 (W9-B3): NOT a BFF route (404) and no member self-service
-  // renewal tRPC procedure is mounted. Throws an honest error — renewal
-  // must never fake success.
-  renew: async (_id: string): Promise<never> => {
-    throw new Error('In-app renewal is not available yet — please contact your agent to renew this policy.');
+  getById: async (id: string | number) => {
+    const num = Number(id);
+    if (!Number.isInteger(num) || num <= 0) {
+      throw new Error(`Policy ${id} not found in your account`);
+    }
+    const row = await memberQuery<MemberPolicyRow>('memberPolicies.myPolicy', { id: num });
+    return { data: mapMemberPolicy(row) };
   },
-  // 2026-10-01 (W9-B3): NOT a BFF route (404). Throws an honest error.
+  // 2026-10-03 (W9-B4): REAL now — memberRenewals.requestRenewal
+  // (server/routers/memberRenewals.ts:157): ownership guard first, only
+  // active/bound policies, one-open-renewal duplicate guard. No funds move.
+  renew: (id: string | number) =>
+    memberMutation('memberRenewals.requestRenewal', { policyId: Number(id) }),
+  // 2026-10-01 (W9-B3): still no member-safe policy-documents procedure
+  // (2026-10-03 W9-B4: none exists under member*). Throws an honest error.
   getDocuments: async (_id: string): Promise<never> => {
     throw new Error('Policy documents are not available in the app yet.');
   },
@@ -103,18 +154,23 @@ export const policyApi = {
 // claimantId = ctx.user.id, fail-closed). The old /api/v1/claims BFF route
 // never existed. Returned in the axios-like {data:{claims}} shape screens use.
 export const claimsApi = {
-  list: async (token?: string | null) => {
-    const rows = await trpcQuery<any[]>(
-      'memberClaims.myClaims', { limit: 50, offset: 0 }, token ?? (await getValidAccessToken()),
+  // 2026-10-03 (W9-B4): routed through memberTrpc so a stale token gets one
+  // Keycloak refresh + retry instead of an immediate failure.
+  list: async () => {
+    // 2026-10-03 (W9-B4 round 2): the real memberClaims.myClaims returns
+    // `{ claims: rows, count }` (server/routers/memberClaims.ts:111), NOT a
+    // bare array. The pre-round-2 code typed it any[] and did
+    // `Array.isArray(rows) ? rows : []` — an object is never an array, so
+    // the claims list was silently empty forever. Map the real shape.
+    const res = await memberQuery<{ claims: any[]; count: number }>(
+      'memberClaims.myClaims', { limit: 50, offset: 0 },
     );
-    return { data: { claims: Array.isArray(rows) ? rows : [] } };
+    return { data: { claims: res?.claims ?? [] } };
   },
   // 2026-10-01 (W9-B3): rewired to the real memberClaims.myClaim (id-scoped
   // to the caller). No fabricated detail view.
-  getById: async (id: number, token?: string | null) => {
-    const data = await trpcQuery<any>(
-      'memberClaims.myClaim', { id }, token ?? (await getValidAccessToken()),
-    );
+  getById: async (id: number) => {
+    const data = await memberQuery<any>('memberClaims.myClaim', { id: Number(id) });
     return { data };
   },
   // 2026-10-01 (W9-B3): rewired to memberClaims.fileClaim — the real member
@@ -128,8 +184,8 @@ export const claimsApi = {
     claimedAmount: number;
     incidentDescription: string;
     documents?: string[];
-  }, token?: string | null) =>
-    trpcMutation('memberClaims.fileClaim', input, token),
+  }) =>
+    memberMutation('memberClaims.fileClaim', input),
   // 2026-10-01 (W9-B3): no evidence-upload or claim-timeline endpoint exists
   // for members (BFF 404s; no member tRPC equivalent). These throw honest
   // errors instead of returning fabricated empty timelines.
@@ -141,18 +197,119 @@ export const claimsApi = {
   },
 };
 
-// 2026-10-01 (W9-B3): NO premium endpoints exist on the BFF (all 404) and no
-// member-scoped premium tRPC router is mounted for self-service payment.
-// premiumApi methods throw honest errors — payment flows must not be faked.
+// 2026-10-03 (W9-B4): premium payments rewired onto the REAL hardened
+// memberPayments router (server/routers/memberPayments.ts):
+//   - myPremiumDue (line ~248): server-derived due ledger rows — the ONLY
+//     source of payable amounts; nothing client-entered.
+//   - myPremiums (line ~156): the caller's premium ledger history.
+//   - initiatePremiumPayment (line ~335): ownership gate → server-derived
+//     amount from the due ledger row (the input carries NO amount field) →
+//     F-02 idempotency (key + payload hash) → derived reference
+//     PP-{policyNumber}-{key} → real Paystack initialize. Gateway
+//     unconfigured → PRECONDITION_FAILED and NOTHING is written.
+//   - verifyPremiumPayment (line ~569): server-side Paystack verification +
+//     atomic credit; replay-safe (never credits twice).
+// Mobile cannot host the Paystack inline webview honestly in this build, so
+// initiation returns the real reference/authorizationUrl and the UI renders
+// the honest pending/verify state — never a fake success.
+
+export interface DuePremium {
+  id: number;
+  policyId: number;
+  premiumRef: string;
+  amount: string;
+  currency: string | null;
+  dueDate: string | null;
+  gracePeriodDays: number | null;
+  status: string;
+  policyNumber: string | null;
+}
+
+export interface PremiumDueView {
+  duePremiums: DuePremium[];
+  policies: Array<{
+    id: number;
+    policyNumber: string;
+    status: string;
+    annualPremium: string | null;
+    renewalDate: string | null;
+    productName: string | null;
+    currency: string;
+  }>;
+  disclosure: string;
+}
+
+export interface InitiatedPremiumPayment {
+  reference: string;
+  authorizationUrl: string | null;
+  accessCode?: string | null;
+  amount: string;
+  currency: string;
+  paymentId: number;
+  idempotent: boolean;
+}
+
+export interface VerifiedPremiumPayment {
+  reference: string;
+  status: string;
+  amount: string;
+  currency: string;
+  paymentId: number;
+  idempotent: boolean;
+}
+
+const IDEM_KEY_PREFIX = '@insureportal/premium_idem';
+
+/** Stable idempotency key per user payment intent (policyId:premiumId).
+ *  The key is generated once and persisted so a retry after a crash/network
+ *  failure replays the SAME intent (server returns the recorded result)
+ *  instead of initiating a second payment. Cleared only on verified success
+ *  (a new payment intent for the same due row then gets a fresh key). */
+async function idempotencyKeyFor(policyId: number, premiumId: number): Promise<string> {
+  const slot = `${IDEM_KEY_PREFIX}/${policyId}/${premiumId}`;
+  const existing = await AsyncStorage.getItem(slot);
+  if (existing && existing.length >= 8 && existing.length <= 64) return existing;
+  const key = `m-${policyId}-${premiumId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  await AsyncStorage.setItem(slot, key);
+  return key;
+}
+
+async function clearIdempotencyKey(policyId: number, premiumId: number): Promise<void> {
+  await AsyncStorage.removeItem(`${IDEM_KEY_PREFIX}/${policyId}/${premiumId}`);
+}
+
 export const premiumApi = {
+  /** Server-derived payable view: real due ledger rows + the disclosure. */
+  due: () => memberQuery<PremiumDueView>('memberPayments.myPremiumDue', null),
+  /** The caller's premium ledger history (optionally per policy). */
+  history: (policyId?: number) =>
+    memberQuery<{ premiums: any[]; count: number }>(
+      'memberPayments.myPremiums',
+      { ...(policyId != null ? { policyId: Number(policyId) } : {}), limit: 50, offset: 0 },
+    ),
+  /** Initiate a premium payment. NEVER sends an amount — the server derives
+   *  it from the due ledger row. Idempotency key is stable per intent. */
+  initiate: async (policyId: number, premiumId: number): Promise<InitiatedPremiumPayment> => {
+    const idempotencyKey = await idempotencyKeyFor(policyId, premiumId);
+    return memberMutation<InitiatedPremiumPayment>('memberPayments.initiatePremiumPayment', {
+      policyId, premiumId, idempotencyKey,
+    });
+  },
+  /** Verify a payment by its server-derived reference. On verified success
+   *  the intent's idempotency key is retired (payment complete — a future
+   *  payment of the same due row would be a NEW intent). */
+  verify: async (reference: string, policyId?: number, premiumId?: number): Promise<VerifiedPremiumPayment> => {
+    const res = await memberMutation<VerifiedPremiumPayment>('memberPayments.verifyPremiumPayment', { reference });
+    if (res?.status === 'success' && policyId != null && premiumId != null) {
+      await clearIdempotencyKey(policyId, premiumId);
+    }
+    return res;
+  },
+  // 2026-10-03 (W9-B4): no member-safe premium CALCULATOR exists for an
+  // arbitrary policy (memberPolicies.quote is productId-based, pre-bind).
+  // Throws an honest error — never a fabricated premium figure.
   calculate: async (_params: Record<string, unknown>): Promise<never> => {
     throw new Error('Premium calculation is not available in the app yet.');
-  },
-  pay: async (_policyId: string, _data: Record<string, unknown>): Promise<never> => {
-    throw new Error('In-app premium payment is not available yet — please pay via your agent or bank transfer using your policy number as reference.');
-  },
-  history: async (_policyId: string): Promise<never> => {
-    throw new Error('Premium payment history is not available in the app yet.');
   },
 };
 

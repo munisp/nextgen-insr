@@ -1,15 +1,17 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 
 // 2026-10-01 (R1c): was products.list (nonexistent) on hardcoded localhost —
 // rewired to the real mounted insuranceProductCatalog.listProducts.
-import { trpcQuery } from '../config';
+// 2026-10-03 (W9-B4): insuranceProductCatalog.listProducts is the public
+// product catalog read (serviceOrUserProcedure, no member data; the same
+// procedure the web member portal MemberProducts.tsx uses). Routed through
+// memberTrpc for consistent Bearer + refresh handling.
+import { memberQuery } from '../services/memberTrpc';
 
 export function ProductBrowserScreen({ navigation }: { navigation: any }) {
-  const { token } = useAuth();
   const { getCachedData, setCachedData } = useOfflineSync();
   const [refreshing, setRefreshing] = React.useState(false);
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
@@ -20,8 +22,8 @@ export function ProductBrowserScreen({ navigation }: { navigation: any }) {
       try {
         // listProducts returns {data, total}; normalize monolith field names
         // (coverageType/maxCoverageAmount) to what the UI renders.
-        const result = await trpcQuery<{ data: any[]; total: number }>(
-          'insuranceProductCatalog.listProducts', { limit: 100, offset: 0, productType: 'all', isActive: true }, token,
+        const result = await memberQuery<{ data: any[]; total: number }>(
+          'insuranceProductCatalog.listProducts', { limit: 100, offset: 0, productType: 'all', isActive: true },
         );
         const data = (result?.data ?? []).map((p: any) => ({
           ...p,

@@ -1,14 +1,20 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+// 2026-10-03 (W9-B4): detail now comes from memberPolicies.myPolicy (real,
+// caller-scoped, NOT_FOUND on foreign id). The old fabricated "Deductible ₦0"
+// row and empty "Coverage Items" card are removed — the real procedure does
+// not return those fields. "Renew Policy" is wired to the REAL
+// memberRenewals.requestRenewal mutation (was a dead button).
 import { policyApi } from '../services/api';
 import { useOfflineSync } from '../services/offlineSync';
 
 export function PolicyDetailScreen({ route, navigation }: { route: any; navigation: any }) {
   const { policyId } = route.params;
   const { getCachedData, setCachedData } = useOfflineSync();
+  const [renewing, setRenewing] = React.useState(false);
 
-  const { data: policy, isLoading } = useQuery({
+  const { data: policy, isLoading } = useQuery<any>({
     queryKey: ['policy', policyId],
     queryFn: async () => {
       try {
@@ -20,6 +26,20 @@ export function PolicyDetailScreen({ route, navigation }: { route: any; navigati
       }
     },
   });
+
+  async function handleRenew() {
+    setRenewing(true);
+    try {
+      await policyApi.renew(policy.id);
+      Alert.alert('Renewal Requested', 'Your renewal request was recorded. Your agent will confirm the renewed policy.');
+    } catch (e: any) {
+      // Fail loud with the real server reason (not renewable status,
+      // duplicate open renewal, ...). Never a fake success.
+      Alert.alert('Renewal Unavailable', e?.message || 'This policy cannot be renewed in the app right now.');
+    } finally {
+      setRenewing(false);
+    }
+  }
 
   if (isLoading || !policy) {
     return <View style={styles.center}><Text>Loading...</Text></View>;
@@ -48,7 +68,9 @@ export function PolicyDetailScreen({ route, navigation }: { route: any; navigati
           ['End Date', new Date(policy.endDate).toLocaleDateString()],
           ['Premium', `₦${policy.premiumAmount?.toLocaleString()}/year`],
           ['Coverage', `₦${(policy.coverageAmount / 1_000_000).toFixed(1)}M`],
-          ['Deductible', `₦${policy.deductible?.toLocaleString() || '0'}`],
+          // 2026-10-03 (W9-B4): only real memberPolicies.myPolicy fields below.
+          ...(policy.certificateNumber ? [['Certificate', policy.certificateNumber]] : []),
+          ...(policy.renewalDate ? [['Renewal Date', new Date(policy.renewalDate).toLocaleDateString()]] : []),
         ].map(([label, value]) => (
           <View key={label} style={styles.row}>
             <Text style={styles.label}>{label}</Text>
@@ -57,22 +79,16 @@ export function PolicyDetailScreen({ route, navigation }: { route: any; navigati
         ))}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Coverage Items</Text>
-        {(policy.coverageItems || []).map((item: any, i: number) => (
-          <View key={i} style={styles.coverageItem}>
-            <Text style={styles.coverageName}>{item.name}</Text>
-            <Text style={styles.coverageLimit}>₦{item.limit?.toLocaleString()}</Text>
-          </View>
-        ))}
-      </View>
+      {/* 2026-10-03 (W9-B4): the old "Coverage Items" card rendered a
+          permanently empty list — memberPolicies.myPolicy has no such field.
+          Removed rather than rendered as a fake empty state. */}
 
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('Claims', { screen: 'FileClaim', params: { policyId } })}>
           <Text style={styles.actionText}>File Claim</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.renewBtn]}>
-          <Text style={[styles.actionText, { color: '#2563eb' }]}>Renew Policy</Text>
+        <TouchableOpacity style={[styles.actionBtn, styles.renewBtn]} disabled={renewing} onPress={handleRenew}>
+          <Text style={[styles.actionText, { color: '#2563eb' }]}>{renewing ? 'Requesting…' : 'Renew Policy'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, styles.docBtn]}>
           <Text style={[styles.actionText, { color: '#64748b' }]}>View Documents</Text>

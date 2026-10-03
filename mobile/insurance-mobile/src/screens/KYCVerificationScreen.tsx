@@ -1,30 +1,38 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
-// 2026-10-01 (R1c): was kyc.gate / kyc.verifyBVN / kyc.verifyNIN (all
-// nonexistent) on hardcoded localhost. Status is rewired to the real mounted
-// customer.kyc.status; self-service BVN/NIN verification has NO monolith
-// equivalent, so it is replaced with an honest unavailable state below —
+// 2026-10-03 (W9-B4): rewired OFF customer.kyc.status onto the hardened
+// member-scoped memberIdentity.myKycStatus (server/routers/memberIdentity.ts:118
+// — resolves the session customer from ctx.user.id; PII-safe projection, no
+// bvn/nin/biometrics ever selected; honest "unstarted" empty state when the
+// member has no customer profile). Self-service BVN/NIN verification has NO
+// member-safe equivalent, so it stays an honest unavailable state below —
 // identity verification must never be faked (fail-closed).
-import { trpcQuery } from '../config';
+import { memberQuery } from '../services/memberTrpc';
 
-interface KycSession {
-  status?: string;
-  docType?: string;
-  createdAt?: string;
+/** Real shape of memberIdentity.myKycStatus (PII-safe). */
+interface MyKycStatus {
+  hasProfile: boolean;
+  hasSession: boolean;
+  status: string;
+  kycLevel: number;
+  session: {
+    id: number;
+    status: string | null;
+    docType: string | null;
+    createdAt: string | null;
+  } | null;
 }
 
 export function KYCVerificationScreen({ navigation }: { navigation: any }) {
-  const { token } = useAuth();
   const { getCachedData, setCachedData } = useOfflineSync();
 
   const { data: kycStatus, isLoading } = useQuery({
-    queryKey: ['customer.kyc.status'],
-    queryFn: async (): Promise<KycSession | null> => {
+    queryKey: ['memberIdentity.myKycStatus'],
+    queryFn: async (): Promise<MyKycStatus | null> => {
       try {
-        const data = await trpcQuery<KycSession | null>('customer.kyc.status', null, token);
+        const data = await memberQuery<MyKycStatus>('memberIdentity.myKycStatus', null);
         await setCachedData('kyc.status', data, 300000);
         return data;
       } catch {
@@ -33,8 +41,8 @@ export function KYCVerificationScreen({ navigation }: { navigation: any }) {
     },
   });
 
-  // 2026-10-01 (R1c): render only what customer.kyc.status really returns
-  // (latest KYC session or null). No fabricated tiers/steps.
+  // 2026-10-03 (W9-B4): render only what memberIdentity.myKycStatus really
+  // returns (status/kycLevel/session). No fabricated tiers/steps.
   const statusLabel = isLoading
     ? 'Loading…'
     : kycStatus?.status
@@ -60,8 +68,10 @@ export function KYCVerificationScreen({ navigation }: { navigation: any }) {
         ) : kycStatus ? (
           <>
             <Text style={styles.status}>Status: {statusLabel}</Text>
-            {kycStatus.docType && <Text style={styles.label}>Document type: {kycStatus.docType.replace(/_/g, ' ')}</Text>}
-            {kycStatus.createdAt && <Text style={styles.label}>Submitted: {new Date(kycStatus.createdAt).toLocaleDateString()}</Text>}
+            {kycStatus.hasProfile && <Text style={styles.label}>KYC level: {kycStatus.kycLevel}</Text>}
+            {kycStatus.session?.docType && <Text style={styles.label}>Document type: {kycStatus.session.docType.replace(/_/g, ' ')}</Text>}
+            {kycStatus.session?.createdAt && <Text style={styles.label}>Submitted: {new Date(kycStatus.session.createdAt).toLocaleDateString()}</Text>}
+            {!kycStatus.hasSession && <Text style={styles.label}>No KYC verification has been started for your account yet.</Text>}
           </>
         ) : (
           <Text style={styles.status}>No KYC verification has been started for your account yet.</Text>
