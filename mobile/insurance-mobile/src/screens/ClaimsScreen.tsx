@@ -21,7 +21,9 @@ export function ClaimsScreen({ navigation }: { navigation: any }) {
     },
   });
 
-  const claims = (data?.claims || []).filter((c: any) => filter === 'all' || c.status === filter);
+  // 2026-10-01 (W9-B3): claimsApi.list returns {claims} from the real
+  // memberClaims.myClaims tRPC procedure (or cached same-shape data).
+  const claims = (((data as any)?.claims) || []).filter((c: any) => filter === 'all' || c.status === filter);
   const statusColor: Record<string, string> = { approved: '#16a34a', pending: '#eab308', rejected: '#dc2626', processing: '#2563eb' };
 
   return (

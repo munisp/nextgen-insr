@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert } from 'react-native';
 import { useAuth } from '../store/authStore';
 
 export function ProfileScreen() {
@@ -20,10 +20,13 @@ export function ProfileScreen() {
         <Text style={s.sectionTitle}>Security</Text>
         <View style={s.settingRow}>
           <Text style={s.settingLabel}>{biometricType === 'face' ? 'Face ID' : 'Fingerprint'} Login</Text>
-          <Switch value={biometricEnabled} onValueChange={(v) => v ? enableBiometric() : disableBiometric()} trackColor={{ true: '#2563eb' }} />
+          <Switch value={biometricEnabled} onValueChange={async (v) => { if (v) { await enableBiometric(); } else { await disableBiometric(); } }} trackColor={{ true: '#2563eb' }} />
         </View>
-        <TouchableOpacity style={s.settingRow}><Text style={s.settingLabel}>Change Password</Text><Text style={s.arrow}>→</Text></TouchableOpacity>
-        <TouchableOpacity style={s.settingRow}><Text style={s.settingLabel}>Two-Factor Authentication</Text><Text style={s.arrow}>→</Text></TouchableOpacity>
+        {/* 2026-10-01 (W9-B3): credentials and 2FA are managed by Keycloak
+            (the platform IdP), not this app — these rows now say so instead
+            of being dead buttons that pretended a feature existed. */}
+        <TouchableOpacity style={s.settingRow} onPress={() => Alert.alert('Change Password', 'Passwords are managed on your secure InsurePortal account page (Keycloak). Use the password reset link on the sign-in screen.')}><Text style={s.settingLabel}>Change Password</Text><Text style={s.arrow}>→</Text></TouchableOpacity>
+        <TouchableOpacity style={s.settingRow} onPress={() => Alert.alert('Two-Factor Authentication', 'Two-factor authentication is configured on your InsurePortal account page (Keycloak), not in the app.')}><Text style={s.settingLabel}>Two-Factor Authentication</Text><Text style={s.arrow}>→</Text></TouchableOpacity>
       </View>
       <View style={s.section}>
         <Text style={s.sectionTitle}>Preferences</Text>

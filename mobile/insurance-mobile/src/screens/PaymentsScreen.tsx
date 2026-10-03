@@ -1,14 +1,25 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+// 2026-10-01 (W9-B3): premiumApi methods now throw honest errors (no premium
+// endpoints exist on the BFF). The "Pay Now" button surfaces that honestly
+// instead of silently doing nothing.
 import { premiumApi, policyApi } from '../services/api';
 import { useOfflineSync } from '../services/offlineSync';
 
 export function PaymentsScreen() {
   const { getCachedData, setCachedData } = useOfflineSync();
-  const { data } = useQuery({ queryKey: ['policies'], queryFn: async () => { try { const r = await policyApi.list(); await setCachedData('policies', r.data); return r.data; } catch { return await getCachedData('policies') || { policies: [] }; } } });
+  const { data } = useQuery({ queryKey: ['policies'], queryFn: async () => { try { const r = await policyApi.list(); await setCachedData('policies', r.data, 60 * 60 * 1000); return r.data; } catch { return await getCachedData('policies') || { policies: [] }; } } });
   const policies = data?.policies || [];
   const duePolicies = policies.filter((p: any) => p.status === 'active');
+
+  async function handlePay(policyId: string) {
+    try {
+      await premiumApi.pay(policyId, {});
+    } catch (e: any) {
+      Alert.alert('Payment Unavailable', e?.message || 'In-app premium payment is not available yet.');
+    }
+  }
 
   return (
     <ScrollView style={s.container}>
@@ -19,7 +30,7 @@ export function PaymentsScreen() {
           <View key={p.id} style={s.paymentRow}>
             <View><Text style={s.payType}>{p.type}</Text><Text style={s.payPolicy}>{p.policyNumber}</Text></View>
             <View style={s.payRight}><Text style={s.payAmount}>₦{p.premiumAmount?.toLocaleString()}</Text>
-              <TouchableOpacity style={s.payBtn}><Text style={s.payBtnText}>Pay Now</Text></TouchableOpacity>
+              <TouchableOpacity style={s.payBtn} onPress={() => handlePay(String(p.id))}><Text style={s.payBtnText}>Pay Now</Text></TouchableOpacity>
             </View>
           </View>
         ))}

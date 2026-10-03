@@ -4,10 +4,10 @@ import { Platform } from 'react-native';
 export class NotificationService {
   static initialize() {
     PushNotification.configure({
-      onRegister: (token) => {
+      onRegister: (token: any) => {
         console.log('FCM/APNS Token:', token);
       },
-      onNotification: (notification) => {
+      onNotification: (notification: any) => {
         console.log('Notification received:', notification);
         if (notification.data?.type === 'claim_update') {
           NotificationService.handleClaimUpdate(notification.data);

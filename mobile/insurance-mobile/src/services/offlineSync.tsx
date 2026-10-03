@@ -42,6 +42,10 @@ const CACHE_PREFIX = '@insureportal/cache/';
 const SYNC_INTERVAL = 30_000;
 // 2026-10-01 (R1c): endpoint from centralized config; no envless default.
 import { API_BASE_URL } from '../config';
+// 2026-10-01 (W9-B3): the BFF router is behind keycloakAuthMiddleware
+// (insurance-mobile-app/main.go:1266), so every sync call MUST carry a
+// Bearer token — previously this fetch sent none and would always 401.
+import { getStoredAccessToken } from './keycloakAuth';
 
 const API_BASE = API_BASE_URL;
 
@@ -54,7 +58,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     syncErrors: [],
     bandwidthMode: 'full',
   });
-  const dbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const dbRef = useRef<any | null>(null); // 2026-10-01 (W9-B3): react-native-sqlite-storage ships no types
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -139,6 +143,12 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
 
   async function attemptSync() {
     if (!dbRef.current || state.isSyncing || !state.isOnline) return;
+    // 2026-10-01 (W9-B3): the BFF is behind keycloakAuthMiddleware, so sync
+    // requires a Bearer token. If the user is signed out, defer the whole
+    // cycle WITHOUT consuming per-item retries (queued ops are not failed —
+    // they wait for a signed-in session).
+    const syncToken = await getStoredAccessToken();
+    if (!syncToken) return;
     setState((prev) => ({ ...prev, isSyncing: true }));
 
     try {
@@ -151,9 +161,12 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       for (let i = 0; i < results.rows.length; i++) {
         const row = results.rows.item(i);
         try {
+          // 2026-10-01 (W9-B3): attach the Keycloak Bearer token (fetched
+          // once per sync cycle above); the BFF auth middleware rejects
+          // unauthenticated batches.
           const response = await fetch(`${API_BASE}/api/v1/sync`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${syncToken}` },
             body: JSON.stringify({
               operationId: row.id,
               type: row.type,

@@ -3,20 +3,28 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import Geolocation from 'react-native-geolocation-service';
 import { agentApi } from '../services/api';
 
+// 2026-10-01 (W9-B3): /api/v1/agents/nearby does NOT exist on the Go BFF
+// (404) and agentApi.findNearby now throws an honest error. This screen
+// previously swallowed the failure and rendered an empty list as if a real
+// search found nobody. Now the failure is shown as unavailable, not "no
+// agents found".
 export function AgentLocatorScreen({ navigation }: { navigation: any }) {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
 
   useEffect(() => {
     Geolocation.getCurrentPosition(
       async (pos) => {
         try {
           const res = await agentApi.findNearby(pos.coords.latitude, pos.coords.longitude, 25);
-          setAgents(res.data.agents || []);
-        } catch { setAgents([]); }
+          setAgents((res as any).data.agents || []);
+        } catch (e: any) {
+          setUnavailable(e?.message || 'Agent lookup is unavailable');
+        }
         setLoading(false);
       },
-      () => { setLoading(false); },
+      () => { setUnavailable('Location unavailable — cannot search for nearby agents.'); setLoading(false); },
       { enableHighAccuracy: true, timeout: 15000 }
     );
   }, []);
@@ -28,18 +36,22 @@ export function AgentLocatorScreen({ navigation }: { navigation: any }) {
         <Text style={s.title}>Find an Agent</Text>
         <Text style={s.subtitle}>Nearest insurance agents to you</Text>
       </View>
-      <FlatList data={agents} keyExtractor={(a) => a.id}
-        renderItem={({ item }) => (
-          <View style={s.card}>
-            <Text style={s.agentName}>{item.name}</Text>
-            <Text style={s.agentSpecialty}>{item.specialty}</Text>
-            <Text style={s.agentDistance}>{item.distance?.toFixed(1)} km away</Text>
-            <Text style={s.agentPhone}>{item.phone}</Text>
-            <TouchableOpacity style={s.callBtn}><Text style={s.callBtnText}>Call Agent</Text></TouchableOpacity>
-          </View>
-        )}
-        ListEmptyComponent={<Text style={s.empty}>{loading ? 'Finding nearby agents...' : 'No agents found nearby'}</Text>}
-      />
+      {unavailable ? (
+        <View style={s.card}><Text style={s.empty}>{unavailable}</Text></View>
+      ) : (
+        <FlatList data={agents} keyExtractor={(a) => a.id}
+          renderItem={({ item }) => (
+            <View style={s.card}>
+              <Text style={s.agentName}>{item.name}</Text>
+              <Text style={s.agentSpecialty}>{item.specialty}</Text>
+              <Text style={s.agentDistance}>{item.distance?.toFixed(1)} km away</Text>
+              <Text style={s.agentPhone}>{item.phone}</Text>
+              <TouchableOpacity style={s.callBtn}><Text style={s.callBtnText}>Call Agent</Text></TouchableOpacity>
+            </View>
+          )}
+          ListEmptyComponent={<Text style={s.empty}>{loading ? 'Finding nearby agents...' : 'No agents found nearby'}</Text>}
+        />
+      )}
     </View>
   );
 }
