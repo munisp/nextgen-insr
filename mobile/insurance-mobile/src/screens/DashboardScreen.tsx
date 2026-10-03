@@ -95,6 +95,10 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
             { label: 'Pay Premium', icon: '💳', screen: 'Payments' },
             { label: 'Find Agent', icon: '📍', screen: 'AgentLocator' },
             { label: 'Emergency', icon: '🆘', screen: 'Emergency' },
+            // 2026-10-03 (W9-B5 wave 1): lifecycle screens in the Policies stack.
+            { label: 'Get Quote', icon: '🧾', screen: 'Policies', params: { screen: 'Quotes' } },
+            { label: 'Renewals', icon: '🔄', screen: 'Policies', params: { screen: 'Renewals' } },
+            { label: 'Endorsements', icon: '✏️', screen: 'Policies', params: { screen: 'Endorsements' } },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}
@@ -155,7 +159,8 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, color: '#64748b', marginTop: 4 },
   section: { marginHorizontal: 16, marginTop: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#0f172a', marginBottom: 12 },
-  actionsGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  // 2026-10-03 (W9-B5 wave 1): wraps so the added lifecycle actions fit.
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', rowGap: 12 },
   actionButton: { alignItems: 'center', width: '23%', backgroundColor: '#fff', paddingVertical: 16, borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   actionIcon: { fontSize: 28, marginBottom: 6 },
   actionLabel: { fontSize: 11, fontWeight: '600', color: '#334155', textAlign: 'center' },

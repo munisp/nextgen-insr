@@ -17,6 +17,11 @@ import { KYCVerificationScreen } from '../screens/KYCVerificationScreen';
 import { NotificationsScreen } from '../screens/NotificationsScreen';
 import { DigitalWalletScreen } from '../screens/DigitalWalletScreen';
 import { ProductBrowserScreen } from '../screens/ProductBrowserScreen';
+// 2026-10-03 (W9-B5 wave 1): quotes / endorsements / renewals member
+// screens (memberQuotes/memberEndorsements/memberRenewals routers).
+import { QuotesScreen } from '../screens/QuotesScreen';
+import { EndorsementsScreen } from '../screens/EndorsementsScreen';
+import { RenewalsScreen } from '../screens/RenewalsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
@@ -38,6 +43,10 @@ function PoliciesStack() {
       <Stack.Screen name="PoliciesList" component={PoliciesScreen} />
       <Stack.Screen name="PolicyDetail" component={PolicyDetailScreen} />
       <Stack.Screen name="ProductBrowser" component={ProductBrowserScreen} />
+      {/* 2026-10-03 (W9-B5 wave 1) */}
+      <Stack.Screen name="Quotes" component={QuotesScreen} />
+      <Stack.Screen name="Endorsements" component={EndorsementsScreen} />
+      <Stack.Screen name="Renewals" component={RenewalsScreen} />
     </Stack.Navigator>
   );
 }
