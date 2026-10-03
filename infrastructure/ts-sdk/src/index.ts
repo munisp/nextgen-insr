@@ -1,6 +1,7 @@
 /**
  * NGApp Infrastructure SDK — unified clients for all 12 platform components.
- * Used by customer-portal-full and other TypeScript services.
+ * Used by TypeScript services across the platform.
+ * (2026-10-03, W7-B11: customer-portal-full retired — dropped stale mention.)
  */
 
 export { Platform, PlatformConfig } from './platform';

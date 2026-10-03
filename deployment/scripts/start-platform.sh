@@ -65,7 +65,9 @@ echo ""
 
 # Start application services
 echo "Starting application services..."
-docker-compose up -d customer-portal telco-service fraud-database
+# 2026-10-03 (W7-B11): customer-portal dropped from startup — service retired;
+# `docker-compose up -d customer-portal` would now fail (no such service).
+docker-compose up -d telco-service fraud-database
 echo "✓ Application services started"
 echo ""
 

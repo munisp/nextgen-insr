@@ -241,21 +241,9 @@ services:
   # Application Services
   # ===========================================
 
-  customer-portal:
-    build:
-      context: ../customer-portal-full
-      dockerfile: ../docker/Dockerfile.react
-      args:
-        VITE_API_URL: http://localhost:8080/api
-        VITE_WS_URL: ws://localhost:8080/ws
-    container_name: insurance-customer-portal
-    ports:
-      - "3002:80"
-    depends_on:
-      - claims-adjudication
-      - policy-workflow
-    networks:
-      - insurance-network
+  # 2026-10-03 W7-B11: customer-portal service removed (built from retired
+  # ../customer-portal-full monolith app; see docs/CUSTOMER_PORTAL_RETIREMENT.md).
+  # No data loss: this file only referenced build contexts/ports, no volumes/data.
 
   claims-adjudication:
     build:
