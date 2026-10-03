@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -99,6 +100,32 @@ def _get_s3():
         return None
 
 
+# SQL identifiers (table/column/publication names) cannot be passed as query
+# parameters. Every identifier interpolated into SQL MUST pass this strict
+# validation and be composed via psycopg2.sql.Identifier (Semgrep
+# sql-injection fix — 2026-10-03, W7-B11). Fail-closed: invalid identifiers
+# raise ValueError before any SQL is executed.
+_SQL_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+# Allowlist of table names that may appear in dynamic SQL.
+_ALLOWED_TABLES = frozenset(t[0] for t in INSURANCE_TABLES)
+
+
+def _validate_identifier(name: str) -> str:
+    """Fail-closed validation of a SQL identifier."""
+    if not isinstance(name, str) or not _SQL_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL identifier rejected: {name!r}")
+    return name
+
+
+def _validate_table_name(name: str) -> str:
+    """Fail-closed: only known insurance-domain tables are queryable."""
+    _validate_identifier(name)
+    if name not in _ALLOWED_TABLES:
+        raise ValueError(f"Table not in CDC allowlist: {name!r}")
+    return name
+
+
 def _get_conn():
     """Return a psycopg2 connection or None."""
     try:
@@ -168,9 +195,18 @@ def _ensure_publication(conn) -> bool:
                 (PUBLICATION_NAME,),
             )
             if not cur.fetchone():
-                table_list = ", ".join(t[0] for t in INSURANCE_TABLES)
+                # Identifiers (publication/table names) cannot be parameterised;
+                # validate strictly and compose via psycopg2.sql.Identifier.
+                from psycopg2 import sql as _sql
+                pub = _sql.Identifier(_validate_identifier(PUBLICATION_NAME))
+                table_list = _sql.SQL(", ").join(
+                    _sql.Identifier(_validate_table_name(t[0]))
+                    for t in INSURANCE_TABLES
+                )
                 cur.execute(
-                    f"CREATE PUBLICATION {PUBLICATION_NAME} FOR TABLE {table_list}"
+                    _sql.SQL("CREATE PUBLICATION {} FOR TABLE {}").format(
+                        pub, table_list
+                    )
                 )
                 log.info(f"[PG-CDC] Created publication {PUBLICATION_NAME}")
         return True
@@ -302,16 +338,18 @@ def export_via_incremental_polling(
                     continue
                 since = now - timedelta(hours=since_hours)
                 try:
-                    cur.execute(
-                        f"""
-                        SELECT *
-                        FROM {table_name}
-                        WHERE {ts_col} >= %s
-                        ORDER BY {ts_col} ASC
-                        LIMIT %s
-                        """,
-                        (since, batch_size),
+                    # table_name/ts_col are SQL identifiers (not data): strict
+                    # allowlist/regex validation + psycopg2.sql.Identifier
+                    # composition; only `since`/`batch_size` are parameters.
+                    from psycopg2 import sql as _sql
+                    query = _sql.SQL(
+                        "SELECT * FROM {} WHERE {} >= %s ORDER BY {} ASC LIMIT %s"
+                    ).format(
+                        _sql.Identifier(_validate_table_name(table_name)),
+                        _sql.Identifier(_validate_identifier(ts_col)),
+                        _sql.Identifier(_validate_identifier(ts_col)),
                     )
+                    cur.execute(query, (since, batch_size))
                     rows = cur.fetchall()
                     for row in rows:
                         row_dict = dict(row)
@@ -353,11 +391,23 @@ def export_full_snapshot(table_name: str) -> Dict[str, Any]:
     if not conn:
         return {"status": "no_db", "rows": 0}
 
+    # Fail-closed: caller-supplied table_name must be a known insurance table.
+    try:
+        _validate_table_name(table_name)
+    except ValueError as e:
+        log.error(f"[PG-CDC] Snapshot rejected: {e}")
+        return {"status": "error", "error": str(e), "rows": 0}
+
     records: List[Dict] = []
     try:
         import psycopg2.extras
+        from psycopg2 import sql as _sql
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(f"SELECT * FROM {table_name} LIMIT 100000")
+            cur.execute(
+                _sql.SQL("SELECT * FROM {} LIMIT 100000").format(
+                    _sql.Identifier(table_name)
+                )
+            )
             rows = cur.fetchall()
             for row in rows:
                 row_dict = dict(row)

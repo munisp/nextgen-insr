@@ -9,8 +9,12 @@ RUN touch src/main.rs && cargo build --release
 
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates curl
-WORKDIR /root/
+# Run as non-root (Semgrep: missing USER). Port 8091 is unprivileged (>1024).
+RUN addgroup -S appuser && adduser -S appuser -G appuser
+WORKDIR /app
 COPY --from=builder /app/target/release/rust-middleware .
+RUN chown -R appuser:appuser /app
+USER appuser
 EXPOSE 8091
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD curl -f http://localhost:8091/health || exit 1
