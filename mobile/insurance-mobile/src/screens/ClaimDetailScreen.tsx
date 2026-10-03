@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { claimsApi } from '../services/api';
 import { useOfflineSync } from '../services/offlineSync';
@@ -16,10 +16,10 @@ export function ClaimDetailScreen({ route, navigation }: { route: any; navigatio
     },
   });
 
-  const { data: timeline } = useQuery({
-    queryKey: ['claimTimeline', claimId],
-    queryFn: async () => { try { return (await claimsApi.getTimeline(claimId)).data; } catch { return { events: [] }; } },
-  });
+  // 2026-10-01 (W9-B3): no claim-timeline endpoint exists for members (the
+  // old call hit a nonexistent BFF route and fell back to a fabricated
+  // `{events: []}`). Rendered as an honest unavailable state below.
+  const timelineUnavailable = true;
 
   if (!claim) return <View style={s.center}><Text>Loading...</Text></View>;
 
@@ -27,27 +27,28 @@ export function ClaimDetailScreen({ route, navigation }: { route: any; navigatio
     <ScrollView style={s.container}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}><Text style={s.back}>← Back</Text></TouchableOpacity>
-        <Text style={s.title}>{claim.type} Claim</Text>
-        <Text style={s.claimId}>#{claimId.slice(-8)}</Text>
+        {/* 2026-10-01 (W9-B3): field names match the real memberClaims rows
+            (claimType/claimedAmount) with legacy-shape tolerance. claimId is
+            numeric — String() before slice (was a crash on .slice). */}
+        <Text style={s.title}>{claim.claimType ?? claim.type} Claim</Text>
+        <Text style={s.claimId}>#{String(claimId).slice(-8)}</Text>
       </View>
       <View style={s.card}>
-        {[['Status', claim.status], ['Amount', `₦${claim.amount?.toLocaleString()}`], ['Filed', new Date(claim.filedAt).toLocaleDateString()], ['Policy', claim.policyNumber]].map(([l, v]) => (
+        {[['Status', claim.status], ['Amount', `₦${(claim.claimedAmount ?? claim.amount)?.toLocaleString()}`], ['Filed', new Date(claim.filedAt ?? claim.createdAt).toLocaleDateString()], ['Policy', claim.policyNumber]].map(([l, v]) => (
           <View key={l} style={s.row}><Text style={s.label}>{l}</Text><Text style={s.value}>{v}</Text></View>
         ))}
       </View>
       <View style={s.card}>
         <Text style={s.cardTitle}>Timeline</Text>
-        {(timeline?.events || []).map((ev: any, i: number) => (
-          <View key={i} style={s.timelineItem}>
-            <View style={s.dot} /><View style={{ flex: 1 }}>
-              <Text style={s.eventTitle}>{ev.title}</Text>
-              <Text style={s.eventDate}>{new Date(ev.timestamp).toLocaleString()}</Text>
-              {ev.description && <Text style={s.eventDesc}>{ev.description}</Text>}
-            </View>
-          </View>
-        ))}
+        {timelineUnavailable && (
+          <Text style={s.eventDesc}>Status timeline is not available in the app yet. Contact your agent for a detailed claim history.</Text>
+        )}
       </View>
-      <TouchableOpacity style={s.evidenceBtn}><Text style={s.evidenceBtnText}>Add Evidence</Text></TouchableOpacity>
+      {/* 2026-10-01 (W9-B3): evidence upload has no real endpoint — show an
+          honest explanation instead of a button that silently fails. */}
+      <TouchableOpacity style={s.evidenceBtn} onPress={() => Alert.alert('Evidence Upload', 'Evidence upload is not available in the app yet — your agent can attach documents to your claim.')}>
+        <Text style={s.evidenceBtnText}>Add Evidence</Text>
+      </TouchableOpacity>
       <View style={{ height: 40 }} />
     </ScrollView>
   );

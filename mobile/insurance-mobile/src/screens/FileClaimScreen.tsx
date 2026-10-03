@@ -1,28 +1,88 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import { useQuery } from '@tanstack/react-query';
 import { useOfflineSync } from '../services/offlineSync';
+// 2026-10-01 (W9-B3): this screen previously referenced undefined
+// `policies`/`selectedPolicyId` variables (it could not even compile) and
+// "filed" claims only into the offline queue with a success message. Now:
+// the policy picker reads the REAL memberClaims.myPoliciesPicker tRPC
+// procedure (caller's active policies only), and online submission calls
+// the real memberClaims.fileClaim mutation (server re-verifies policy
+// ownership). Offline submissions are queued — and labelled as queued.
+import { trpcQuery, trpcMutation } from '../config';
+import { claimsApi } from '../services/api';
+import { useAuth } from '../store/authStore';
 
 export function FileClaimScreen({ navigation }: { navigation: any }) {
   const { enqueue, state } = useOfflineSync();
+  const { token } = useAuth();
   const [form, setForm] = useState({ type: '', description: '', amount: '', policyNumber: '' });
   const [evidence, setEvidence] = useState<Array<{ uri: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<number | null>(null);
 
   const claimTypes = ['Motor Accident', 'Health/Medical', 'Property Damage', 'Life/Death', 'Marine Cargo', 'Fire/Burglary', 'Travel', 'Agricultural'];
 
+  // Real active-policy picker (memberClaims.myPoliciesPicker).
+  const { data: policies, isLoading: policiesLoading } = useQuery<any[]>({
+    queryKey: ['memberClaims.myPoliciesPicker'],
+    queryFn: async () => {
+      const rows = await trpcQuery<any[]>('memberClaims.myPoliciesPicker', null, token);
+      return Array.isArray(rows) ? rows : [];
+    },
+  });
+
   async function handleSubmit() {
     if (!form.type || !form.description) { Alert.alert('Required', 'Please fill in claim type and description'); return; }
+    if (selectedPolicyId == null) { Alert.alert('Required', 'Please select the policy this claim is for'); return; }
+    const claimedAmount = parseFloat(form.amount);
+    // memberClaims.fileClaim requires a positive claimedAmount — validate
+    // honestly instead of sending 0 and failing server-side.
+    if (!Number.isFinite(claimedAmount) || claimedAmount <= 0) {
+      Alert.alert('Required', 'Please enter a valid estimated amount (greater than ₦0)');
+      return;
+    }
     setSubmitting(true);
-    await enqueue({
-      type: 'CREATE', entity: 'claim',
-      payload: { ...form, evidence: evidence.map((e) => e.uri), filedAt: new Date().toISOString() },
-      maxRetries: 10, priority: 'high', conflictStrategy: 'client-wins',
-    });
+    try {
+      if (state.isOnline) {
+        // Real submission path — memberClaims.fileClaim. The app has no
+        // document-upload pipeline yet, so evidence photos cannot be
+        // attached online; say so honestly instead of dropping them.
+        if (evidence.length > 0) {
+          Alert.alert(
+            'Evidence Not Attached',
+            'Photo evidence cannot be uploaded from the app yet. File the claim now and your agent can attach the photos, or submit offline so the photos stay queued on this device.',
+          );
+          setSubmitting(false);
+          return;
+        }
+        await trpcMutation('memberClaims.fileClaim', {
+          policyId: selectedPolicyId,
+          claimType: form.type,
+          incidentDate: new Date().toISOString(),
+          claimedAmount,
+          incidentDescription: form.description,
+          documents: [],
+        }, token);
+        Alert.alert('Claim Filed', 'Your claim was submitted and accepted by the server.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      } else {
+        await enqueue({
+          type: 'CREATE', entity: 'claim',
+          payload: { ...form, policyId: selectedPolicyId, evidence: evidence.map((e) => e.uri), filedAt: new Date().toISOString() },
+          maxRetries: 10, priority: 'high', conflictStrategy: 'client-wins',
+        });
+        // 2026-10-01 (W9-B3): honest wording — queued, not "submitted".
+        Alert.alert('Claim Queued', 'Offline — your claim is queued on this device and will be submitted when you are back online.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+    } catch (e: any) {
+      Alert.alert('Claim Not Filed', e?.message || 'Submission failed — nothing was filed.');
+    }
     setSubmitting(false);
-    Alert.alert('Claim Filed', state.isOnline ? 'Your claim has been submitted.' : 'Claim queued — will submit when you\'re back online.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
   }
 
   async function addPhoto(source: 'camera' | 'gallery') {

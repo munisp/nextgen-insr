@@ -43,10 +43,10 @@ export function NotificationsScreen() {
       <Text style={styles.title}>Notifications</Text>
       {isLoading ? (
         <View style={styles.card}><Text style={styles.loading}>Loading notifications...</Text></View>
-      ) : notifications?.length === 0 ? (
+      ) : (notifications as any[])?.length === 0 ? (
         <View style={styles.card}><Text style={styles.empty}>No notifications</Text></View>
       ) : (
-        notifications?.map((n: any) => (
+        (notifications as any[])?.map((n: any) => (
           <TouchableOpacity key={n.id} style={[styles.card, !n.read && styles.unread]} accessibilityLabel={`Notification: ${n.title}`}>
             <View style={styles.row}>
               <Text style={styles.icon}>{typeIcons[n.type] || '📌'}</Text>

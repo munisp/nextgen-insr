@@ -42,8 +42,21 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
     setRefreshing(false);
   };
 
-  const stats = policies?.stats || {};
-  const claimStats = claims?.stats || {};
+  // 2026-10-01 (W9-B3): the BFF/tRPC responses carry no `stats` object and
+  // no "coverageScore" anywhere — those numbers were fabricated zeros. All
+  // figures below are now computed client-side from the REAL policy/claim
+  // arrays; the invented "Coverage Score" tile was replaced with total
+  // coverage (sum of real coverageAmount values).
+  const policyRows: any[] = (policies as any)?.policies ?? [];
+  const claimRows: any[] = (claims as any)?.claims ?? [];
+  const stats = {
+    active: policyRows.filter((p) => p.status === 'active').length,
+    totalPremium: policyRows.reduce((s, p) => s + (Number(p.premiumAmount) || 0), 0),
+    totalCoverage: policyRows.reduce((s, p) => s + (Number(p.coverageAmount) || 0), 0),
+  };
+  const claimStats = {
+    open: claimRows.filter((c) => c.status === 'pending' || c.status === 'processing').length,
+  };
 
   return (
     <ScrollView
@@ -69,8 +82,8 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
           <Text style={styles.statLabel}>Total Premium</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: '#16a34a' }]}>{stats.coverageScore || 0}%</Text>
-          <Text style={styles.statLabel}>Coverage Score</Text>
+          <Text style={[styles.statValue, { color: '#16a34a' }]}>₦{((stats.totalCoverage || 0) / 1_000_000).toFixed(1)}M</Text>
+          <Text style={styles.statLabel}>Total Coverage</Text>
         </View>
       </View>
 
@@ -97,7 +110,7 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Recent Activity</Text>
-        {(claims?.claims || []).slice(0, 3).map((claim: any) => (
+        {(claimRows || []).slice(0, 3).map((claim: any) => (
           <TouchableOpacity
             key={claim.id}
             style={styles.activityItem}
@@ -105,13 +118,15 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
           >
             <View style={[styles.statusDot, { backgroundColor: claim.status === 'approved' ? '#16a34a' : claim.status === 'pending' ? '#eab308' : '#dc2626' }]} />
             <View style={styles.activityContent}>
-              <Text style={styles.activityTitle}>{claim.type} Claim #{claim.id?.slice(-6)}</Text>
-              <Text style={styles.activityDate}>{new Date(claim.filedAt).toLocaleDateString()}</Text>
+              {/* 2026-10-01 (W9-B3): real memberClaims fields (claimType,
+                  numeric id, claimedAmount, createdAt/incidentDate). */}
+              <Text style={styles.activityTitle}>{claim.claimType ?? claim.type} Claim #{String(claim.id).slice(-6)}</Text>
+              <Text style={styles.activityDate}>{new Date(claim.createdAt ?? claim.filedAt ?? claim.incidentDate).toLocaleDateString()}</Text>
             </View>
-            <Text style={styles.activityAmount}>₦{(claim.amount || 0).toLocaleString()}</Text>
+            <Text style={styles.activityAmount}>₦{((claim.claimedAmount ?? claim.amount) || 0).toLocaleString()}</Text>
           </TouchableOpacity>
         ))}
-        {(!claims?.claims || claims.claims.length === 0) && (
+        {(claimRows.length === 0) && (
           <Text style={styles.emptyText}>No recent activity</Text>
         )}
       </View>

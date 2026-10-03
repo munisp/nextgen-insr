@@ -39,11 +39,11 @@ export function ProductBrowserScreen({ navigation }: { navigation: any }) {
 
   const categories = React.useMemo(() => {
     if (!products) return [];
-    const cats = [...new Set(products.map((p: any) => p.category))];
-    return cats.sort();
+    const cats = [...new Set((products as any[]).map((p: any) => p.category))];
+    return (cats as string[]).sort();
   }, [products]);
 
-  const filteredProducts = selectedCategory ? products?.filter((p: any) => p.category === selectedCategory) : products;
+  const filteredProducts = selectedCategory ? (products as any[])?.filter((p: any) => p.category === selectedCategory) : products;
 
   const onRefresh = async () => { setRefreshing(true); await refetch(); setRefreshing(false); };
   const formatCurrency = (n: number) => '₦' + (n || 0).toLocaleString('en-NG');
@@ -71,7 +71,7 @@ export function ProductBrowserScreen({ navigation }: { navigation: any }) {
       {isLoading ? (
         <View style={styles.card}><Text style={styles.empty}>Loading products...</Text></View>
       ) : (
-        filteredProducts?.map((product: any) => (
+        (filteredProducts as any[])?.map((product: any) => (
           <View key={product.id} style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={[styles.catDot, { backgroundColor: categoryColors[product.category] || '#6b7280' }]} />

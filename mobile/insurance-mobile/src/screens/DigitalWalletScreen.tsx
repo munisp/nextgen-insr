@@ -6,7 +6,14 @@ import { useOfflineSync } from '../services/offlineSync';
 
 // 2026-10-01 (R1c): was wallet.* (nonexistent) on hardcoded localhost —
 // rewired to the real mounted customerWalletSystem router.
+// 2026-10-01 (W9-B3): removed the fabricated `{balance: 0, currency:'NGN'}`
+// fallback. A real balance is shown only when the server returned one;
+// offline we show the last CACHED balance, clearly labelled with its age;
+// with neither, we show an honest error state — never a made-up zero.
 import { trpcQuery } from '../config';
+
+interface WalletBalance { balance: number; currency: string }
+interface WalletResult extends WalletBalance { fromCache: boolean }
 
 export function DigitalWalletScreen() {
   const { token } = useAuth();
@@ -14,33 +21,38 @@ export function DigitalWalletScreen() {
   const [topupAmount, setTopupAmount] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
 
-  const { data: wallet, isLoading, refetch } = useQuery({
+  const { data: wallet, isLoading, isError, error, refetch } = useQuery<WalletResult>({
     queryKey: ['wallet.balance'],
     queryFn: async () => {
       try {
-        const data = await trpcQuery<{ balance: number; currency: string }>(
+        const data = await trpcQuery<WalletBalance>(
           'customerWalletSystem.getBalance', null, token,
         );
         await setCachedData('wallet', data, 60000);
-        return data;
-      } catch {
-        return (await getCachedData('wallet')) || { balance: 0, currency: 'NGN' };
+        return { ...data, fromCache: false };
+      } catch (err) {
+        const cached = await getCachedData<WalletBalance>('wallet');
+        if (cached && typeof cached.balance === 'number') {
+          return { ...cached, fromCache: true };
+        }
+        // No real value available — propagate the error so the UI shows an
+        // honest failure instead of a fabricated balance.
+        throw err instanceof Error ? err : new Error('Balance unavailable');
       }
     },
   });
 
-  const { data: transactions } = useQuery({
+  const { data: transactions, isError: txError, refetch: refetchTx } = useQuery({
     queryKey: ['wallet.transactions'],
     queryFn: async () => {
-      try {
-        const result = await trpcQuery<{ transactions: any[]; total: number }>(
-          'customerWalletSystem.getTransactions', { limit: 50 }, token,
-        );
-        return result?.transactions ?? [];
-      } catch {
-        return [];
-      }
+      const result = await trpcQuery<{ transactions: any[]; total: number }>(
+        'customerWalletSystem.getTransactions', { limit: 50 }, token,
+      );
+      return result?.transactions ?? [];
     },
+    // 2026-10-01 (W9-B3): no silent empty-array fallback — a failed query is
+    // rendered as an error message below, not as "No transactions yet".
+    retry: 1,
   });
 
   // 2026-10-01 (R1c): the monolith customerWalletSystem.topUp is fail-closed
@@ -59,7 +71,7 @@ export function DigitalWalletScreen() {
     onError: (e: any) => Alert.alert('Top-Up Unavailable', e.message),
   });
 
-  const onRefresh = async () => { setRefreshing(true); await refetch(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await Promise.allSettled([refetch(), refetchTx()]); setRefreshing(false); };
 
   const formatCurrency = (n: number) => '₦' + (n || 0).toLocaleString('en-NG');
 
@@ -69,8 +81,27 @@ export function DigitalWalletScreen() {
 
       <View style={styles.balanceCard}>
         <Text style={styles.balanceLabel}>Available Balance</Text>
-        <Text style={styles.balanceAmount}>{formatCurrency(wallet?.balance || 0)}</Text>
-        <Text style={styles.currency}>{wallet?.currency || 'NGN'}</Text>
+        {isLoading ? (
+          <Text style={styles.balanceStatus} testID="wallet-loading">Loading…</Text>
+        ) : isError ? (
+          <>
+            <Text style={styles.balanceStatus} testID="wallet-error">Balance unavailable</Text>
+            <Text style={styles.balanceHint}>{(error as Error)?.message || 'Check your connection and try again'}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()} accessibilityLabel="Retry balance fetch">
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.balanceAmount} testID="wallet-balance">{formatCurrency(wallet?.balance ?? 0)}</Text>
+            <Text style={styles.currency}>{wallet?.currency ?? ''}</Text>
+            {wallet?.fromCache && (
+              <Text style={styles.balanceHint} testID="wallet-offline">
+                Last known balance — you are offline
+              </Text>
+            )}
+          </>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -90,7 +121,9 @@ export function DigitalWalletScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Recent Transactions</Text>
-        {Array.isArray(transactions) && transactions.length > 0 ? transactions.slice(0, 10).map((tx: any, i: number) => (
+        {txError ? (
+          <Text style={styles.empty} testID="wallet-tx-error">Transactions could not be loaded. Pull to refresh.</Text>
+        ) : Array.isArray(transactions) && transactions.length > 0 ? transactions.slice(0, 10).map((tx: any, i: number) => (
           <View key={tx.id || i} style={styles.txRow}>
             <View>
               <Text style={styles.txNarration}>{tx.narration || tx.type}</Text>
@@ -112,7 +145,11 @@ const styles = StyleSheet.create({
   balanceCard: { backgroundColor: '#2563eb', borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 20 },
   balanceLabel: { color: '#93c5fd', fontSize: 14, marginBottom: 4 },
   balanceAmount: { color: '#fff', fontSize: 36, fontWeight: '700' },
+  balanceStatus: { color: '#fff', fontSize: 20, fontWeight: '600', marginTop: 4 },
+  balanceHint: { color: '#bfdbfe', fontSize: 12, marginTop: 6, textAlign: 'center' },
   currency: { color: '#93c5fd', fontSize: 13, marginTop: 4 },
+  retryBtn: { marginTop: 10, backgroundColor: '#1d4ed8', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 },
+  retryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 12 },
   input: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 18, marginBottom: 12 },
