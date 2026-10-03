@@ -12,6 +12,15 @@ export declare class PlatformUnavailableError extends Error {
     readonly statusCode?: number;
     constructor(message: string, statusCode?: number);
 }
+export declare const PLATFORM_TIMEOUT_MIN_MS = 100;
+export declare const PLATFORM_TIMEOUT_MAX_MS = 120000;
+export declare const PLATFORM_TIMEOUT_DEFAULT_MS = 8000;
+/**
+ * Validate a fully-formed config object (fail-closed at construction so a
+ * bad config never defers to a first-call failure). Throws
+ * PlatformConfigError naming the exact problem. Returns the normalized cfg.
+ */
+export declare function validatePlatformConfig(cfg: PlatformConfig): PlatformConfig;
 /**
  * Load config from env, fail-fast. `serviceName` identifies the caller in
  * error messages and the x-channel-service header so the monolith can

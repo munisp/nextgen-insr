@@ -41,6 +41,72 @@ describe("loadPlatformConfig (fail-fast)", () => {
     expect(cfg.baseUrl).toBe("https://x");
     expect(cfg.timeoutMs).toBe(8000);
   });
+  // 2026-10-03 (W8-B7): construction-time validation (fail-closed).
+  it("rejects an unparseable PLATFORM_API_URL", () => {
+    expect(() =>
+      loadPlatformConfig("whatsapp-bot", {
+        PLATFORM_API_URL: "not a url",
+        PLATFORM_SERVICE_TOKEN: "t",
+      })
+    ).toThrow(PlatformConfigError);
+  });
+  it("rejects non-http(s) PLATFORM_API_URL schemes", () => {
+    expect(() =>
+      loadPlatformConfig("whatsapp-bot", {
+        PLATFORM_API_URL: "ftp://platform.example",
+        PLATFORM_SERVICE_TOKEN: "t",
+      })
+    ).toThrow(/http/);
+  });
+  it("rejects an explicitly invalid PLATFORM_API_TIMEOUT_MS (no silent default)", () => {
+    for (const bad of ["abc", "0", "50", "999999"]) {
+      expect(() =>
+        loadPlatformConfig("whatsapp-bot", {
+          PLATFORM_API_URL: "https://x",
+          PLATFORM_SERVICE_TOKEN: "t",
+          PLATFORM_API_TIMEOUT_MS: bad,
+        })
+      ).toThrow(/PLATFORM_API_TIMEOUT_MS/);
+    }
+    const ok = loadPlatformConfig("whatsapp-bot", {
+      PLATFORM_API_URL: "https://x",
+      PLATFORM_SERVICE_TOKEN: "t",
+      PLATFORM_API_TIMEOUT_MS: "3000",
+    });
+    expect(ok.timeoutMs).toBe(3000);
+  });
+  it("rejects an empty serviceName", () => {
+    expect(() =>
+      loadPlatformConfig("  ", {
+        PLATFORM_API_URL: "https://x",
+        PLATFORM_SERVICE_TOKEN: "t",
+      })
+    ).toThrow(/serviceName/);
+  });
+});
+
+describe("PlatformClient construction validation (DI path)", () => {
+  it("throws on construction when config is invalid", () => {
+    expect(() =>
+      createPlatformClient({ ...CFG, baseUrl: "::bad::" })
+    ).toThrow(PlatformConfigError);
+    expect(() => createPlatformClient({ ...CFG, serviceToken: " " })).toThrow(
+      /serviceToken/
+    );
+    expect(() => createPlatformClient({ ...CFG, timeoutMs: -1 })).toThrow(/timeoutMs/);
+    expect(() => createPlatformClient({ ...CFG, serviceName: "" })).toThrow(
+      /serviceName/
+    );
+  });
+  it("normalizes trailing slashes on baseUrl", () => {
+    const client = createPlatformClient({ ...CFG, baseUrl: "https://platform.example///" });
+    // Indirect proof: request URL has no double slash before /api/trpc.
+    fakeFetch(async (url: string) => {
+      expect(url).toContain("https://platform.example/api/trpc/p");
+      return { ok: true, json: async () => ({ result: { data: { json: 1 } } }) };
+    });
+    return client.query("p", {}).then((out) => expect(out).toBe(1));
+  });
 });
 
 describe("PlatformClient transport", () => {

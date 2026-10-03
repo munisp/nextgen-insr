@@ -7,6 +7,27 @@
 // engine stays local; the store, redis client and platform client it uses
 // ARE channel-core's (see src/lib/* and src/clients/platform.ts). Fed back as
 // a channel-core API gap: no multi-step flow/step-machine support.
+//
+// 2026-10-03 (W8-B7) — honest close-out of that gap: channel-core now HAS
+// first-class multi-step flow support (packages/channel-core/src/flows.ts,
+// engine-integrated, tested). Adoption here is still DEFERRED, deliberately:
+//   1. This engine's dispatch is not a plain step machine — it couples steps
+//      with WhatsApp interactive button/list id normalization
+//      (BUTTON_ID_INTENTS/BUTTON_ID_VALUES), where one inbound id both picks
+//      an intent AND supplies a data value ("motor_tp" → "Third Party");
+//      channel-core flows model intent selection and step answers as
+//      separate phases, so mapping this would split one user gesture.
+//   2. Terminal steps here are fail-closed platform calls with per-branch
+//      recovery copy (motor step-3 invalid value → distinct "start again"
+//      message AFTER reset; quote computed from two sequential catalog
+//      calls). FlowDefinition.complete() covers async terminals, but the
+//      mid-reset branching copy would need validator hooks that fire after
+//      reset — not the engine's model.
+//   3. The flows here are stable, short, fully tested (persistence.test.ts,
+//      fabrication.test.ts), and already fail-closed; a rewrite onto the new
+//      engine risks behavior drift for zero user-visible gain.
+// Trigger to revisit: if a NEW whatsapp flow is added, implement it as a
+// channel-core FlowDefinition and reassess migrating the old ones then.
 import { InsuranceIntentClassifier, InsuranceIntent } from "./intent";
 import { PlatformClient, PlatformUnavailableError } from "../clients/platform";
 // 2026-10-02 (C2-b11b12, audit B11): state shape + Redis store live in

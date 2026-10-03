@@ -13,6 +13,11 @@
 //   - handlers receive a SessionContext whose memberId is null when no
 //     account linking exists — member-data handlers must fail closed.
 import { ConversationStore } from "./conversationStore";
+// 2026-10-03 (W8-B7): multi-step flow support (see flows.ts). Flows are
+// declared per-intent; an in-progress flow (state.intent + state.step > 0)
+// takes precedence over classification, and an intent with a registered
+// flow but no flat handler auto-starts the flow.
+import { FlowDefinition, continueFlow, startFlow } from "./flows";
 import {
   handlerErrorReply,
   ReplyTemplateConfig,
@@ -55,6 +60,12 @@ export interface ChannelEngineDeps {
   classify?: (text: string) => Intent;
   /** Intent handlers; missing entries fall through to unknownIntentReply. */
   handlers: Record<string, IntentHandler>;
+  /**
+   * Multi-step flow definitions keyed by intent id (2026-10-03, W8-B7). An
+   * intent present here but NOT in `handlers` auto-starts its flow; an
+   * in-progress flow continues via the flow machine instead of dispatch.
+   */
+  flows?: Record<string, FlowDefinition>;
   /** Idle timeout after which in-progress flows are reset (default 10 min). */
   idleTimeoutMs?: number;
   /** Now() override for tests. */
@@ -127,21 +138,48 @@ export class ChannelEngine {
     msg: ChannelMessage,
     state: ConversationState
   ): Promise<Reply> {
+    // 2026-10-03 (W8-B7): an in-progress flow owns the conversation until it
+    // completes, is cancelled, or times out (idle reset in handleMessage).
+    const activeFlow =
+      state.intent && state.step > 0 ? this.deps.flows?.[state.intent] : undefined;
+    if (activeFlow) {
+      const decision = continueFlow(activeFlow, state, msg.text, this.deps.serviceName);
+      if (decision) {
+        if (decision.kind === "complete") {
+          try {
+            return await activeFlow.complete(decision.state);
+          } catch (err) {
+            logLoud(this.deps.serviceName, `flow "${activeFlow.intent}" completion`, msg.channelUserId, err);
+            return { text: handlerErrorReply(this.deps.replies) };
+          }
+        }
+        return decision.reply;
+      }
+    }
+
     const intent: Intent =
       msg.intentHint ??
       (this.deps.classify ? this.deps.classify(msg.text) : "unknown");
     state.intent = intent;
 
     const handler = this.deps.handlers[intent];
-    if (!handler) {
-      // Honest fallback: we say what we can do; we never fabricate.
+    if (handler) {
+      try {
+        return await handler(ctx, msg, state);
+      } catch (err) {
+        logLoud(this.deps.serviceName, `intent "${intent}"`, msg.channelUserId, err);
+        return { text: handlerErrorReply(this.deps.replies) };
+      }
+    }
+    // No flat handler: auto-start a registered flow for this intent.
+    const flow = this.deps.flows?.[intent];
+    if (flow) {
+      const decision = startFlow(flow, state);
+      if (decision.kind === "reply") return decision.reply;
+      // Unreachable today (startFlow always prompts); keep the union honest.
       return { text: unknownIntentReply(this.deps.replies) };
     }
-    try {
-      return await handler(ctx, msg, state);
-    } catch (err) {
-      logLoud(this.deps.serviceName, `intent "${intent}"`, msg.channelUserId, err);
-      return { text: handlerErrorReply(this.deps.replies) };
-    }
+    // Honest fallback: we say what we can do; we never fabricate.
+    return { text: unknownIntentReply(this.deps.replies) };
   }
 }

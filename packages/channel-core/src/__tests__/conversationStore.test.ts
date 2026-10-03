@@ -4,6 +4,9 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { RedisConversationStore } from "../conversationStore";
 import { closeRedisClients, getRedisClient } from "../redisClient";
+// 2026-10-03 (W8-B7): refuse to run if the Redis URL is not on the test
+// allowlist (loopback 6399/6379 or CHANNEL_CORE_TEST_REDIS_URL).
+import { assertTestRedisUrl } from "../testRedisGuard";
 
 interface TestState {
   userId: string;
@@ -11,7 +14,9 @@ interface TestState {
   data: Record<string, string>;
 }
 
-const REDIS_URL = process.env.REDIS_TEST_URL ?? "redis://127.0.0.1:6399";
+const REDIS_URL = assertTestRedisUrl(
+  process.env.REDIS_TEST_URL ?? "redis://127.0.0.1:6399"
+);
 const DEAD_URL = "redis://127.0.0.1:6499"; // nothing listens here
 
 function makeStore(url: string, keyPrefix: string) {

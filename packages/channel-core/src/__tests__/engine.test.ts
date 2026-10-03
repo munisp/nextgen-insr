@@ -7,7 +7,11 @@ import { RedisConversationStore } from "../conversationStore";
 import { closeRedisClients } from "../redisClient";
 import { ChannelMessage, ConversationState, SessionContext } from "../types";
 
-const REDIS_URL = process.env.REDIS_TEST_URL ?? "redis://127.0.0.1:6399";
+// 2026-10-03 (W8-B7): guard — tests refuse a non-allowlisted Redis URL.
+import { assertTestRedisUrl } from "../testRedisGuard";
+const REDIS_URL = assertTestRedisUrl(
+  process.env.REDIS_TEST_URL ?? "redis://127.0.0.1:6399"
+);
 
 const replies = { brandName: "InsurePortal", supportPhone: null, supportEmail: null };
 

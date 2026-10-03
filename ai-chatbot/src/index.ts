@@ -8,6 +8,10 @@ import { LanguageDetector } from "./language/detector";
 // token missing) is a boot error — loadPlatformConfig fails fast and names
 // the missing variable rather than silently degrading to fabricated answers.
 import { PlatformClient, loadPlatformConfig } from "./clients/platform";
+// 2026-10-03 (W8-B7): session-id extraction is now channel-core's canonical
+// webChatSessionId() — identical contract as before (client session_id, else
+// the documented "default" anonymous bucket), no longer hand-rolled here.
+import { webChatSessionId } from "@insureportal/channel-core";
 
 const app = express();
 app.use(express.json());
@@ -25,8 +29,8 @@ if (!platform) {
 const chatEngine = new ChatEngine(knowledgeBase, languageDetector, undefined, platform);
 
 app.post("/api/v1/chat", async (req, res) => {
-  const { message, session_id, language } = req.body;
-  const response = await chatEngine.respond(session_id || "default", message, language);
+  const { message, language } = req.body;
+  const response = await chatEngine.respond(webChatSessionId(req.body), message, language);
   res.json(response);
 });
 
