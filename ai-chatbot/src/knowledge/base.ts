@@ -1,4 +1,16 @@
+// 2026-10-03 (W8-B4, honest-replies fix from the W8-B1 triplication audit):
+// the pre-W8 FAQ answers FABRICATED contact details ("+234-800-NGAPP",
+// "*384*NGAPP#", "portal.ngapp.ng"), invented prices ("₦5,000/year",
+// "₦500/month", ...), and an invented SLA ("auto-approved in under 4 hours").
+// None of those are backed by configuration or the platform API. Answers are
+// now honest: they say what this chat can actually do and point at the NGApp
+// app or the env-configured support line (the "{support}" token below is
+// replaced at match time by channel-core's supportContactLine, which emits
+// SUPPORT_PHONE/SUPPORT_EMAIL when set and an honest app pointer when not).
+// Product names/prices, when asked for, come from the real catalog via
+// PlatformClient in engine/chat.ts — never from this file.
 import { SupportedLanguage } from "../language/detector";
+import { replyConfig, supportContactLine } from "../lib/replies";
 
 interface FAQEntry {
   question: Record<string, string>;
@@ -24,14 +36,14 @@ export class KnowledgeBase {
         pcm: "How I go buy motor insurance?",
       },
       answer: {
-        en: "You can buy motor insurance through:\n1. USSD: Dial *384*NGAPP#\n2. WhatsApp: Message +234-800-NGAPP\n3. Our portal: portal.ngapp.ng\n\nThird party starts from \u20A65,000/year.",
-        ha: "Kuna iya sayen inshorar mota ta:\n1. USSD: Buga *384*NGAPP#\n2. WhatsApp: Aika sako zuwa +234-800-NGAPP\n3. Shafin mu: portal.ngapp.ng",
-        pcm: "You fit buy motor insurance like this:\n1. USSD: Dial *384*NGAPP#\n2. WhatsApp: Send message to +234-800-NGAPP\n3. Website: portal.ngapp.ng\n\nThird party dey start from \u20A65,000/year.",
+        en: "You can buy motor insurance in the NGApp app. If you ask me for motor products, I can list our current ones from the live catalog — I never quote prices I cannot verify. For personal help, {support}.",
+        ha: "Kuna iya sayen inshorar mota a cikin app na NGApp. Idan ka tambaye ni game da kayayyakin mota, zan iya lissafa waɗanda muke da su yanzu daga catalog ɗin mu. Don taimako na kashin ka, {support}.",
+        pcm: "You fit buy motor insurance inside the NGApp app. If you ask me for motor products, I go list the ones we get now from our live catalog — I no dey quote price wey I no fit verify. For personal help, {support}.",
       },
       intent: "buy_motor",
       keywords: ["motor", "car", "vehicle", "insurance", "buy", "mota", "sayi"],
       actions: [
-        { label: "Get a Quote", action: "motor_quote" },
+        { label: "Get a Quote", action: "get_quote" },
         { label: "Talk to Agent", action: "talk_to_agent" },
       ],
     },
@@ -41,26 +53,26 @@ export class KnowledgeBase {
         pcm: "How I go file claim?",
       },
       answer: {
-        en: "To file a claim:\n1. WhatsApp: Send photos + description to +234-800-NGAPP\n2. USSD: Dial *384*NGAPP# > Option 4\n3. Portal: portal.ngapp.ng/claims\n\nClaims under \u20A650,000 are auto-approved in under 4 hours.",
-        pcm: "To file claim:\n1. WhatsApp: Send photos + wetin happen to +234-800-NGAPP\n2. USSD: Dial *384*NGAPP# > Option 4\n3. Website: portal.ngapp.ng/claims\n\nSmall claims under \u20A650,000 go approve fast fast.",
+        en: "To file a claim, please use the NGApp app, or {support}. I cannot register a claim in this chat yet, and I will never invent a claim reference or approval time — once you file through the app you get a real reference you can track.",
+        pcm: "To file claim, abeg use the NGApp app, or {support}. I no fit register claim inside this chat yet, and I no go ever invent claim reference or approval time — once you file am for app you go get correct reference wey you fit track.",
       },
       intent: "file_claim",
       keywords: ["claim", "file", "accident", "stolen", "damage", "report"],
       actions: [
         { label: "File Claim Now", action: "file_claim" },
-        { label: "Check Claim Status", action: "claim_status" },
+        { label: "Check Claim Status", action: "check_policy" },
       ],
     },
     {
       question: { en: "What is microinsurance?" },
       answer: {
-        en: "Microinsurance is affordable insurance for everyone:\n\n\u2022 Hospital Cash: \u20A6500/month for \u20A65,000/day cover\n\u2022 Funeral Cover: \u20A6500/month for \u20A6500,000 payout\n\u2022 Device Protect: \u20A6200/month\n\u2022 Crop Shield: \u20A61,000/season\n\nSign up in under 2 minutes via USSD or WhatsApp!",
+        en: "Microinsurance is affordable insurance with low, regular premiums. NGApp offers microinsurance products — I can list the current ones from the live catalog if you ask, and the NGApp app shows exact prices and coverage for each. For help choosing, {support}.",
       },
       intent: "microinsurance_info",
       keywords: ["micro", "cheap", "affordable", "small", "low cost"],
       actions: [
-        { label: "View Products", action: "micro_products" },
-        { label: "Sign Up", action: "micro_enroll" },
+        { label: "View Products", action: "get_quote" },
+        { label: "Sign Up", action: "buy_insurance" },
       ],
     },
   ];
@@ -74,7 +86,9 @@ export class KnowledgeBase {
       }, 0);
 
       if (matchScore >= 2) {
-        const answer = faq.answer[lang] || faq.answer.en || Object.values(faq.answer)[0];
+        const template = faq.answer[lang] || faq.answer.en || Object.values(faq.answer)[0];
+        // 2026-10-03 (W8-B4): substitute the honest, env-driven support line.
+        const answer = template.split("{support}").join(supportContactLine(replyConfig()));
         return {
           answer,
           confidence: Math.min(0.95, 0.5 + matchScore * 0.15),
