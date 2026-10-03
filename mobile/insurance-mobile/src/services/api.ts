@@ -652,6 +652,213 @@ export const disputesApi = {
     memberMutation<{ id: number; senderType: 'customer' }>('memberDisputes.replyDispute', input),
 };
 
+// ---------------------------------------------------------------------------
+// 2026-10-03 (W9-B5 wave 3): bills / airtime+mobile-money / FX / parametric /
+// phone-OTP member surface, mirroring the web member portal
+// (client/src/pages/member/MemberBills.tsx, MemberAirtime.tsx, MemberFx.tsx,
+// MemberParametric.tsx, MemberIdentity.tsx phone section — W7-B9/B10) on the
+// REAL hardened routers (server/routers/memberBillPayments.ts,
+// memberAirtime.ts, memberMobileMoney.ts, memberFxRates.ts,
+// parametricMember.ts, memberPhone.ts; mounted in server/routers.ts:1223,
+// 1248-1251, 1265). Shapes below are copied from the server router code —
+// never assumed.
+//
+// FUNDS DISCIPLINE (verified against the routers, 2026-10-03): NONE of these
+// routers exposes a money-moving mutation, so no idempotency-key lifecycle
+// (F-02) applies here — that discipline stays on premiumApi only:
+//   - memberBillPayments.ts:1-38 — deliberately NO pay mutation (billPayments.
+//     pay is a `transfer` funds op the `user` role has no permission for);
+//     no member bill history exists either (rows are not member-scopable).
+//   - memberAirtime.ts / memberMobileMoney.ts headers — no vend/cashIn/cashOut
+//     (financialProcedure rails, deferred to the reviewed funds wave).
+//   - memberFxRates.ts:5-8 — NO mutation proc; updateRates/refresh are broken
+//     authz on the base router and never exposed.
+//   - parametricMember.ts:17 — no mutations at all (trigger/payout ops are
+//     admin-only on parametricEngine).
+// Mobile therefore ships NO pay/purchase/exchange/trigger UI — mirroring the
+// web portal exactly (which also wires none).
+// ---------------------------------------------------------------------------
+
+/** Response shape from memberBillPayments.billers
+ *  (server/routers/memberBillPayments.ts:78-90 — static registry, no DB). */
+export interface MemberBillersView {
+  billers: Array<{ name: string; commissionRate: number; commissionPct: string }>;
+  limits: { minAmountNGN: number; maxAmountNGN: number; dailyLimitNGN: number };
+  configured: boolean;
+}
+
+export const billsApi = {
+  /** Biller catalog + platform limits + honest provider `configured` flag. */
+  billers: () => memberQuery<MemberBillersView>('memberBillPayments.billers', null),
+  /** Format-only customer-number check (memberBillPayments.ts:97-112). Never
+   *  authorises a payment — a valid result is a regex match only. zod-exact
+   *  input: { biller: min 2, customerNumber: min 1 }. */
+  validateCustomer: (input: { biller: string; customerNumber: string }) =>
+    memberQuery<{ valid: boolean; customerNumber: string; biller: string; message: string }>(
+      'memberBillPayments.validateCustomer', input,
+    ),
+};
+
+/** Row shape from memberAirtime.myHistory (memberAirtime.ts:104-125 — scoped
+ *  to the caller's phone server-side; ALL statuses verbatim). */
+export interface MemberAirtimeRow {
+  ref: string;
+  network: string | null;
+  phoneNumber: string | null;
+  amount: string | null;
+  status: string;
+  providerStatus: string | null;
+  failureReason: string | null;
+  createdAt: string | Date | null;
+}
+
+export interface MemberStatusSummary {
+  periodDays: number;
+  totalTransactions: number;
+  byStatus: Array<{ status: string; count: number; volumeNGN: number }>;
+}
+
+export const airtimeApi = {
+  myHistory: (input?: { limit?: number; offset?: number }) =>
+    memberQuery<{ history: MemberAirtimeRow[]; total: number }>(
+      'memberAirtime.myHistory',
+      { limit: input?.limit ?? 20, offset: input?.offset ?? 0 },
+    ),
+  mySummary: (input?: { periodDays?: number }) =>
+    memberQuery<MemberStatusSummary>(
+      'memberAirtime.mySummary', { periodDays: input?.periodDays ?? 30 },
+    ),
+};
+
+/** Row shape from memberMobileMoney.myTransactions
+ *  (server/routers/memberMobileMoney.ts:125-146). */
+export interface MemberMomoTxRow {
+  ref: string;
+  type: string | null;
+  amount: string | null;
+  fee: string | null;
+  status: string;
+  provider: string | null;
+  providerStatus: string | null;
+  createdAt: string | Date | null;
+}
+
+/** Provider enum exactly as server zod (memberMobileMoney.ts PROVIDERS). */
+export const MOMO_PROVIDERS = ['MTN MoMo', 'Airtel Money', 'Glo Xtra', '9PSB'] as const;
+export type MomoProvider = (typeof MOMO_PROVIDERS)[number];
+
+export const mobileMoneyApi = {
+  providers: () =>
+    memberQuery<{
+      providers: Array<{ name: string; cashInCommission: number; cashOutCommission: number }>;
+      limits: { minAmountNGN: number; maxAmountNGN: number; dailyLimitNGN: number };
+      configured: boolean;
+    }>('memberMobileMoney.providers', null),
+  myTransactions: (input?: { provider?: MomoProvider; limit?: number; offset?: number }) =>
+    memberQuery<{ transactions: MemberMomoTxRow[]; count: number }>(
+      'memberMobileMoney.myTransactions',
+      {
+        limit: input?.limit ?? 20, offset: input?.offset ?? 0,
+        ...(input?.provider ? { provider: input.provider } : {}),
+      },
+    ),
+  /** Detail by ref — NOT_FOUND non-enumerating on foreign/nonexistent ref
+   *  (memberMobileMoney.ts:160-209). */
+  myTransaction: (ref: string) =>
+    memberQuery<{ transaction: MemberMomoTxRow & { failureReason: string | null } }>(
+      'memberMobileMoney.myTransaction', { ref },
+    ),
+  mySummary: (input?: { periodDays?: number }) =>
+    memberQuery<MemberStatusSummary>(
+      'memberMobileMoney.mySummary', { periodDays: input?.periodDays ?? 30 },
+    ),
+};
+
+export const fxApi = {
+  /** The published EUR-base rate book; empty map + null timestamp when none
+   *  — never fabricated (memberFxRates.ts:109-128). */
+  rates: () =>
+    memberQuery<{ baseCurrency: string; rates: Record<string, number>; lastUpdated: string | Date | null }>(
+      'memberFxRates.rates', null,
+    ),
+  /** Codes derived from the stored book (memberFxRates.ts:173-179). */
+  currencies: () =>
+    memberQuery<{ currencies: Array<{ code: string; rate: number }>; baseCurrency: string }>(
+      'memberFxRates.currencies', null,
+    ),
+  /** EUR-base conversion over the stored book; PRECONDITION_FAILED (surfaced
+   *  verbatim) when the book is missing/malformed (memberFxRates.ts:130-171).
+   *  zod-exact: from/to are /^[A-Z]{3}$/, amount > 0. */
+  convert: (input: { from: string; to: string; amount: number }) =>
+    memberQuery<{ from: string; to: string; amount: number; convertedAmount: number; rate: number }>(
+      'memberFxRates.convert', input,
+    ),
+  /** Real Frankfurter/ECB time-series (memberFxRates.ts:189-235). */
+  historical: (input: { base: string; target: string; days: number }) =>
+    memberQuery<{ base: string; target: string; timeseries: Array<{ date: string; rate: number }>; source: string }>(
+      'memberFxRates.historical', input,
+    ),
+};
+
+/** Row shape from parametricMember.myCoverage
+ *  (server/routers/parametricMember.ts:46-90 — policies.customerId =
+ *  ctx.user.id, active parametric product mapping only). */
+export interface ParametricCoverageRow {
+  policyId: number;
+  productName: string | null;
+  coveredPeril: string | null;
+  payoutAmount: string | null;
+  currency: string;
+  status: string;
+  triggerStatus: string | null;
+}
+
+/** Row shape from parametricMember.myPayouts
+ *  (parametricMember.ts:118-141 — claim-scoped IDOR guard: claimantId =
+ *  ctx.user.id). */
+export interface ParametricPayoutRow {
+  id: number;
+  eventId: number;
+  claimId: number;
+  policyId: number;
+  amount: string | null;
+  currency: string;
+  status: string | null;
+  createdAt: string | Date | null;
+}
+
+export const parametricApi = {
+  myCoverage: () =>
+    memberQuery<{ coverage: ParametricCoverageRow[] }>('parametricMember.myCoverage', null),
+  myPayouts: (input?: { limit?: number; offset?: number }) =>
+    memberQuery<{ payouts: ParametricPayoutRow[]; count: number }>(
+      'parametricMember.myPayouts',
+      { limit: input?.limit ?? 50, offset: input?.offset ?? 0 },
+    ),
+};
+
+// Phone ownership verification (memberPhone.ts:93-114). The input schemas
+// carry NO userId/customerId — the caller's own customer profile is required
+// server-side (NOT_FOUND, non-enumerating) and the OTP is delivered to the
+// CLAIMED phone (possession is the proof). Per-phone throttle (5 requests/hr)
+// and the 5-attempt fail-closed lock live server-side; the API returns
+// {success, message}/{verified} only — no cooldown fields, so no client-side
+// countdown is fabricated (web parity, MemberIdentity.tsx W7-B9).
+export const memberPhoneApi = {
+  /** Step 1: request an OTP. zod-exact input: { phone: 10..15 chars } only. */
+  requestPhoneOtp: (phone: string) =>
+    memberMutation<{ success: boolean; message?: string }>(
+      'memberPhone.requestPhoneOtp', { phone },
+    ),
+  /** Step 2: verify. zod-exact input: { phone: 10..15, otp: exactly 6 }.
+   *  Wrong code → { verified: false } or a server error surfaced verbatim;
+   *  never treated as success unless verified === true. */
+  verifyPhoneOtp: (input: { phone: string; otp: string }) =>
+    memberMutation<{ verified?: boolean }>(
+      'memberPhone.verifyPhoneOtp', input,
+    ),
+};
+
 // 2026-10-01 (W9-B3): /api/v1/agents/* does not exist on the BFF (404).
 // Throws an honest error instead of fabricating a nearby-agents list.
 export const agentApi = {
