@@ -29,6 +29,9 @@ export interface MockQueryResult {
 
 const queryResults = new Map<string, MockQueryResult>();
 const mutationCalls: { path: string; input: unknown }[] = [];
+/** Inputs recorded for <path>.useQuery(input) calls (W7-B10) — lets tests
+ *  assert exact query payloads (e.g. convert params) at the boundary. */
+const queryCalls: { path: string; input: unknown }[] = [];
 
 /** Scriptable mutation outcome (W7-B5): when registered, mutate() invokes
  *  the caller's onSuccess(data) or onError(error) — the same contract the
@@ -58,11 +61,17 @@ export function resetTrpcMock(): void {
   queryResults.clear();
   mutationCalls.length = 0;
   mutationBehaviors.clear();
+  queryCalls.length = 0;
 }
 
 /** Inputs recorded for <path>.useMutation().mutate(...) calls. */
 export function getMutationCalls(path: string): unknown[] {
   return mutationCalls.filter(c => c.path === path).map(c => c.input);
+}
+
+/** Inputs recorded for <path>.useQuery(input) calls (W7-B10). */
+export function getQueryCalls(path: string): unknown[] {
+  return queryCalls.filter(c => c.path === path).map(c => c.input);
 }
 
 const DEFAULT_QUERY: Required<Omit<MockQueryResult, "data" | "error">> & {
@@ -121,7 +130,10 @@ function makeTrpcProxy(path: string[]): unknown {
         case "useQuery":
         case "useSuspenseQuery": {
           const key = path.join(".");
-          return () => normalizeQuery(queryResults.get(key) ?? {});
+          return (input?: unknown) => {
+            queryCalls.push({ path: key, input });
+            return normalizeQuery(queryResults.get(key) ?? {});
+          };
         }
         case "useInfiniteQuery": {
           const key = path.join(".");

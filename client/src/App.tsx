@@ -94,6 +94,22 @@ const MemberWallet = lazy(() => import("./pages/member/MemberWallet"));
 const MemberSavings = lazy(() => import("./pages/member/MemberSavings"));
 const MemberLoyalty = lazy(() => import("./pages/member/MemberLoyalty"));
 const MemberReferrals = lazy(() => import("./pages/member/MemberReferrals"));
+// 2026-10-04 (W7-B8): member contact surfaces — support tickets + feedback,
+// notification inbox, transaction disputes (real member* routers).
+const MemberSupport = lazy(() => import("./pages/member/MemberSupport"));
+const MemberNotifications = lazy(
+  () => import("./pages/member/MemberNotifications")
+);
+const MemberDisputes = lazy(() => import("./pages/member/MemberDisputes"));
+const MemberIdentity = lazy(() => import("./pages/member/MemberIdentity"));
+// 2026-10-06 (W7-B10): member money-tool & catalog surfaces — bills catalog
+// + validation, airtime & mobile money (read-only), FX rates/convert/
+// historical, parametric coverage/payouts, product marketplace browse.
+const MemberBills = lazy(() => import("./pages/member/MemberBills"));
+const MemberAirtime = lazy(() => import("./pages/member/MemberAirtime"));
+const MemberFx = lazy(() => import("./pages/member/MemberFx"));
+const MemberParametric = lazy(() => import("./pages/member/MemberParametric"));
+const MemberProducts = lazy(() => import("./pages/member/MemberProducts"));
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
@@ -1387,6 +1403,25 @@ function AuthenticatedApp() {
         <Route path="/member/savings" component={MemberSavings} />
         <Route path="/member/loyalty" component={MemberLoyalty} />
         <Route path="/member/referrals" component={MemberReferrals} />
+        {/* 2026-10-04 (W7-B8): support tickets + feedback, notifications,
+            disputes — memberHelpDesk/memberFeedback/notificationInbox/
+            memberDisputes real backends. */}
+        <Route path="/member/support" component={MemberSupport} />
+        <Route path="/member/notifications" component={MemberNotifications} />
+        <Route path="/member/disputes" component={MemberDisputes} />
+        {/* 2026-10-05 (W7-B9): identity & security — KYC/MFA status, face
+            enrollment revoke, phone OTP verify; memberIdentity/memberPhone
+            real backends; honest absences where no mutation exists. */}
+        <Route path="/member/identity" component={MemberIdentity} />
+        {/* 2026-10-06 (W7-B10): money tools & marketplace — memberBillPayments
+            (catalog + format validation only, NO pay mutation exists),
+            memberAirtime/memberMobileMoney (read-only), memberFxRates,
+            parametricMember, insuranceProductCatalog browse. */}
+        <Route path="/member/bills" component={MemberBills} />
+        <Route path="/member/airtime" component={MemberAirtime} />
+        <Route path="/member/fx" component={MemberFx} />
+        <Route path="/member/parametric" component={MemberParametric} />
+        <Route path="/member/products" component={MemberProducts} />
         <Route path="/member/profile" component={MemberProfile} />
         <Route path="/super-admin" component={SuperAdminPortal} />
         <Route path="/super-admin/:section" component={SuperAdminPortal} />

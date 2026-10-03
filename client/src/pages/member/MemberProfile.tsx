@@ -7,6 +7,9 @@
  *     empty state when the session has no customer profile)
  *   - memberIdentity.myMfaStatus (real DB flag; reports MFA unavailability
  *     honestly)
+ *   - memberOnboarding.myProgress (server/routers/memberOnboarding.ts —
+ *     READ-ONLY checklist as returned; no completion action exists — legacy
+ *     complete endpoint 501s and was not ported; 2026-10-05, W7-B9)
  *
  * Honest states only: loading skeletons, empty state, error card.
  */
@@ -41,6 +44,12 @@ export default function MemberProfile() {
   const mfaQuery = trpc.memberIdentity.myMfaStatus.useQuery(undefined, {
     retry: false,
   });
+  // 2026-10-05 (W7-B9): onboarding pipeline checklist — read-only, rendered
+  // exactly as memberOnboarding.myProgress returns it.
+  const onboardingQuery = trpc.memberOnboarding.myProgress.useQuery(
+    undefined,
+    { retry: false }
+  );
 
   return (
     <MemberLayout>
@@ -137,6 +146,62 @@ export default function MemberProfile() {
                 }
               />
             </div>
+          )}
+        </MemberSection>
+
+        <MemberSection
+          title="Onboarding Progress"
+          description="Where you are in the onboarding pipeline."
+        >
+          {onboardingQuery.isLoading ? (
+            <MemberLoading label="Loading onboarding progress" />
+          ) : onboardingQuery.isError ? (
+            <MemberError message={onboardingQuery.error.message} />
+          ) : !onboardingQuery.data ? null : (
+            (() => {
+              const prog = onboardingQuery.data;
+              if (!prog) return null;
+              return (
+            <div className="space-y-3">
+              <p className="text-sm">
+                Stage {prog.stageIndex + 1} of{" "}
+                {prog.totalStages} ·{" "}
+                {prog.completionPercent}% complete
+              </p>
+              <ol className="space-y-1" data-testid="onboarding-checklist">
+                {prog.stages.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center gap-2 text-sm"
+                    data-testid={`onboarding-stage-${s.name}`}
+                  >
+                    <Badge
+                      variant={
+                        s.order - 1 < prog.stageIndex
+                          ? "default"
+                          : s.order - 1 === prog.stageIndex
+                            ? "secondary"
+                            : "outline"
+                      }
+                    >
+                      {s.order - 1 < prog.stageIndex
+                        ? "done"
+                        : s.order - 1 === prog.stageIndex
+                          ? "current"
+                          : "pending"}
+                    </Badge>
+                    <span>{s.name.replace(/_/g, " ")}</span>
+                    {s.estimatedMinutes > 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        ~{s.estimatedMinutes} min
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+              );
+            })()
           )}
         </MemberSection>
       </div>

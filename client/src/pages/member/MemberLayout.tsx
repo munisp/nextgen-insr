@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature, RefreshCw, Users, FilePenLine, Wallet, PiggyBank, Star, UserPlus } from "lucide-react";
+import { AlertTriangle, FileText, ShieldCheck, CreditCard, User, FileSignature, RefreshCw, Users, FilePenLine, Wallet, PiggyBank, Star, UserPlus, LifeBuoy, Bell, AlertCircle, ScanFace, Receipt, Smartphone, ArrowLeftRight, CloudSun, Store } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/member/quotes", label: "Quotes", icon: FileSignature },
@@ -38,6 +38,22 @@ const NAV_ITEMS = [
   { href: "/member/savings", label: "Savings", icon: PiggyBank },
   { href: "/member/loyalty", label: "Loyalty", icon: Star },
   { href: "/member/referrals", label: "Referrals", icon: UserPlus },
+  // 2026-10-04 (W7-B8): contact surfaces — support tickets + feedback
+  // (single page), notification inbox, transaction disputes.
+  { href: "/member/support", label: "Support", icon: LifeBuoy },
+  { href: "/member/notifications", label: "Notifications", icon: Bell },
+  { href: "/member/disputes", label: "Disputes", icon: AlertCircle },
+  // 2026-10-05 (W7-B9): identity & security surface (KYC/MFA, face
+  // enrollment revoke, phone OTP verify).
+  { href: "/member/identity", label: "Identity", icon: ScanFace },
+  // 2026-10-06 (W7-B10): money tools & marketplace — bills (catalog +
+  // validation only), airtime & mobile money (read-only), FX, parametric
+  // coverage, product browse.
+  { href: "/member/bills", label: "Bills", icon: Receipt },
+  { href: "/member/airtime", label: "Airtime & MoMo", icon: Smartphone },
+  { href: "/member/fx", label: "FX Rates", icon: ArrowLeftRight },
+  { href: "/member/parametric", label: "Parametric", icon: CloudSun },
+  { href: "/member/products", label: "Marketplace", icon: Store },
   { href: "/member/profile", label: "Profile", icon: User },
 ];
 
