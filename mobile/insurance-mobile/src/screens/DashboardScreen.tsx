@@ -99,6 +99,11 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
             { label: 'Get Quote', icon: '🧾', screen: 'Policies', params: { screen: 'Quotes' } },
             { label: 'Renewals', icon: '🔄', screen: 'Policies', params: { screen: 'Renewals' } },
             { label: 'Endorsements', icon: '✏️', screen: 'Policies', params: { screen: 'Endorsements' } },
+            // 2026-10-03 (W9-B5 wave 2): engagement screens in the Policies stack.
+            { label: 'Savings', icon: '🏦', screen: 'Policies', params: { screen: 'Savings' } },
+            { label: 'Loyalty', icon: '⭐', screen: 'Policies', params: { screen: 'Loyalty' } },
+            { label: 'Referrals', icon: '🤝', screen: 'Policies', params: { screen: 'Referrals' } },
+            { label: 'Disputes', icon: '⚖️', screen: 'Policies', params: { screen: 'Disputes' } },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

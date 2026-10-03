@@ -22,6 +22,12 @@ import { ProductBrowserScreen } from '../screens/ProductBrowserScreen';
 import { QuotesScreen } from '../screens/QuotesScreen';
 import { EndorsementsScreen } from '../screens/EndorsementsScreen';
 import { RenewalsScreen } from '../screens/RenewalsScreen';
+// 2026-10-03 (W9-B5 wave 2): savings / loyalty / referrals / disputes member
+// screens (memberSavings/memberLoyalty/memberReferrals/memberDisputes routers).
+import { SavingsScreen } from '../screens/SavingsScreen';
+import { LoyaltyScreen } from '../screens/LoyaltyScreen';
+import { ReferralsScreen } from '../screens/ReferralsScreen';
+import { DisputesScreen } from '../screens/DisputesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
@@ -47,6 +53,11 @@ function PoliciesStack() {
       <Stack.Screen name="Quotes" component={QuotesScreen} />
       <Stack.Screen name="Endorsements" component={EndorsementsScreen} />
       <Stack.Screen name="Renewals" component={RenewalsScreen} />
+      {/* 2026-10-03 (W9-B5 wave 2) */}
+      <Stack.Screen name="Savings" component={SavingsScreen} />
+      <Stack.Screen name="Loyalty" component={LoyaltyScreen} />
+      <Stack.Screen name="Referrals" component={ReferralsScreen} />
+      <Stack.Screen name="Disputes" component={DisputesScreen} />
     </Stack.Navigator>
   );
 }

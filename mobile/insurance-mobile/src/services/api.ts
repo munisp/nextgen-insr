@@ -455,6 +455,203 @@ export const renewalsApi = {
     memberMutation<{ renewal: unknown }>('memberRenewals.requestRenewal', input),
 };
 
+// ---------------------------------------------------------------------------
+// 2026-10-03 (W9-B5 wave 2): savings / loyalty / referrals / disputes member
+// surface, mirroring the web member portal (client/src/pages/member/
+// MemberSavings.tsx, MemberLoyalty.tsx, MemberReferrals.tsx,
+// MemberDisputes.tsx — W7-B7/B8) on the REAL hardened routers
+// (server/routers/memberSavings.ts, memberLoyalty.ts, memberReferrals.ts,
+// memberDisputes.ts; mounted in server/routers.ts:1232-1242). Shapes below
+// are copied from the server router code — never assumed.
+//
+// FUNDS DISCIPLINE (same as the web portal): there is deliberately NO
+// savings deposit/withdraw (memberSavings.ts:13-15 — funding goes through
+// the rail-verified wallet), NO loyalty redemption (memberLoyalty.ts:22-25
+// — points are funds-adjacent, read-only by design), and NO referral-code
+// minting (memberReferrals.ts:23-35 — myCode is read-only, null = honest
+// unavailable). None of these routers takes a client idempotency key or a
+// client-supplied amount for a money-moving mutation (fileDispute.amount is
+// the member-declared DISPUTED amount on an already-owned transaction — no
+// funds move; ownership is verified server-side first).
+// ---------------------------------------------------------------------------
+
+/** Row shape from memberSavings.myTransactions
+ *  (server/routers/memberSavings.ts:216-228 — transactions select). */
+export interface MemberSavingsTxRow {
+  id: number;
+  ref: string | null;
+  type: string | null;
+  amount: string | null;
+  currency: string | null;
+  channel: string | null;
+  status: string | null;
+  failureReason: string | null;
+  createdAt: string | Date | null;
+}
+
+/** Account row from memberSavings.myAccount (memberSavings.ts:249-257 —
+ *  ONLY id/names/status/kycLevel/createdAt; never bvn/nin/balances). */
+export interface MemberSavingsAccount {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  status: string | null;
+  kycLevel: string | null;
+  createdAt: string | Date | null;
+}
+
+export const savingsApi = {
+  /** The caller's savings account, or { account: null } when none exists
+   *  (memberSavings.myAccount — non-enumerating null, never fabricated). */
+  myAccount: () =>
+    memberQuery<{ account: MemberSavingsAccount | null }>('memberSavings.myAccount', null),
+  /** Settled-only balance/totals (memberSavings.mySummary — sums over
+   *  status="success" rows only; NOT_FOUND when no customer profile). */
+  mySummary: () =>
+    memberQuery<{
+      customerId: number; balance: number; totalIn: number; totalOut: number;
+      settledTransactions: number; currency: string;
+    }>('memberSavings.mySummary', null),
+  /** The caller's savings transactions, ALL statuses (a history that hides
+   *  failed rows would be dishonest — router header). */
+  myTransactions: (input?: { limit?: number; offset?: number; type?: 'Cash In' | 'Cash Out' }) =>
+    memberQuery<{ transactions: MemberSavingsTxRow[]; count: number }>(
+      'memberSavings.myTransactions',
+      { limit: input?.limit ?? 20, offset: input?.offset ?? 0, ...(input?.type ? { type: input.type } : {}) },
+    ),
+  /** Open the caller's OWN account. zod-exact input (memberSavings.ts:279-287)
+   *  — names/identity come from the SESSION server-side, never from input;
+   *  optional fields omitted entirely when blank so the server schema is
+   *  never tripped by "". Tier 2+ (bvn/nin) is gated by the fail-closed
+   *  KYC enforcement service server-side. */
+  openMyAccount: (input: { phone: string; email?: string; bvn?: string; nin?: string; address?: string }) =>
+    memberMutation<{ success: boolean; account: MemberSavingsAccount }>(
+      'memberSavings.openMyAccount', input,
+    ),
+};
+
+/** Row shape from memberLoyalty.myHistory (server/routers/memberLoyalty.ts:134-142). */
+export interface MemberLoyaltyHistoryRow {
+  id: number;
+  type: string | null;
+  points: number | null;
+  description: string | null;
+  balanceAfter: number | null;
+  createdAt: string | Date | null;
+}
+
+export const loyaltyApi = {
+  /** earned − redeemed over the caller's ledger (memberLoyalty.myBalance).
+   *  READ-ONLY by design — no redemption mutation exists (funds-adjacent). */
+  myBalance: () =>
+    memberQuery<{ customerId: number; earned: number; redeemed: number; balance: number }>(
+      'memberLoyalty.myBalance', null,
+    ),
+  /** The caller's loyalty ledger, newest first (memberLoyalty.myHistory). */
+  myHistory: (input?: { limit?: number; offset?: number }) =>
+    memberQuery<{ history: MemberLoyaltyHistoryRow[]; total: number; limit: number; offset: number }>(
+      'memberLoyalty.myHistory',
+      { limit: input?.limit ?? 50, offset: input?.offset ?? 0 },
+    ),
+};
+
+/** Row shape from memberReferrals.myReferrals
+ *  (server/routers/memberReferrals.ts:108-120). */
+export interface MemberReferralRow {
+  id: number;
+  referralCode: string | null;
+  refereeCode: string | null;
+  status: string | null;
+  bonusPoints: number | null;
+  bonusCash: string | null;
+  activatedAt: string | Date | null;
+  rewardedAt: string | Date | null;
+  expiresAt: string | Date | null;
+  createdAt: string | Date | null;
+}
+
+export type ReferralStatusFilter = 'pending' | 'activated' | 'rewarded' | 'expired';
+
+export const referralsApi = {
+  /** The caller's referrals as referrer (memberReferrals.myReferrals). */
+  myReferrals: (input?: { status?: ReferralStatusFilter; limit?: number; offset?: number }) =>
+    memberQuery<{ referrals: MemberReferralRow[]; total: number; limit: number; offset: number }>(
+      'memberReferrals.myReferrals',
+      { limit: input?.limit ?? 50, offset: input?.offset ?? 0, ...(input?.status ? { status: input.status } : {}) },
+    ),
+  /** The caller's existing still-valid referral code, or null (READ-ONLY —
+   *  memberReferrals.myCode; null is an honest "unavailable", nothing is
+   *  ever minted from a member context). */
+  myCode: () =>
+    memberQuery<{ referralCode: string; expiresAt: string | Date | null; existing: boolean } | null>(
+      'memberReferrals.myCode', null,
+    ),
+};
+
+/** Row shape from memberDisputes.myDisputes
+ *  (server/routers/memberDisputes.ts:125-137 — caller-scoped via
+ *  disputes.agentId = ctx.user.id). */
+export interface MemberDisputeRow {
+  id: number;
+  ref: string | null;
+  transactionId: number | null;
+  transactionRef: string | null;
+  status: string | null;
+  priority: string | null;
+  type: string | null;
+  reason: string | null;
+  amount: string | null;
+  createdAt: string | Date | null;
+}
+
+/** Detail shape from memberDisputes.myDispute (memberDisputes.ts:160-211 —
+ *  NOT_FOUND non-enumerating on foreign ids). */
+export interface MemberDisputeDetail {
+  dispute: MemberDisputeRow & {
+    description: string | null;
+    resolution: string | null;
+    resolvedAt: string | Date | null;
+    updatedAt: string | Date | null;
+  };
+  messages: Array<{
+    id: number; senderType: string | null; senderName: string | null;
+    content: string | null; createdAt: string | Date | null;
+  }>;
+  evidence: Array<{
+    id: number; fileName: string | null; fileUrl: string | null;
+    mimeType: string | null; fileSize: number | null; createdAt: string | Date | null;
+  }>;
+}
+
+/** Member-facing status filter subset (memberDisputes.ts:95-101). */
+export const DISPUTE_STATUSES = ['open', 'investigating', 'escalated', 'resolved', 'closed'] as const;
+export type DisputeStatusFilter = (typeof DISPUTE_STATUSES)[number];
+
+export const disputesApi = {
+  /** The caller's disputes, newest first (memberDisputes.myDisputes). */
+  myDisputes: (input?: { status?: DisputeStatusFilter; limit?: number; offset?: number }) =>
+    memberQuery<{ disputes: MemberDisputeRow[]; count: number }>(
+      'memberDisputes.myDisputes',
+      { limit: input?.limit ?? 50, offset: input?.offset ?? 0, ...(input?.status ? { status: input.status } : {}) },
+    ),
+  /** Single dispute detail + messages + evidence (memberDisputes.myDispute). */
+  myDispute: (id: number) =>
+    memberQuery<MemberDisputeDetail>('memberDisputes.myDispute', { id: Number(id) }),
+  /** File a dispute against one of the CALLER'S transactions. zod-exact
+   *  input (memberDisputes.ts:225-232): { transactionId, reason,
+   *  description, amount }. `amount` is the member-DECLARED disputed amount
+   *  on an already-owned transaction — NO funds move, so no client-computed
+   *  amount discipline issue; ownership is verified server-side FIRST
+   *  (NOT_FOUND non-enumerating), and agentId/ref/status are forced
+   *  server-side. */
+  fileDispute: (input: { transactionId: number; reason: string; description: string; amount: number }) =>
+    memberMutation<{ id: number; ref: string; status: string }>('memberDisputes.fileDispute', input),
+  /** Append a member reply (memberDisputes.replyDispute — ownership
+   *  re-checked; resolved/closed → PRECONDITION_FAILED). */
+  replyDispute: (input: { disputeId: number; content: string }) =>
+    memberMutation<{ id: number; senderType: 'customer' }>('memberDisputes.replyDispute', input),
+};
+
 // 2026-10-01 (W9-B3): /api/v1/agents/* does not exist on the BFF (404).
 // Throws an honest error instead of fabricating a nearby-agents list.
 export const agentApi = {
