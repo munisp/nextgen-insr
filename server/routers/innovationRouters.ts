@@ -92,6 +92,55 @@ async function callService(url: string, path: string, body: unknown, timeoutMs =
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. TELEMATICS ENGINE ROUTER
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 2026-10-03 (verify-w9b3 — telematics IDOR): caller→policy ownership gate
+ * for every telematics procedure that accepts a caller-supplied policyId.
+ * Previously getDrivingScore/getHistory/getScore/recordEvent trusted the
+ * caller-supplied policyId — any authenticated caller could read (or inject
+ * events into) ANY policy's telematics data (IDOR). Pattern follows the
+ * premiumTopUp.ts assertCallerOwnsPolicy precedent (2026-10-02, W10-B1):
+ * the caller is resolved server-side ONLY (never caller-supplied identity):
+ *   1. admin/supervisor role → allowed (staff bypass);
+ *   2. the policy's owner: policies.customerId matches ctx.user.id directly
+ *      OR the caller's resolved customers row (customers.keycloakSub =
+ *      String(ctx.user.id) — memberPolicies dual-identity precedent);
+ *   3. everything else → NOT_FOUND (non-enumerating: a foreign policyId is
+ *      indistinguishable from a non-existent one).
+ * Fail-closed: any lookup failure propagates as an error; access is never
+ * granted on uncertainty.
+ */
+async function assertTelematicsPolicyOwnership(
+  db: DrizzleDb,
+  policyId: number,
+  ctx: { user: { id: number; role?: string | null } | null }
+): Promise<void> {
+  const [policy] = await db
+    .select({ id: policies.id, customerId: policies.customerId })
+    .from(policies)
+    .where(eq(policies.id, policyId))
+    .limit(1);
+  if (!policy) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+  }
+
+  const role = ctx.user?.role;
+  if (role === "admin" || role === "supervisor") return;
+
+  const userId = ctx.user?.id;
+  if (userId != null) {
+    if (policy.customerId === userId) return;
+    const [customer] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.keycloakSub, String(userId)))
+      .limit(1);
+    if (customer && policy.customerId === customer.id) return;
+  }
+
+  throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+}
+
 export const telematicsRouter = router({
 
   /** Record a telematics event from a device */
@@ -110,6 +159,11 @@ export const telematicsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // 2026-10-03 (verify-w9b3): ownership gate BEFORE any scoring/insert —
+      // previously any caller could inject telematics events into a foreign
+      // policy, poisoning its UBI score (same IDOR class as getDrivingScore).
+      await assertTelematicsPolicyOwnership(db, input.policyId, ctx);
 
       // Call Go telematics engine for risk scoring
       let riskScore = 50;
@@ -151,9 +205,17 @@ export const telematicsRouter = router({
   /** Get driving score for a policy (monthly UBI calculation) */
   getDrivingScore: protectedProcedure
     .input(z.object({ policyId: z.number(), periodDays: z.number().default(30) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return { score: 0, events: 0, recommendation: "insufficient_data" };
+      // 2026-10-03 (verify-w9b3): fail-closed on DB outage — ownership cannot
+      // be verified without the policy row, so the old silent
+      // "insufficient_data" default is replaced by an explicit error.
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // 2026-10-03 (verify-w9b3 — IDOR): verify caller owns the policy (or
+      // is admin/supervisor) BEFORE reading any telematics rows; foreign
+      // policyIds get a non-enumerating NOT_FOUND.
+      await assertTelematicsPolicyOwnership(db, input.policyId, ctx);
 
       const since = new Date();
       since.setDate(since.getDate() - input.periodDays);
@@ -187,9 +249,16 @@ export const telematicsRouter = router({
   /** Get telematics history for a policy */
   getHistory: protectedProcedure
     .input(z.object({ policyId: z.number(), limit: z.number().default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return [];
+      // 2026-10-03 (verify-w9b3): fail-closed on DB outage (ownership cannot
+      // be verified) — replaces the old silent `[]` default.
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // 2026-10-03 (verify-w9b3 — IDOR): ownership gate before any read;
+      // foreign policyIds get a non-enumerating NOT_FOUND.
+      await assertTelematicsPolicyOwnership(db, input.policyId, ctx);
+
       return db.select().from(telematicsEvents)
         .where(eq(telematicsEvents.policyId, input.policyId))
         .orderBy(desc(telematicsEvents.recordedAt))
@@ -314,15 +383,22 @@ export const telematicsRouter = router({
    */
   getScore: protectedProcedure
     .input(z.object({ policyId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // 2026-10-03 (verify-w9b3 — same IDOR class): the ownership gate runs
+      // BEFORE the Redis cache read — otherwise the cache would serve a
+      // foreign policy's score to any caller (cached IDOR). Fail-closed: on
+      // DB outage ownership cannot be verified, so the old silent default
+      // payload is replaced by an explicit error.
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      await assertTelematicsPolicyOwnership(db, input.policyId, ctx);
+
       const cacheKey = `telematics:score:${input.policyId}`;
       try {
         const cached = await getRedisClient().get(cacheKey);
         if (cached) return { ...JSON.parse(cached), source: "redis_cache" as const };
       } catch { /* cache miss/unavailable — fall through to PG */ }
 
-      const db = await getDb();
-      if (!db) return { policyId: input.policyId, score: null, ratingFactor: 1.0, tripsCounted: 0, source: "postgresql" as const };
       const [row] = await db.select().from(telematicsScores)
         .where(eq(telematicsScores.policyId, input.policyId)).limit(1);
       const payload = row
