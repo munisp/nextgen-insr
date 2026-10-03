@@ -1,0 +1,10 @@
+{
+  "name": "@insureportal/channel-core",
+  "version": "0.1.0",
+  "description": "Shared channel-bot core: conversation store, channel engine, platform tRPC client (vendored from packages/channel-core — see W8-B3 note in src/lib/conversationStore.ts)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "ioredis": "^5.11.1"
+  }
+}

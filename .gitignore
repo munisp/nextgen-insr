@@ -81,3 +81,10 @@ logs/
 # committed. This negation must stay LAST — later generic `dist/` rules would
 # re-ignore it (2026-10-03, verify-w8b2 finding; validated via git check-ignore).
 !whatsapp-bot/vendor/channel-core/dist/
+# 2026-10-03 (W8-B3): telegram-bot vendors its built @insureportal/channel-core
+# dependency (file: vendor/channel-core) the same way as whatsapp-bot (W8-B2)
+# so the bot stays standalone-installable (its Docker context is just
+# telegram-bot/). The vendored build output must be committed. This negation
+# must stay AFTER all generic `dist/` rules and after the W8-B2 negation —
+# later generic rules would re-ignore it (validated via git check-ignore).
+!telegram-bot/vendor/channel-core/dist/
