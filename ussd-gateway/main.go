@@ -1659,6 +1659,15 @@ func (app *Application) router() http.Handler {
 			id := chi.URLParam(r, "id")
 			app.handleSessionStatus(w, r, id)
 		})
+
+		// NG-20 SIM-swap phone rebind and NG-2 pending-transaction
+		// reconciliation (wired 2026-10-03): both handlers were implemented
+		// but never routed (dead code). Registered here BEHIND the API-key
+		// auth middleware like every other /api/v1 route. handlePhoneRebind
+		// additionally requires the account PIN and fails closed when PIN
+		// verification is not configured.
+		r.Post("/agents/phone-rebind", app.handlePhoneRebind)
+		r.Get("/transactions/pending", app.handlePendingTransaction)
 	})
 
 	return r

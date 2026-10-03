@@ -2,6 +2,7 @@ package main
 
 import (
 	"go.uber.org/zap"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -237,5 +238,53 @@ func TestAgentMenuBlocksNonActiveAgents(t *testing.T) {
 		if st == models.AgentStatusActive {
 			t.Fatal("non-active status must not equal active")
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// NG-20 / NG-2 routing + auth-gate regression tests (2026-10-03).
+// handlePhoneRebind and handlePendingTransaction were implemented but never
+// routed. They are now registered under /api/v1 behind the API-key auth
+// middleware; these tests pin the auth gate (401 without/with a wrong key,
+// and a non-401 once authenticated — handler-level behavior past the gate
+// requires a live DB and is covered by the integration suite).
+// ---------------------------------------------------------------------------
+
+func TestPhoneRebindAndPendingTransactionAreRoutedBehindAuth(t *testing.T) {
+	app := &Application{cfg: Config{APIKey: "gw-key"}, log: zap.NewNop()}
+	handler := app.router()
+
+	do := func(method, path, key string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, nil)
+		if key != "" {
+			req.Header.Set("X-USSD-Gateway-Key", key)
+		}
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Missing key -> 401 on both routes.
+	if rec := do("POST", "/api/v1/agents/phone-rebind", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("phone-rebind without key: got %d, want 401", rec.Code)
+	}
+	if rec := do("GET", "/api/v1/transactions/pending?phone=0801", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("transactions/pending without key: got %d, want 401", rec.Code)
+	}
+	// Wrong key -> 401.
+	if rec := do("POST", "/api/v1/agents/phone-rebind", "wrong"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("phone-rebind with wrong key: got %d, want 401", rec.Code)
+	}
+	if rec := do("GET", "/api/v1/transactions/pending?phone=0801", "wrong"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("transactions/pending with wrong key: got %d, want 401", rec.Code)
+	}
+	// Correct key -> routed (past the gate). phone-rebind with empty body
+	// reaches the handler and returns 400 (not 404/401); transactions/pending
+	// without a phone returns 400. A 404 would mean the route is still dead.
+	if rec := do("POST", "/api/v1/agents/phone-rebind", "gw-key"); rec.Code == http.StatusNotFound || rec.Code == http.StatusUnauthorized {
+		t.Fatalf("phone-rebind with key must be routed past auth, got %d", rec.Code)
+	}
+	if rec := do("GET", "/api/v1/transactions/pending", "gw-key"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("transactions/pending with key and no phone: got %d, want 400", rec.Code)
 	}
 }

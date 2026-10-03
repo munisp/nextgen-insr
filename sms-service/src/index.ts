@@ -1,9 +1,16 @@
 import express from "express";
 import { SMSRouter } from "./handlers/router";
 import { initOutbox, startRetryWorker } from "./outbox";
+import { apiKeyAuth, requireApiKeyAtBoot } from "./auth";
+
+// Security (2026-10-03): fail-closed at boot — refuse to listen without the
+// shared secret; every /api/* route is gated behind constant-time API-key
+// auth (see auth.ts). /health remains public for liveness probes.
+const apiKey = requireApiKeyAtBoot();
 
 const app = express();
 app.use(express.json());
+app.use("/api", apiKeyAuth(apiKey));
 
 const smsRouter = new SMSRouter();
 
@@ -36,5 +43,7 @@ initOutbox()
   ]))
   .catch((e) => console.error(`[sms] outbox init failed: ${e}`));
 
-const port = process.env.PORT || 8095;
+// Default port changed 8095 -> 8097 (2026-10-03): 8095 collides with
+// float-reconciler; 8097 is unused across compose files and services.
+const port = process.env.PORT || 8097;
 app.listen(port, () => console.log(`InsurePortal SMS Service on port ${port}`));
