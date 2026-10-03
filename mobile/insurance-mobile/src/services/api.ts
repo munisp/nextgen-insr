@@ -315,6 +315,146 @@ export const premiumApi = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// 2026-10-03 (W9-B5 wave 1): quotes / endorsements / renewals member surface,
+// mirroring the web member portal (client/src/pages/member/MemberQuotes.tsx,
+// MemberEndorsements.tsx, MemberRenewals.tsx — W7-B5, 2026-10-02) on the REAL
+// hardened routers (server/routers/memberQuotes.ts, memberEndorsements.ts,
+// memberRenewals.ts; mounted in server/routers.ts:1258-1260).
+// Shapes below are copied from the server router code — never assumed.
+// None of these three routers requires a client idempotency key (unlike
+// memberPayments F-02): quotes/endorsements rows are server-numbered and
+// requestRenewal has a server-side one-open-renewal duplicate guard.
+// ---------------------------------------------------------------------------
+
+/** Row shape from memberQuotes.myQuoteCart (server/routers/memberQuotes.ts:105). */
+export interface MemberQuoteRow {
+  id: number;
+  productId: number | null;
+  productName: string | null;
+  productType: string | null;
+  sumInsured: string | null;
+  premiumAmount: string | null;
+  stampDuty: string | null;
+  totalPayable: string | null;
+  durationMonths: number | null;
+  coverageType: string | null;
+  status: string;
+  validUntil: string | Date | null;
+  createdAt: string | Date | null;
+}
+
+export interface MemberQuoteCart {
+  items: MemberQuoteRow[];
+  subTotal: number;
+  totalPremium: number;
+  count: number;
+  currency: string;
+}
+
+export interface AddQuoteResult {
+  quote: MemberQuoteRow & Record<string, unknown>;
+  premiumAmount: number;
+  stampDuty: number;
+  totalPayable: number;
+  currency: string;
+}
+
+export const quotesApi = {
+  /** The caller's pending quote cart (memberQuotes.myQuoteCart). */
+  cart: () => memberQuery<MemberQuoteCart>('memberQuotes.myQuoteCart', null),
+  /** Real COUNT/SUM over the caller's pending quotes (memberQuotes.quoteSummary). */
+  summary: () =>
+    memberQuery<{ count: number; totalPremium: number; currency: string }>(
+      'memberQuotes.quoteSummary', null,
+    ),
+  /** Add a quote. NEVER sends a premium — the server prices it from the
+   *  filed rating tables and throws PRECONDITION_FAILED (adding nothing)
+   *  when no rating table covers the product; that error is surfaced. */
+  add: (input: { productId: number; sumInsured: number; durationMonths: number; coverageType?: string }) =>
+    memberMutation<AddQuoteResult>('memberQuotes.addToQuoteCart', input),
+  /** Cancel one of the caller's pending quotes (NOT_FOUND on foreign id). */
+  remove: (quoteId: number) =>
+    memberMutation<{ removed: boolean; quoteId: number }>('memberQuotes.removeQuoteItem', { quoteId }),
+  /** Cancel ALL of the caller's pending quotes; returns the real count. */
+  clear: () => memberMutation<{ cleared: boolean; cancelled: number }>('memberQuotes.clearQuoteCart', null),
+};
+
+/** Row shape from memberEndorsements.myEndorsements
+ *  (server/routers/memberEndorsements.ts:113 — joined to policies). */
+export interface MemberEndorsementRow {
+  id: number;
+  endorsementNumber: string;
+  policyId: number;
+  policyNumber: string;
+  type: string;
+  effectiveDate: string | Date | null;
+  description: string | null;
+  premiumAdjustment: string | null;
+  sumInsuredAdjustment: string | null;
+  approvedAt: string | Date | null;
+  createdAt: string | Date | null;
+  currency: string;
+}
+
+/** Endorsement types = the server zod enum exactly
+ *  (memberEndorsements.requestEndorsement input, :159). */
+export const ENDORSEMENT_TYPES = [
+  'addition', 'deletion', 'modification', 'extension', 'reduction', 'cancellation', 'reinstatement',
+] as const;
+export type EndorsementType = (typeof ENDORSEMENT_TYPES)[number];
+
+export const endorsementsApi = {
+  /** The caller's endorsements, newest first (optionally per policy). */
+  list: (policyId?: number) =>
+    memberQuery<{ endorsements: MemberEndorsementRow[]; count: number }>(
+      'memberEndorsements.myEndorsements',
+      { ...(policyId != null ? { policyId: Number(policyId) } : {}), limit: 50, offset: 0 },
+    ),
+  /** Request an endorsement on an OWNED policy. premiumAdjustment /
+   *  sumInsuredAdjustment are member-PROPOSED request fields only — no
+   *  funds movement (router header, memberEndorsements.ts:18-21). */
+  request: (input: {
+    policyId: number;
+    type: EndorsementType;
+    effectiveDate: string;
+    description: string;
+    premiumAdjustment?: number;
+    sumInsuredAdjustment?: number;
+  }) => memberMutation<{ endorsement: unknown; endorsementNumber: string }>(
+    'memberEndorsements.requestEndorsement', input,
+  ),
+};
+
+/** Row shape from memberRenewals.myRenewals
+ *  (server/routers/memberRenewals.ts:118 — joined to policies). */
+export interface MemberRenewalRow {
+  id: number;
+  originalPolicyId: number;
+  policyNumber: string;
+  status: string;
+  renewalDueDate: string | Date | null;
+  renewalPremium: string | null;
+  isAutoRenewal: boolean | null;
+  completedAt: string | Date | null;
+  createdAt: string | Date | null;
+  currency: string;
+}
+
+export const renewalsApi = {
+  /** The caller's renewals, newest first (dual-space caller scope). */
+  list: () =>
+    memberQuery<{ renewals: MemberRenewalRow[]; count: number }>(
+      'memberRenewals.myRenewals', { limit: 50, offset: 0 },
+    ),
+  /** Request a renewal for an OWNED active/bound policy — same procedure
+   *  PolicyDetailScreen uses via policyApi.renew (W9-B4). Server enforces
+   *  ownership, the status gate, and the one-open-renewal duplicate guard;
+   *  no funds move. */
+  request: (input: { policyId: number; isAutoRenewal?: boolean }) =>
+    memberMutation<{ renewal: unknown }>('memberRenewals.requestRenewal', input),
+};
+
 // 2026-10-01 (W9-B3): /api/v1/agents/* does not exist on the BFF (404).
 // Throws an honest error instead of fabricating a nearby-agents list.
 export const agentApi = {

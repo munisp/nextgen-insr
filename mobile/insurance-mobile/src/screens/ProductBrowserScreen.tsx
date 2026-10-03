@@ -90,7 +90,9 @@ export function ProductBrowserScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.coverage}>{formatCurrency(product.coverageLimit)}</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.button} accessibilityLabel={`Get quote for ${product.name}`}>
+            {/* 2026-10-03 (W9-B5 wave 1): was a dead button — now opens the
+                real quote cart (memberQuotes.addToQuoteCart, server-priced). */}
+            <TouchableOpacity style={styles.button} accessibilityLabel={`Get quote for ${product.name}`} onPress={() => navigation.navigate('Quotes')}>
               <Text style={styles.buttonText}>Get Quote</Text>
             </TouchableOpacity>
           </View>
