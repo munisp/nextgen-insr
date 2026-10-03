@@ -30,5 +30,33 @@ jest.mock('react-native-biometrics', () => {
   }));
 });
 
+// 2026-10-03 (W9-B6): additional NATIVE-MODULE boundary mocks so the screen
+// smoke suites can run under jest. Still no application logic mocked here.
+// @react-native-community/netinfo is the OS connectivity bridge.
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: {
+    addEventListener: jest.fn(() => jest.fn()),
+    fetch: jest.fn(async () => ({ isConnected: true, type: 'wifi', isInternetReachable: true, details: null })),
+  },
+}));
+
+// react-native-geolocation-service is the OS location bridge. Suites control
+// getCurrentPosition behavior per-test via the exported jest.fn.
+jest.mock('react-native-geolocation-service', () => ({
+  __esModule: true,
+  default: {
+    getCurrentPosition: jest.fn(),
+    watchPosition: jest.fn(() => 0),
+    clearWatch: jest.fn(),
+  },
+}));
+
+// react-native-image-picker is the OS camera/gallery bridge.
+jest.mock('react-native-image-picker', () => ({
+  launchCamera: jest.fn(),
+  launchImageLibrary: jest.fn(),
+}));
+
 // Other native modules not exercised by the current test suites are left
 // unmocked; suites that need them declare their own mocks at the boundary.

@@ -55,6 +55,16 @@ export const KEYCLOAK_ISSUER = requireEnv(
   `http://${DEV_HOST}:8080/realms/insureportal`,
 );
 
+// 2026-10-03 (W9-B6): the OIDC flow's network I/O is performed natively by
+// react-native-app-auth (system browser + token/revocation endpoints derived
+// from the issuer discovery document), so it cannot pass through guardedFetch.
+// What IS honestly enforceable at the JS layer: fail-closed validation that
+// the configured issuer host is on the PINNED_DOMAINS allowlist before any
+// authorize/refresh/revoke call is handed to the native module. Domain
+// allowlisting, NOT TLS pinning — see services/domainAllowlist.ts.
+import { assertUrlAllowed } from './domainAllowlist';
+assertUrlAllowed(KEYCLOAK_ISSUER, 'Keycloak issuer (module load)');
+
 /** Public OIDC client registered for this mobile app (PKCE, no secret). */
 export const KEYCLOAK_CLIENT_ID = requireEnv(
   process.env.KEYCLOAK_CLIENT_ID,
@@ -82,6 +92,9 @@ export function buildOidcConfig(
   clientId: string = KEYCLOAK_CLIENT_ID,
   redirectUrl: string = KEYCLOAK_REDIRECT_URI,
 ): OidcConfig {
+  // Fail-closed: never hand a non-allowlisted issuer to the native OIDC
+  // module (W9-B6 domain allowlist).
+  assertUrlAllowed(issuer, 'Keycloak issuer (buildOidcConfig)');
   return {
     issuer,
     clientId,

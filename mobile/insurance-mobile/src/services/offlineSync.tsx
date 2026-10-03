@@ -46,6 +46,11 @@ import { API_BASE_URL } from '../config';
 // (insurance-mobile-app/main.go:1266), so every sync call MUST carry a
 // Bearer token — previously this fetch sent none and would always 401.
 import { getStoredAccessToken } from './keycloakAuth';
+// 2026-10-03 (W9-B6): sync-push egress passes through the PINNED_DOMAINS
+// domain allowlist — host checked fail-closed BEFORE any network I/O. This
+// is domain-allowlisting, NOT TLS pinning (native-layer residual, see
+// services/domainAllowlist.ts / BUILD.md).
+import { guardedFetch } from './domainAllowlist';
 
 const API_BASE = API_BASE_URL;
 
@@ -164,7 +169,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
           // 2026-10-01 (W9-B3): attach the Keycloak Bearer token (fetched
           // once per sync cycle above); the BFF auth middleware rejects
           // unauthenticated batches.
-          const response = await fetch(`${API_BASE}/api/v1/sync`, {
+          const response = await guardedFetch(`${API_BASE}/api/v1/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${syncToken}` },
             body: JSON.stringify({

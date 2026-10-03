@@ -10,7 +10,7 @@
  * the honest loading / error / cached / live states.
  */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { render, screen, waitFor, act } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DigitalWalletScreen } from '../src/screens/DigitalWalletScreen';
@@ -77,12 +77,26 @@ afterEach(() => {
 
 describe('DigitalWalletScreen balance states', () => {
   it('shows a loading state while the balance query is in flight', async () => {
-    let resolveFetch: any;
-    (global as any).fetch = jest.fn(() => new Promise((r) => { resolveFetch = r; }));
+    // 2026-10-03 (W9-B6): the screen runs TWO queries (balance +
+    // transactions) against the same fetch mock — capture every resolver so
+    // act() can settle all of them deterministically.
+    const resolvers: Array<(v: any) => void> = [];
+    (global as any).fetch = jest.fn(() => new Promise((r) => { resolvers.push(r); }));
     renderScreen();
     expect(await screen.findByTestId('wallet-loading')).toBeTruthy();
+    // 2026-10-03 (W9-B6): timing-flake fix — previously the fetch promise was
+    // resolved AFTER the test's assertions, OUTSIDE act(), so React state
+    // updates (query settle + cache write) raced the next test and
+    // intermittently failed the suite with "not wrapped in act(...)". The
+    // resolution is now wrapped in act() and we await the settled balance
+    // render, so the query fully completes INSIDE this test.
     // 2026-10-03 (W9-B4 round 2): real superjson envelope shape.
-    resolveFetch({ ok: true, json: async () => ({ result: { data: { json: { balance: 500, currency: 'NGN' } } } }) });
+    await act(async () => {
+      for (const resolveFetch of resolvers) {
+        resolveFetch({ ok: true, json: async () => ({ result: { data: { json: { balance: 500, currency: 'NGN' } } } }) });
+      }
+    });
+    await waitFor(() => expect(screen.getByTestId('wallet-balance')).toBeTruthy());
   });
 
   it('shows the REAL server balance when the query succeeds', async () => {

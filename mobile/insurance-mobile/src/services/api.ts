@@ -14,25 +14,27 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE = API_BASE_URL;
 
-// Certificate pinning domains — all production endpoints must be pinned.
-// The native module (react-native-ssl-pinning or TrustKit) must be configured
-// in the native iOS/Android projects with SHA-256 leaf certificate hashes for:
-//   - api.insureportal.ng
-//   - auth.insureportal.ng
-//   - api.54link.ng
-//   - staging.54link.ng
-// Pin rotation: include both current and next certificate hashes.
-export const PINNED_DOMAINS = [
-  'api.insureportal.ng',
-  'auth.insureportal.ng',
-  'api.54link.ng',
-  'staging.54link.ng',
-] as const;
+// 2026-10-03 (W9-B6): PINNED_DOMAINS now lives in (and is ENFORCED by)
+// services/domainAllowlist.ts — every axios request through `api` below is
+// host-checked before dispatch (fail-closed). This is domain-allowlisting,
+// NOT TLS certificate pinning: true SHA-256 SPKI pinning must still be
+// configured in the native iOS/Android projects (TrustKit / OkHttp
+// CertificatePinner) once they exist — recorded residual, see BUILD.md.
+import { ALLOWED_DOMAINS, assertAxiosConfigAllowed } from './domainAllowlist';
+export const PINNED_DOMAINS = ALLOWED_DOMAINS;
 
 export const api = axios.create({
   baseURL: API_BASE,
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// 2026-10-03 (W9-B6): domain allowlist guard runs FIRST, before the auth
+// interceptor and before the adapter touches the network — a request to a
+// non-allowlisted host is rejected with a loud error, never sent.
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  assertAxiosConfigAllowed({ baseURL: config.baseURL, url: config.url });
+  return config;
 });
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
