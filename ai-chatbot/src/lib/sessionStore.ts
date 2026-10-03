@@ -1,17 +1,48 @@
 // 2026-10-02 (C2-b11b12): Redis-backed chat session store (audit B12).
+// 2026-10-03 (W8-B4): internals DELEGATED to @insureportal/channel-core's
+// RedisConversationStore (extracted from this service's C2 store during the
+// W8 triplication audit; same migration as whatsapp-bot W8-B2 and
+// telegram-bot W8-B3). This module is now a thin ai-chatbot-specific adapter:
+//   - keeps the service's ChatSession shape ({language, history}) —
+//     channel-core's generic ConversationState carries channel/member fields
+//     this service does not use;
+//   - keeps the wire contract: key prefix "chat:session:", TTL env var
+//     CHAT_SESSION_TTL_SECONDS, default 86400s (24h — the pre-Redis Map
+//     never expired), and the get/set(sessionId, session) call signature;
+//   - keeps HISTORY_CAP enforcement (history bounded oldest-dropped-first)
+//     before delegating the write;
+//   - HISTORY_CAP itself stays service-local (CHAT_HISTORY_CAP env, default
+//     50) — channel-core's store intentionally knows nothing about chat
+//     history semantics.
+// Serialization note (behavior change, internal only): state is now stored
+// as one JSON blob per key instead of a hand-rolled Redis HASH. TTL, key
+// prefix, and degradation policy (Redis first, loudly-logged throttled
+// in-memory fallback only on outage, never written on the happy path) are
+// unchanged. Pre-migration HASH keys are unreadable by GET (WRONGTYPE →
+// treated as an outage read, session re-created); they expire within the old
+// 24h TTL, so no migration is needed (sessions are ephemeral).
+// Log-text note (internal only): the outage fallback log now reads
+// "[ai-chatbot] REDIS OUTAGE: conversation <op> for <sessionId> fell back
+// ..." — the word "session" became "conversation" to match the channel-core
+// message shared with the other bots; the [ai-chatbot] label is preserved
+// via serviceName.
+// Per-user index note: ChatSession carries no user id (sessions are keyed by
+// an opaque sessionId), so the adapter wraps the blob with the sessionId
+// internally (getUserId = sessionId) and strips it on read — the public
+// ChatSession shape is unchanged. listByUser(sessionId) therefore lists the
+// sessions indexed under that id (at most one), kept for parity/support
+// tooling.
 //
-// Previously ChatEngine kept `sessions: Map<sessionId, {language, history}>`
-// in process memory, so every restart wiped chat history/context. Sessions
-// now live in a Redis HASH per session (`chat:session:<sessionId>`) with an
-// idle TTL; history is a JSON array capped at HISTORY_CAP entries (oldest
-// dropped first) so a long-lived session cannot grow unboundedly.
-//
-// Degradation policy: session context is availability-critical, not
-// identity/funds. Every write attempts Redis FIRST; only on a Redis error do
-// we fall back to a per-process in-memory Map with a loud, throttled error
-// log. State is never lost silently on the happy path.
+// Vendoring note: channel-core is consumed from vendor/channel-core (built
+// dist + package.json) via a file: dependency with install-links=true
+// (.npmrc) so this package stays standalone-installable: the Dockerfile build
+// context is just ai-chatbot/, so file:../packages/channel-core would not
+// resolve. Refresh with `npm run sync:channel-core`.
+import {
+  RedisConversationStore as CoreRedisConversationStore,
+  RedisConversationStoreOptions as CoreStoreOptions,
+} from "@insureportal/channel-core";
 import { SupportedLanguage } from "../language/detector";
-import { getRedisClient } from "./redisClient";
 
 export interface ChatSession {
   language: SupportedLanguage;
@@ -23,7 +54,6 @@ export const HISTORY_CAP = Number(process.env.CHAT_HISTORY_CAP) || 50;
 
 /** Default idle timeout: 24h between messages keeps the session alive. */
 const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
-const ERROR_LOG_INTERVAL_MS = 60_000;
 
 export interface SessionStoreOptions {
   /** Override REDIS_URL (tests point this at an unreachable port). */
@@ -33,49 +63,33 @@ export interface SessionStoreOptions {
   keyPrefix?: string;
 }
 
+/** Internal wire blob: ChatSession plus the sessionId for the per-user index. */
+type StoredSession = ChatSession & { sessionId: string };
+
+// 2026-10-03 (W8-B4): composition, not inheritance — the adapter owns the
+// history-cap and id-wrapping concerns; the inner core store owns Redis
+// semantics. The inner store is exposed for new call sites that want the
+// generic API (delete/listByUser).
 export class RedisSessionStore {
-  private readonly ttlSeconds: number;
-  private readonly keyPrefix: string;
-  private readonly url?: string;
-  /** Degradation fallback only — NOT written on the happy path. */
-  private readonly memory = new Map<string, ChatSession>();
-  private lastErrorLog = 0;
+  private readonly inner: CoreRedisConversationStore<StoredSession>;
 
   constructor(opts: SessionStoreOptions = {}) {
-    this.ttlSeconds =
-      opts.ttlSeconds ??
-      (Number(process.env.CHAT_SESSION_TTL_SECONDS) || DEFAULT_TTL_SECONDS);
-    this.keyPrefix = opts.keyPrefix ?? "chat:session:";
-    this.url = opts.url;
-  }
-
-  private key(sessionId: string): string {
-    return `${this.keyPrefix}${sessionId}`;
-  }
-
-  private logFallback(op: string, sessionId: string, err: unknown): void {
-    const now = Date.now();
-    if (now - this.lastErrorLog >= ERROR_LOG_INTERVAL_MS) {
-      this.lastErrorLog = now;
-      console.error(
-        `[ai-chatbot] REDIS OUTAGE: session ${op} for ${sessionId} fell back to ` +
-          `in-memory state (lost on restart!): ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
+    const coreOpts: CoreStoreOptions<StoredSession> = {
+      url: opts.url,
+      ttlSeconds:
+        opts.ttlSeconds ??
+        (Number(process.env.CHAT_SESSION_TTL_SECONDS) || DEFAULT_TTL_SECONDS),
+      keyPrefix: opts.keyPrefix ?? "chat:session:",
+      serviceName: "ai-chatbot",
+      getUserId: (state) => state.sessionId,
+    };
+    this.inner = new CoreRedisConversationStore<StoredSession>(coreOpts);
   }
 
   async get(sessionId: string): Promise<ChatSession | null> {
-    try {
-      const h = await getRedisClient(this.url).hgetall(this.key(sessionId));
-      if (!h || !h.language) return null;
-      return {
-        language: h.language as SupportedLanguage,
-        history: h.history ? (JSON.parse(h.history) as string[]) : [],
-      };
-    } catch (err) {
-      this.logFallback("read", sessionId, err);
-      return this.memory.get(sessionId) ?? null;
-    }
+    const stored = await this.inner.get(sessionId);
+    if (!stored) return null;
+    return { language: stored.language, history: stored.history };
   }
 
   async set(sessionId: string, session: ChatSession): Promise<void> {
@@ -83,19 +97,15 @@ export class RedisSessionStore {
     if (session.history.length > HISTORY_CAP) {
       session.history = session.history.slice(-HISTORY_CAP);
     }
-    try {
-      await getRedisClient(this.url)
-        .multi()
-        .hset(this.key(sessionId), {
-          language: session.language,
-          history: JSON.stringify(session.history),
-        })
-        .expire(this.key(sessionId), this.ttlSeconds)
-        .exec();
-      this.memory.delete(sessionId); // happy path: no stale fallback copy
-    } catch (err) {
-      this.logFallback("write", sessionId, err);
-      this.memory.set(sessionId, session);
-    }
+    await this.inner.set(sessionId, { ...session, sessionId });
+  }
+
+  delete(sessionId: string): Promise<void> {
+    return this.inner.delete(sessionId);
+  }
+
+  /** Session ids indexed under a user id (channel-core per-user index). */
+  listByUser(sessionId: string): Promise<string[]> {
+    return this.inner.listByUser(sessionId);
   }
 }
