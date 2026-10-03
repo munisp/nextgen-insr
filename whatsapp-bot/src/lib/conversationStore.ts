@@ -1,18 +1,31 @@
 // 2026-10-02 (C2-b11b12): Redis-backed conversation state store (audit B11).
+// 2026-10-03 (W8-B2): internals DELEGATED to @insureportal/channel-core's
+// RedisConversationStore (extracted from this very file during the W8
+// triplication audit). This module is now a thin whatsapp-specific adapter:
+//   - keeps the bot's ConversationState shape ({phone, intent, step, data,
+//     lastActive}) — channel-core's generic ConversationState carries
+//     channel/member fields this bot does not use;
+//   - keeps the bot's wire contract: key prefix "wa:conv:", TTL env var
+//     WA_CONVERSATION_TTL_SECONDS, default 600s (= idle timeout), and the
+//     set(state) call signature keyed by state.phone;
+//   - getUserId(state) = state.phone maintains channel-core's per-user index
+//     (listByUser) for support tooling.
+// Serialization note (behavior change, internal only): state is now stored as
+// one JSON blob per key instead of a hand-rolled Redis HASH. TTL, key prefix,
+// degradation policy (Redis first, loudly-logged throttled in-memory fallback
+// only on outage, never written on the happy path) are unchanged. Old HASH
+// entries simply expire; no migration needed (state is ephemeral, 10-min TTL).
 //
-// Previously ConversationEngine kept `states: Map<phone, ConversationState>`
-// in process memory, so every restart wiped users' multi-step conversations
-// (e.g. mid-claim). State now lives in a Redis HASH per phone
-// (`wa:conv:<phone>`) with a TTL equal to the conversation idle timeout, so:
-//   - a bot restart no longer loses an in-progress conversation;
-//   - idle conversations still expire exactly as before.
-//
-// Degradation policy: conversation state is availability-critical, not
-// identity/funds. Every write attempts Redis FIRST; only on a Redis error do
-// we fall back to a per-process in-memory Map with a loud, throttled error
-// log. State is never lost silently on the happy path.
+// Vendoring note: channel-core is consumed from vendor/channel-core (built
+// dist + package.json) via a file: dependency with install-links=true
+// (.npmrc) so this package stays standalone-installable: the Dockerfile build
+// context is just whatsapp-bot/, so file:../packages/channel-core would not
+// resolve. Refresh with `npm run sync:channel-core`.
+import {
+  RedisConversationStore as CoreRedisConversationStore,
+  RedisConversationStoreOptions as CoreStoreOptions,
+} from "@insureportal/channel-core";
 import { InsuranceIntent } from "../engine/intent";
-import { getRedisClient } from "./redisClient";
 
 export interface ConversationState {
   phone: string;
@@ -26,7 +39,6 @@ export interface ConversationState {
 export const CONVERSATION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const DEFAULT_TTL_SECONDS = Math.ceil(CONVERSATION_IDLE_TIMEOUT_MS / 1000);
-const ERROR_LOG_INTERVAL_MS = 60_000;
 
 export interface ConversationStoreOptions {
   /** Override REDIS_URL (tests point this at an unreachable port). */
@@ -36,71 +48,42 @@ export interface ConversationStoreOptions {
   keyPrefix?: string;
 }
 
+// 2026-10-03 (W8-B2): composition, not inheritance — the bot's set(state)
+// wire contract (keyed by state.phone) is incompatible with channel-core's
+// set(conversationId, state) signature, so subclassing would force a lying
+// override. The inner core store is exposed for new call sites that want the
+// generic API (delete/listByUser).
 export class RedisConversationStore {
-  private readonly ttlSeconds: number;
-  private readonly keyPrefix: string;
-  private readonly url?: string;
-  /** Degradation fallback only — NOT written on the happy path. */
-  private readonly memory = new Map<string, ConversationState>();
-  private lastErrorLog = 0;
+  private readonly inner: CoreRedisConversationStore<ConversationState>;
 
   constructor(opts: ConversationStoreOptions = {}) {
-    this.ttlSeconds =
-      opts.ttlSeconds ??
-      (Number(process.env.WA_CONVERSATION_TTL_SECONDS) || DEFAULT_TTL_SECONDS);
-    this.keyPrefix = opts.keyPrefix ?? "wa:conv:";
-    this.url = opts.url;
+    const coreOpts: CoreStoreOptions<ConversationState> = {
+      url: opts.url,
+      ttlSeconds:
+        opts.ttlSeconds ??
+        (Number(process.env.WA_CONVERSATION_TTL_SECONDS) || DEFAULT_TTL_SECONDS),
+      keyPrefix: opts.keyPrefix ?? "wa:conv:",
+      serviceName: "whatsapp-bot",
+      getUserId: (state) => state.phone,
+    };
+    this.inner = new CoreRedisConversationStore<ConversationState>(coreOpts);
   }
 
-  private key(phone: string): string {
-    return `${this.keyPrefix}${phone}`;
+  get(phone: string): Promise<ConversationState | null> {
+    return this.inner.get(phone);
   }
 
-  private logFallback(op: string, phone: string, err: unknown): void {
-    const now = Date.now();
-    if (now - this.lastErrorLog >= ERROR_LOG_INTERVAL_MS) {
-      this.lastErrorLog = now;
-      console.error(
-        `[whatsapp-bot] REDIS OUTAGE: conversation ${op} for ${phone} fell back to ` +
-          `in-memory state (lost on restart!): ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
+  /** whatsapp-bot wire contract: state is keyed by state.phone. */
+  set(state: ConversationState): Promise<void> {
+    return this.inner.set(state.phone, state);
   }
 
-  async get(phone: string): Promise<ConversationState | null> {
-    try {
-      const h = await getRedisClient(this.url).hgetall(this.key(phone));
-      if (!h || !h.phone) return null;
-      return {
-        phone: h.phone,
-        intent: (h.intent || null) as InsuranceIntent | null,
-        step: Number(h.step) || 0,
-        data: h.data ? (JSON.parse(h.data) as Record<string, string>) : {},
-        lastActive: Number(h.lastActive) || 0,
-      };
-    } catch (err) {
-      this.logFallback("read", phone, err);
-      return this.memory.get(phone) ?? null;
-    }
+  delete(phone: string): Promise<void> {
+    return this.inner.delete(phone);
   }
 
-  async set(state: ConversationState): Promise<void> {
-    try {
-      await getRedisClient(this.url)
-        .multi()
-        .hset(this.key(state.phone), {
-          phone: state.phone,
-          intent: state.intent ?? "",
-          step: String(state.step),
-          data: JSON.stringify(state.data),
-          lastActive: String(state.lastActive),
-        })
-        .expire(this.key(state.phone), this.ttlSeconds)
-        .exec();
-      this.memory.delete(state.phone); // happy path: no stale fallback copy
-    } catch (err) {
-      this.logFallback("write", state.phone, err);
-      this.memory.set(state.phone, state);
-    }
+  /** All conversation ids indexed for a phone (channel-core per-user index). */
+  listByUser(phone: string): Promise<string[]> {
+    return this.inner.listByUser(phone);
   }
 }

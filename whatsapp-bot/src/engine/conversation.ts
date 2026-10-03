@@ -1,3 +1,12 @@
+// 2026-10-03 (W8-B2): channel-core's ChannelEngine was evaluated for the
+// dispatch pipeline and intentionally NOT adopted here (no force-fit):
+// ChannelEngine models flat intent → handler dispatch, while this engine's
+// behavior is whatsapp-specific multi-step flows (state.step machines,
+// interactive button/list id mapping, "menu"/"0" reset, WhatsApp list/button
+// reply rendering). Adopting it would change observable behavior, so the
+// engine stays local; the store, redis client and platform client it uses
+// ARE channel-core's (see src/lib/* and src/clients/platform.ts). Fed back as
+// a channel-core API gap: no multi-step flow/step-machine support.
 import { InsuranceIntentClassifier, InsuranceIntent } from "./intent";
 import { PlatformClient, PlatformUnavailableError } from "../clients/platform";
 // 2026-10-02 (C2-b11b12, audit B11): state shape + Redis store live in
