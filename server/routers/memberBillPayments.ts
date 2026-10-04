@@ -33,12 +33,37 @@
  *                       digits, TV 10-12 digits, else >= 5 chars). Pure
  *                       format check — no provider lookup exists.
  *
- * Fail-closed: both procs are protectedProcedure (authentication required);
- * no DB is needed for the static registry, so no DB access is performed.
+ * Fail-closed: all procs are protectedProcedure (authentication required).
+ *
+ * 2026-10-03 (W10-B2): the member-safe funds mutation `pay` (+ `confirmPay`)
+ * now ships, composed on server/lib/memberFunds.ts: the member is charged via
+ * the REAL Paystack capture rail (env-gated, fail-closed) and fulfillment is
+ * dispatched to BILL_PROVIDER_URL ONLY after a server-side verified capture
+ * (kobo-exact). The quarantined billPayments.pay (client-supplied agentId,
+ * agent float) is never delegated to. Amounts: member-chosen within the
+ * registry MIN/MAX (design §6.1 — the biller registry carries limits, not
+ * prices) + a server-side DAILY limit over the caller's OWN rows; identity
+ * is session-derived only (metadata.memberUserId/memberCustomerId); F-02
+ * idempotency with payload-hash binding and derived BP- references
+ * (crash-adoptable). Fulfillment is NEVER synchronous success: the row is
+ * INSERT-first PENDING ("awaiting_payment" → capture → "submitted" /
+ * "unknown_outcome" / "rejected"+failed_refund_pending).
  */
+import { TRPCError } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { transactions } from "../../drizzle/schema";
+import {
+  confirmMemberCapture,
+  initiateMemberCapture,
+  requireIdempotencyKey,
+  resolveMemberCustomer,
+  type MemberFundsKind,
+} from "../lib/memberFunds";
+import type { ProviderClientConfig } from "../lib/providerDispatch";
 import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 // ── Registry copy (billPayments.ts:31-36, 2026-10-01 R3-b3) ────────────────
 // Keep in sync with billPayments.ts; the member surface must disclose the
@@ -67,6 +92,44 @@ function isBillProviderConfigured(): boolean {
     process.env.VTPASS_API_KEY ||
     process.env.BAXI_API_KEY
   );
+}
+
+// ── W10-B2 (2026-10-03): member bill-pay funds rail ─────────────────────────
+// Real provider client (billProviderClient pattern, billPayments.ts:50-58):
+// only a configured base URL enables fulfillment dispatch; anything less
+// fails closed in initiateMemberCapture BEFORE any charge.
+function billProviderClient(): ProviderClientConfig | null {
+  const baseUrl = process.env.BILL_PROVIDER_URL;
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.BILL_PROVIDER_API_KEY,
+    timeoutMs: Number(process.env.BILL_PROVIDER_TIMEOUT_MS ?? 10_000),
+  };
+}
+
+const BILL_PAY_KIND: MemberFundsKind = {
+  journey: "member-bill-pay", // F-02 idempotency namespace
+  refPrefix: "BP",
+  txType: "Bill Payment",
+  providerClient: billProviderClient,
+  dispatchPath: "/pay",
+  label: "bill payment",
+};
+
+async function fundsDb() {
+  const d = await getDb();
+  if (!d)
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "DB unavailable",
+    });
+  return d;
+}
+
+/** Caller-scoped daily-limit condition: the member's OWN bill rows only. */
+function billDailyScope(customerId: number) {
+  return sql`${transactions.metadata}->>'memberCustomerId' = ${String(customerId)} AND ${transactions.type} = 'Bill Payment'`;
 }
 
 export const memberBillPaymentsRouter = router({
@@ -109,5 +172,88 @@ export const memberBillPaymentsRouter = router({
         biller: input.biller,
         message: valid ? "Valid" : "Invalid customer number",
       };
+    }),
+
+  /**
+   * W10-B2 (2026-10-03): member-initiated bill payment — capture phase.
+   *
+   * - Identity: session-derived customer ONLY (no client customerId/agentId).
+   * - Amount: member-chosen within registry MIN/MAX at the input boundary
+   *   (design §6.1 — prepaid-style billers carry no server price) PLUS the
+   *   server-side daily limit over the caller's own rows; nothing else about
+   *   the amount is client-trusted.
+   * - Idempotency: mandatory key, payload-hash bound to {biller,
+   *   customerNumber, amountNGN, meterType}; derived BP- reference.
+   * - Rail: Paystack initialize (fail-closed when unconfigured) AND the bill
+   *   provider must be configured BEFORE charge; fulfillment is dispatched
+   *   only by confirmPay after a verified capture.
+   */
+  pay: protectedProcedure
+    .input(
+      z.object({
+        biller: z.enum(
+          Object.keys(BILLER_COMMISSION) as [string, ...string[]]
+        ),
+        customerNumber: z.string().min(5).max(20),
+        meterType: z.enum(["prepaid", "postpaid"]).optional(),
+        amountNGN: z.number().int().min(MIN_AMOUNT).max(MAX_AMOUNT),
+        idempotencyKey: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{8,20}$/)
+          .optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const d = await fundsDb();
+      const customer = await resolveMemberCustomer(d, ctx.user.id);
+      if (!customer) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No member profile is bound to this session — bill payment is unavailable (fail-closed)",
+        });
+      }
+      const idempotencyKey = requireIdempotencyKey(input.idempotencyKey, ctx);
+      return initiateMemberCapture({
+        d,
+        ctx,
+        kind: BILL_PAY_KIND,
+        customer,
+        idempotencyKey,
+        amountNGN: input.amountNGN,
+        idemPayload: {
+          biller: input.biller,
+          customerNumber: input.customerNumber,
+          meterType: input.meterType ?? null,
+          amountNGN: input.amountNGN,
+        },
+        dailyScope: billDailyScope(customer.id),
+        dailyLimitNGN: DAILY_LIMIT,
+        row: { customerAccount: input.customerNumber },
+        metadata: {
+          biller: input.biller,
+          customerNumber: input.customerNumber,
+          meterType: input.meterType ?? null,
+        },
+        dispatchPayload: {
+          biller: input.biller,
+          customerNumber: input.customerNumber,
+          meterType: input.meterType ?? null,
+          amountNGN: input.amountNGN,
+        },
+      });
+    }),
+
+  /**
+   * W10-B2: verify the member's Paystack capture for a BP- reference and, on
+   * a kobo-exact "success", dispatch fulfillment to the bill provider.
+   * Replay-safe (guarded transitions + provider status lookup; never a blind
+   * re-dispatch). Ownership-gated; foreign references → NOT_FOUND.
+   */
+  confirmPay: protectedProcedure
+    .input(z.object({ reference: z.string().min(8).max(32) }))
+    .mutation(async ({ input, ctx }) => {
+      const d = await fundsDb();
+      return confirmMemberCapture({ d, ctx, kind: BILL_PAY_KIND, reference: input.reference });
     }),
 });

@@ -163,10 +163,19 @@ describe("memberAirtime router (2026-10-01, R3-b3)", () => {
     });
   });
 
-  it("exposes no funds mutation (vend deferred funds wave)", async () => {
+  it("exposes the caller-scoped reads + the W10-B2 member-safe vend mutations", async () => {
+    // 2026-10-03 (W10-B2): vend/confirmVend now ship as the member-safe
+    // recomposition (session-derived caller phone, Paystack capture,
+    // provider fulfillment after verified capture — never the quarantined
+    // agent router). Mutation behavior is covered in memberAirtimeVendW10B2.test.ts.
     const { memberAirtimeRouter } = await import("../memberAirtime");
     const procs = Object.keys(memberAirtimeRouter._def.procedures);
-    expect(procs.sort()).toEqual(["myHistory", "mySummary"]);
+    expect(procs.sort()).toEqual([
+      "confirmVend",
+      "myHistory",
+      "mySummary",
+      "vend",
+    ]);
   });
 
   it("myHistory returns only caller-phone Airtime rows, newest first", async () => {

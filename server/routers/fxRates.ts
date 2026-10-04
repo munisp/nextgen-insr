@@ -7,6 +7,26 @@ import { auditLog, systemConfig } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
+// 2026-10-03 (W10-B2): BROKEN-AUTHZ FIX. updateRates/refresh were plain
+// protectedProcedure — ANY authenticated user (role "user") could overwrite
+// the global rate book that every member quote (memberFxRates.convert)
+// prices from. They are now gated to elevated roles only (admin/supervisor),
+// the same elevated-role pattern used by member funds ownership bypasses.
+// The gate runs before any rate-book read/write; a non-elevated caller gets
+// FORBIDDEN (authenticated but not authorized), anonymous stays UNAUTHORIZED
+// via protectedProcedure.
+const fxElevatedProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const role = (ctx.user as { role?: string | null } | null)?.role;
+  if (role !== "admin" && role !== "supervisor") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "FX rate administration requires an admin or supervisor role",
+    });
+  }
+  return next({ ctx });
+});
+
 
 // MOCKWARE FIX: getHistorical previously fabricated a sine wave and labelled
 // it "frankfurter/ecb"; refresh was a no-op success. Both now call the real
@@ -209,7 +229,7 @@ export const fxRatesRouter = router({
         });
       }
     }),
-  updateRates: protectedProcedure
+  updateRates: fxElevatedProcedure // 2026-10-03 (W10-B2): was protectedProcedure — broken authz
     // F13-1: validated rate book — 3-letter codes, finite positive rates
     // within sane bounds (fxRateBookSchema); empty books rejected below.
     .input(z.object({ rates: fxRateBookSchema }))
@@ -324,7 +344,7 @@ export const fxRatesRouter = router({
   }),
   // Refresh pulls the latest published rates from Frankfurter (ECB) and
   // persists them; it throws if the provider call fails.
-  refresh: protectedProcedure.mutation(async () => {
+  refresh: fxElevatedProcedure.mutation(async () => { // 2026-10-03 (W10-B2): was protectedProcedure — broken authz
     const data = await fetchFrankfurter(`/latest?from=EUR`);
     // Malformed provider reply -> loud failure; never persist garbage rates.
     if (!validateFrankfurterRates(data?.rates)) {

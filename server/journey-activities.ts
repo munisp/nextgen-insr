@@ -1750,9 +1750,18 @@ export function idempotencyPayloadHash(payload: unknown): string {
 
 type IdemRow = typeof idempotencyRecords.$inferSelect;
 
-/** Stored key is namespaced by journey so keys never collide across journeys. */
-function idemDbKey(key: string, journey: string): string {
-  return `${journey}:${key}`;
+/**
+ * Stored key is namespaced by journey so keys never collide across journeys.
+ * 2026-10-03 (W10-B2 r2, FUNDS-CRITICAL): an optional callerScope further
+ * binds the record to ONE caller (e.g. `m{customerId}` on the member funds
+ * rail). Without it the store was keyed on bare `journey:key`, so member B
+ * reusing member A's client key + an identical payload replayed A's result
+ * verbatim (A's reference / authorizationUrl / transactionId) — cross-member
+ * funds misdirection. With a scope, the same client key from a different
+ * member is a DIFFERENT idempotency scope entirely.
+ */
+function idemDbKey(key: string, journey: string, callerScope?: string): string {
+  return callerScope ? `${journey}:${callerScope}:${key}` : `${journey}:${key}`;
 }
 
 function hashMatches(row: IdemRow, payloadHash: string | null): boolean {
@@ -1773,16 +1782,21 @@ function hashMatches(row: IdemRow, payloadHash: string | null): boolean {
  * IdempotencyInProgressError while another worker holds a fresh reservation.
  * Fail-closed: a database error propagates (no silent re-execution).
  */
-export async function checkIdempotency(key: string, journey: string, payload?: unknown): Promise<unknown> {
+export async function checkIdempotency(
+  key: string,
+  journey: string,
+  payload?: unknown,
+  callerScope?: string // 2026-10-03 (W10-B2 r2): caller-binding, see idemDbKey
+): Promise<unknown> {
   const payloadHash = payload !== undefined ? idempotencyPayloadHash(payload) : null;
-  const dbKey = idemDbKey(key, journey);
+  const dbKey = idemDbKey(key, journey, callerScope);
 
   // Redis fast-path: only COMPLETED records are ever cached (written after the
   // DB commit), so a cache hit is always backed by a durable DB row. Any Redis
   // error falls through to the authoritative database read below.
   try {
     const redis = getRedisClient();
-    const cached = await redis.get(`idem:${journey}:${key}`);
+    const cached = await redis.get(`idem:${dbKey}`);
     if (cached) {
       const parsed = JSON.parse(cached) as { payloadHash: string | null; result: unknown };
       if (payloadHash != null && parsed.payloadHash != null && parsed.payloadHash !== payloadHash) {
@@ -1854,9 +1868,10 @@ export async function recordIdempotency(
   journey: string,
   result: unknown,
   payload?: unknown,
+  callerScope?: string, // 2026-10-03 (W10-B2 r2): caller-binding, see idemDbKey
 ): Promise<{ recorded: boolean }> {
   const payloadHash = payload !== undefined ? idempotencyPayloadHash(payload) : null;
-  const dbKey = idemDbKey(key, journey);
+  const dbKey = idemDbKey(key, journey, callerScope);
   const d = await db();
   const now = new Date();
 
@@ -1890,7 +1905,7 @@ export async function recordIdempotency(
   try {
     const redis = getRedisClient();
     await redis.set(
-      `idem:${journey}:${key}`,
+      `idem:${dbKey}`,
       JSON.stringify({ payloadHash, result }),
       "EX",
       Math.floor(IDEM_TTL_MS / 1000),
@@ -1901,11 +1916,16 @@ export async function recordIdempotency(
 }
 
 /** Mark a reserved key as failed (explicit, retryable via a fresh attempt). */
-export async function failIdempotency(key: string, journey: string, error: string): Promise<{ recorded: boolean }> {
+export async function failIdempotency(
+  key: string,
+  journey: string,
+  error: string,
+  callerScope?: string // 2026-10-03 (W10-B2 r2): caller-binding, see idemDbKey
+): Promise<{ recorded: boolean }> {
   const d = await db();
   await d.update(idempotencyRecords)
     .set({ status: "failed", error, updatedAt: new Date() })
-    .where(and(eq(idempotencyRecords.key, idemDbKey(key, journey)), eq(idempotencyRecords.status, "in_progress")));
+    .where(and(eq(idempotencyRecords.key, idemDbKey(key, journey, callerScope)), eq(idempotencyRecords.status, "in_progress")));
   return { recorded: true };
 }
 

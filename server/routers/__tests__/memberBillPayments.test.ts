@@ -8,9 +8,11 @@
  *     false)
  *   - validateCustomer: identical regex rules to billPayments.validateCustomer
  *     (electricity 10-13 digits, TV 10-12 digits, other >= 5 chars)
- *   - the router NEVER touches the DB (pure static catalog) and exposes no
- *     mutation proc (pay is a funds mutation behind financialProcedure —
- *     permanently out of the member surface).
+ *   - 2026-10-03 (W10-B2): the member-safe funds mutations `pay`/`confirmPay`
+ *     now ship (Paystack capture → verified fulfillment dispatch via
+ *     server/lib/memberFunds.ts); the catalog procs still never touch the
+ *     DB. The mutation behavior itself is covered for real (PGlite + wire
+ *     servers) in memberBillPayW10B2.test.ts.
  *
  * PGlite harness copied from memberReferrals.test.ts (2026-10-01 R3-fix-ci2):
  * real embedded PostgreSQL over the wire protocol, EPHEMERAL probed port so
@@ -108,14 +110,21 @@ describe("memberBillPayments router (2026-10-01, R3-b3)", () => {
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
-  it("exposes no mutation surface (pay is never delegated to)", async () => {
-    // Assert on the router DEFINITION (createCaller is a proxy with no
-    // enumerable keys): only the two read-only catalog procs exist.
+  it("exposes exactly the catalog reads + the W10-B2 member-safe funds mutations", async () => {
+    // 2026-10-03 (W10-B2): pay/confirmPay now exist — the member-safe
+    // recomposition (session-derived identity, server-side limits, Paystack
+    // capture, never the quarantined agent router). Assert on the router
+    // DEFINITION (createCaller is a proxy with no enumerable keys).
     const { memberBillPaymentsRouter } = await import("../memberBillPayments");
     const procs = Object.keys(
       memberBillPaymentsRouter._def.procedures as Record<string, unknown>
     );
-    expect(procs.sort()).toEqual(["billers", "validateCustomer"]);
+    expect(procs.sort()).toEqual([
+      "billers",
+      "confirmPay",
+      "pay",
+      "validateCustomer",
+    ]);
   });
 
   it("billers returns the real registry with limits and honest configured:false", async () => {

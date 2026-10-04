@@ -23,13 +23,39 @@
  * Fail-closed: getDb() null → INTERNAL_SERVER_ERROR. Single-row fetch
  * (myTransaction) is NOT_FOUND on ownership miss (non-enumerating). All
  * statuses are reported verbatim (pending_provider / unknown_outcome are
- * disclosed, never filtered or cosmetically renamed). No mutations.
+ * disclosed, never filtered or cosmetically renamed).
+ *
+ * 2026-10-03 (W10-B2): member-safe funds mutations now ship on
+ * server/lib/memberFunds.ts. The quarantined mobileMoney.cashIn/cashOut
+ * (client-supplied agentId, agent float / sys-bank-reserve legs) are never
+ * delegated to.
+ *   - cashIn (+ confirmCashIn): REAL Paystack capture of the caller
+ *     (env-gated, fail-closed) → verified capture → provider credit dispatch
+ *     MOBILE_MONEY_PROVIDER_URL/cashin (tri-state; never synchronous
+ *     success). KYC tier limits enforced on the CALLER's own phone.
+ *   - cashOut: honest v1 (design §6.4) — the platform cannot charge the
+ *     member to pay the member out (no Paystack /transfer client exists and
+ *     none is invented). It is a PENDING provider-debit request only, and
+ *     FAILS CLOSED (PRECONDITION_FAILED, nothing written) when
+ *     MOBILE_MONEY_PROVIDER_URL is absent.
+ * Identity is session-derived only; F-02 idempotency with payload-hash
+ * binding + derived CI-/CO- references.
  */
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { customers, transactions } from "../../drizzle/schema";
+import { enforceCustomerKycLimits } from "../lib/kycEnforcement";
+import {
+  confirmMemberCapture,
+  initiateMemberCapture,
+  requestMemberCashOut,
+  requireIdempotencyKey,
+  resolveMemberCustomer,
+  type MemberFundsKind,
+} from "../lib/memberFunds";
+import type { ProviderClientConfig } from "../lib/providerDispatch";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -88,6 +114,43 @@ const MM_SCOPE = sql`${transactions.metadata}->>'provider' IS NOT NULL`;
 interface TxMetadata {
   provider?: string;
   providerStatus?: string;
+}
+
+// ── W10-B2 (2026-10-03): member mobile-money funds rail ─────────────────────
+// Real provider client (mobileMoneyProviderClient pattern, mobileMoney.ts):
+// only a configured base URL enables dispatch; anything less fails closed
+// BEFORE any write (cashIn: before charge; cashOut: before recording).
+function mobileMoneyProviderClient(): ProviderClientConfig | null {
+  const baseUrl = process.env.MOBILE_MONEY_PROVIDER_URL;
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.MOBILE_MONEY_PROVIDER_API_KEY,
+    timeoutMs: Number(process.env.MOBILE_MONEY_PROVIDER_TIMEOUT_MS ?? 10_000),
+  };
+}
+
+const CASH_IN_KIND: MemberFundsKind = {
+  journey: "member-momo-cashin", // F-02 idempotency namespace
+  refPrefix: "CI",
+  txType: "Cash In",
+  providerClient: mobileMoneyProviderClient,
+  dispatchPath: "/cashin",
+  label: "mobile money cash-in",
+};
+
+const CASH_OUT_KIND: MemberFundsKind = {
+  journey: "member-momo-cashout",
+  refPrefix: "CO",
+  txType: "Cash Out",
+  providerClient: mobileMoneyProviderClient,
+  dispatchPath: "/cashout",
+  label: "mobile money cash-out",
+};
+
+/** Caller-scoped daily-limit condition: the caller's own MoMo rows only. */
+function momoDailyScope(phone: string) {
+  return and(eq(transactions.customerPhone, phone), MM_SCOPE);
 }
 
 export const memberMobileMoneyRouter = router({
@@ -275,4 +338,125 @@ export const memberMobileMoneyRouter = router({
     },
     configured: isMobileMoneyProviderConfigured(),
   })),
+
+  /**
+   * W10-B2 (2026-10-03): member mobile-money cash-in — capture phase. The
+   * member pays NGN via Paystack; the provider credits the member's own momo
+   * wallet after a VERIFIED capture (confirmCashIn). Caller phone is
+   * session-resolved; KYC tier limits are enforced on the caller
+   * (mobileMoney.ts:133 precedent). Amount within ₦100–₦300,000 + the
+   * server-side daily limit. No float is touched on the member leg.
+   */
+  cashIn: protectedProcedure
+    .input(
+      z.object({
+        provider: z.enum(PROVIDERS),
+        amountNGN: z.number().int().min(MIN_AMOUNT).max(MAX_AMOUNT),
+        idempotencyKey: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{8,20}$/)
+          .optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      const customer = await resolveMemberCustomer(d, ctx.user.id);
+      if (!customer?.phone) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No registered phone is bound to this member profile — cash-in is unavailable (fail-closed)",
+        });
+      }
+      const idempotencyKey = requireIdempotencyKey(input.idempotencyKey, ctx);
+      // KYC tier limits on the caller leg (fail-closed; runs before the
+      // idempotency reservation so refused attempts never consume a key).
+      await enforceCustomerKycLimits({
+        customerPhone: customer.phone,
+        amount: input.amountNGN,
+      });
+      return initiateMemberCapture({
+        d,
+        ctx,
+        kind: CASH_IN_KIND,
+        customer,
+        idempotencyKey,
+        amountNGN: input.amountNGN,
+        idemPayload: { provider: input.provider, amountNGN: input.amountNGN },
+        dailyScope: momoDailyScope(customer.phone),
+        dailyLimitNGN: DAILY_LIMIT,
+        row: { customerPhone: customer.phone },
+        metadata: { provider: input.provider, direction: "cashin" },
+        dispatchPayload: {
+          provider: input.provider,
+          customerPhone: customer.phone,
+          amountNGN: input.amountNGN,
+        },
+      });
+    }),
+
+  /**
+   * W10-B2: verify the Paystack capture for a CI- reference and dispatch the
+   * provider wallet credit on a kobo-exact success. Replay-safe; ownership-
+   * gated (foreign reference → NOT_FOUND).
+   */
+  confirmCashIn: protectedProcedure
+    .input(z.object({ reference: z.string().min(8).max(32) }))
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      return confirmMemberCapture({ d, ctx, kind: CASH_IN_KIND, reference: input.reference });
+    }),
+
+  /**
+   * W10-B2 (honest v1, design §6.4): member cash-out is a PENDING
+   * provider-debit request ONLY. There is no capture leg (the platform
+   * cannot charge the member to pay the member out — no Paystack /transfer
+   * client exists) and no float leg. FAILS CLOSED (PRECONDITION_FAILED,
+   * nothing written) when MOBILE_MONEY_PROVIDER_URL is absent; settlement is
+   * entirely provider-side and surfaced verbatim.
+   */
+  cashOut: protectedProcedure
+    .input(
+      z.object({
+        provider: z.enum(PROVIDERS),
+        amountNGN: z.number().int().min(MIN_AMOUNT).max(MAX_AMOUNT),
+        idempotencyKey: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{8,20}$/)
+          .optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      const customer = await resolveMemberCustomer(d, ctx.user.id);
+      if (!customer?.phone) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No registered phone is bound to this member profile — cash-out is unavailable (fail-closed)",
+        });
+      }
+      const idempotencyKey = requireIdempotencyKey(input.idempotencyKey, ctx);
+      await enforceCustomerKycLimits({
+        customerPhone: customer.phone,
+        amount: input.amountNGN,
+      });
+      return requestMemberCashOut({
+        d,
+        ctx,
+        kind: CASH_OUT_KIND,
+        customer,
+        idempotencyKey,
+        amountNGN: input.amountNGN,
+        idemPayload: { provider: input.provider, amountNGN: input.amountNGN },
+        dailyScope: momoDailyScope(customer.phone),
+        dailyLimitNGN: DAILY_LIMIT,
+        metadata: { provider: input.provider, direction: "cashout" },
+        dispatchPayload: {
+          provider: input.provider,
+          customerPhone: customer.phone,
+          amountNGN: input.amountNGN,
+        },
+      });
+    }),
 });
