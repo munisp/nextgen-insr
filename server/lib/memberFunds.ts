@@ -219,7 +219,9 @@ async function guardedUpdate(
   d: DrizzleDb,
   ref: string,
   set: Record<string, unknown>,
-  expect: { status?: string; providerStatus?: string }
+  // 2026-10-04 (W10-B2 CI fix): status must be the transactions enum union,
+  // not bare string — drizzle eq() on PgEnumColumn rejects plain string (TS2769).
+  expect: { status?: Transaction["status"]; providerStatus?: string }
 ): Promise<Transaction | null> {
   const conds = [eq(transactions.ref, ref)];
   if (expect.status) conds.push(eq(transactions.status, expect.status));
