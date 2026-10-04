@@ -104,6 +104,14 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
             { label: 'Loyalty', icon: '⭐', screen: 'Policies', params: { screen: 'Loyalty' } },
             { label: 'Referrals', icon: '🤝', screen: 'Policies', params: { screen: 'Referrals' } },
             { label: 'Disputes', icon: '⚖️', screen: 'Policies', params: { screen: 'Disputes' } },
+            // 2026-10-03 (W9-B5 wave 3): money-rail + FX + parametric screens
+            // (read-only surfaces; no pay/purchase UI exists server-side).
+            { label: 'Bills', icon: '🧾', screen: 'Policies', params: { screen: 'Bills' } },
+            { label: 'Airtime', icon: '📱', screen: 'Policies', params: { screen: 'Airtime' } },
+            { label: 'FX Rates', icon: '💱', screen: 'Policies', params: { screen: 'Fx' } },
+            { label: 'Parametric', icon: '🌦️', screen: 'Policies', params: { screen: 'Parametric' } },
+            // Phone OTP verification lives in the Profile stack (identity).
+            { label: 'Verify Phone', icon: '📞', screen: 'Profile', params: { screen: 'PhoneVerification' } },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

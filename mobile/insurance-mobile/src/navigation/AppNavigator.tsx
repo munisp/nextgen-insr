@@ -29,6 +29,15 @@ import { LoyaltyScreen } from '../screens/LoyaltyScreen';
 import { ReferralsScreen } from '../screens/ReferralsScreen';
 import { DisputesScreen } from '../screens/DisputesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+// 2026-10-03 (W9-B5 wave 3): bills / airtime+momo / FX / parametric member
+// screens (memberBillPayments/memberAirtime/memberMobileMoney/memberFxRates/
+// parametricMember routers — all read-only, no funds mutations exist).
+import { BillsScreen } from '../screens/BillsScreen';
+import { AirtimeScreen } from '../screens/AirtimeScreen';
+import { FxScreen } from '../screens/FxScreen';
+import { ParametricScreen } from '../screens/ParametricScreen';
+// Phone OTP verification (memberPhone router) — Profile stack (identity).
+import { PhoneVerificationScreen } from '../screens/PhoneVerificationScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SupportScreen } from '../screens/SupportScreen';
@@ -58,6 +67,11 @@ function PoliciesStack() {
       <Stack.Screen name="Loyalty" component={LoyaltyScreen} />
       <Stack.Screen name="Referrals" component={ReferralsScreen} />
       <Stack.Screen name="Disputes" component={DisputesScreen} />
+      {/* 2026-10-03 (W9-B5 wave 3) */}
+      <Stack.Screen name="Bills" component={BillsScreen} />
+      <Stack.Screen name="Airtime" component={AirtimeScreen} />
+      <Stack.Screen name="Fx" component={FxScreen} />
+      <Stack.Screen name="Parametric" component={ParametricScreen} />
     </Stack.Navigator>
   );
 }
@@ -82,6 +96,9 @@ function ProfileStack() {
       <Stack.Screen name="Analytics" component={AnalyticsScreen} />
       <Stack.Screen name="Compliance" component={ComplianceScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
+      {/* 2026-10-03 (W9-B5 wave 3): PhoneVerification was imported and targeted
+          by the Dashboard "Verify Phone" tile but never registered — dead-end. */}
+      <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
     </Stack.Navigator>
   );
 }
