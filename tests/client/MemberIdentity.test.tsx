@@ -149,7 +149,10 @@ describe("MemberIdentity — KYC & tiers (W7-B9)", () => {
   it("renders the real KYC status and tier requirements", () => {
     scriptIdentityQueries();
     render(<MemberIdentity />);
-    expect(screen.getByText("pending")).toBeInTheDocument();
+    // 2026-10-04 (W10-B4a): "pending" appears both in the status grid AND
+    // in the new open-session panel (KYC_STATUS fixture has an open
+    // session) — assert presence, not uniqueness.
+    expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
     expect(screen.getByText("Passed")).toBeInTheDocument();
     expect(screen.getByTestId("tier-requirements")).toHaveTextContent(
       '"maxBalance": 300000'
@@ -185,19 +188,23 @@ describe("MemberIdentity — KYC & tiers (W7-B9)", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the honest KYC-submission disclosure and NO submit form", () => {
+  it("an OPEN KYC session renders its real status instead of a duplicate form (W10-B4a rewrite, 2026-10-04)", () => {
+    // 2026-10-04 (W10-B4a): memberIdentity.submitKyc now ships (W10-B3), so
+    // the W7-B9 "no submit form" contract is replaced by the stronger one:
+    // with an OPEN ("pending") session — the KYC_STATUS fixture — the page
+    // renders the real open-session status panel and NO duplicate form
+    // (the server rejects duplicates with CONFLICT). The full submit flow
+    // (zod-strict body, adjudicated/unavailable verdicts, verbatim errors)
+    // is covered in MemberIdentityKyc.test.tsx.
     scriptIdentityQueries();
     render(<MemberIdentity />);
+    expect(screen.getByTestId("kyc-open-session")).toHaveTextContent(
+      "open KYC submission (#44)"
+    );
     expect(
-      screen.getByText(/KYC submission is not available in this portal/)
-    ).toBeInTheDocument();
-    // No fake KYC submit control may exist.
-    expect(
-      screen.queryByRole("button", { name: /submit kyc/i })
+      screen.queryByRole("button", { name: /submit kyc|submit for verification/i })
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/bvn/i)
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/11 digits/i)).not.toBeInTheDocument();
   });
 });
 
