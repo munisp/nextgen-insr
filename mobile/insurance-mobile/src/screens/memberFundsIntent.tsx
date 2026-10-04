@@ -44,9 +44,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY_PREFIX = '@insureportal/member_funds_idem';
 const KEY_RE = /^[A-Za-z0-9_-]{8,20}$/;
-// 2026-10-05: named IDEM_CHAR_POOL (not KEY_*) — a "KEY_*" identifier with a
-// high-entropy literal tripped gitleaks generic-api-key (false positive);
-// this is a character pool for key generation, not a key itself.
+// Character pool for generateKey (renamed 2026-10-05: prior name tripped
+// the repo secret scanner as a false positive).
 const IDEM_CHAR_POOL =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
 
