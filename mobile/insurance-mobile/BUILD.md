@@ -63,3 +63,10 @@ projects exist — e.g. TrustKit (iOS) and `network_security_config` + OkHttp
 `CertificatePinner` (Android), plus a trust-decision path for the OIDC
 system-browser traffic. Recorded here as an open residual; do not represent
 the JS allowlist as TLS pinning.
+
+2026-10-05 (W10-B6): exact, ready-to-apply pinning configuration
+(pin-set derivation commands, `network_security_config.xml`, OkHttp
+`CertificatePinner`, TrustKit `Info.plist`, OIDC system-browser boundary,
+and the pre-release hostile-proxy verification gate) now lives in
+[`docs/tls-pinning.md`](docs/tls-pinning.md). It activates at native
+prebuild time; until then pinning remains NOT ACTIVE.

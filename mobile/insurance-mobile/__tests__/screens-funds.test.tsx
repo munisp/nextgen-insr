@@ -11,9 +11,11 @@
  * The network boundary (fetch) is mocked with the REAL superjson envelope
  * `{result:{data:{json:<payload>}}}` (harness.tsx); the screens, services
  * (api.ts), memberTrpc auth and config transport are production code. The
- * ONLY other boundary spied is react-native Linking.openURL (the OS browser
- * handoff) — tests assert it receives the SERVER-SUPPLIED authorizationUrl
- * verbatim.
+ * ONLY other boundary observed is react-navigation: 2026-10-06 (W10-B5) the
+ * checkout handoff is the in-app PaystackCheckout WebView, so tests assert
+ * navigation.navigate receives 'PaystackCheckout' with the SERVER-SUPPLIED
+ * authorizationUrl and reference verbatim (the WebView native boundary
+ * itself is covered in paystack-checkout.test.tsx).
  *
  * Asserted contracts:
  *   - zod-exact mutation bodies (no computed fields; optional beneficiary
@@ -29,7 +31,6 @@
  *     verbatim verdicts incl. the "unavailable stays pending" outcome
  */
 import React from 'react';
-import { Linking } from 'react-native';
 import { screen, waitFor, fireEvent } from '@testing-library/react-native';
 import {
   mockFetchSequence, renderScreen, resetHarness, mockNavigation,
@@ -94,9 +95,6 @@ const CONFIRM_SUBMITTED = {
 
 beforeEach(async () => {
   await resetHarness();
-  // OS boundary: the browser handoff. Never a mock on the production path —
-  // the production code calls the REAL Linking API; tests only observe it.
-  (Linking as any).openURL = jest.fn(async () => true);
 });
 afterEach(() => { delete (global as any).fetch; });
 
@@ -120,7 +118,7 @@ async function prepareBillDraft(fetchBillers: () => any = () => BILLERS) {
 }
 
 describe('BillsScreen pay flow (W10-B4b)', () => {
-  it('sends the zod-exact pay body, hands the authorizationUrl to Linking, and renders submitted as pending (NOT delivered)', async () => {
+  it('sends the zod-exact pay body, opens the in-app checkout with the authorizationUrl, and renders submitted as pending (NOT delivered)', async () => {
     const fetchMock = await prepareBillDraft();
     fireEvent.press(screen.getByLabelText('Pay'));
     // Initiation panel with the real reference.
@@ -137,11 +135,13 @@ describe('BillsScreen pay flow (W10-B4b)', () => {
     });
     expect(body.idempotencyKey).toMatch(IDEM_RE);
 
-    // authorizationUrl handoff: the SERVER URL goes to the system browser.
+    // authorizationUrl handoff (W10-B5): the SERVER URL + reference go to
+    // the in-app PaystackCheckout WebView, verbatim.
     fireEvent.press(screen.getByLabelText('Complete payment'));
-    expect((Linking as any).openURL).toHaveBeenCalledWith(
-      'https://checkout.paystack.com/real-session-1',
-    );
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('PaystackCheckout', {
+      authorizationUrl: 'https://checkout.paystack.com/real-session-1',
+      reference: 'BP-ABC12345',
+    });
 
     // Confirm → tri-state: submitted = pending fulfillment, never delivered.
     fireEvent.press(screen.getByLabelText("I've paid — verify"));
@@ -383,9 +383,10 @@ describe('AirtimeScreen vend + momo cash flows (W10-B4b)', () => {
     expect(body.idempotencyKey).toMatch(IDEM_RE);
 
     fireEvent.press(screen.getByLabelText('Complete payment'));
-    expect((Linking as any).openURL).toHaveBeenCalledWith(
-      'https://checkout.paystack.com/real-vend-1',
-    );
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('PaystackCheckout', {
+      authorizationUrl: 'https://checkout.paystack.com/real-vend-1',
+      reference: 'AV-XYZ98765',
+    });
 
     fireEvent.press(screen.getByLabelText("I've paid — verify"));
     expect(await screen.findByText(/your airtime purchase was submitted and is pending fulfillment\. It has NOT been delivered yet/)).toBeTruthy();
@@ -444,9 +445,10 @@ describe('AirtimeScreen vend + momo cash flows (W10-B4b)', () => {
     expect(body).toMatchObject({ provider: 'MTN MoMo', amountNGN: 5000 });
 
     fireEvent.press(screen.getByLabelText('Complete payment'));
-    expect((Linking as any).openURL).toHaveBeenCalledWith(
-      'https://checkout.paystack.com/real-cashin-1',
-    );
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('PaystackCheckout', {
+      authorizationUrl: 'https://checkout.paystack.com/real-cashin-1',
+      reference: 'CI-QWE54321',
+    });
     fireEvent.press(screen.getByLabelText("I've paid — verify"));
     expect(await screen.findByText(/your cash-in was submitted and is pending fulfillment/)).toBeTruthy();
 
