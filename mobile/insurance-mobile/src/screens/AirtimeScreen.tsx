@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 // 2026-10-03 (W9-B5 wave 3): airtime & mobile-money screen mirroring the web
-// member portal MemberAirtime.tsx (W7-B10) — one combined screen for both
-// phone-scoped money rails (web parity: the two real backends share the same
-// caller-phone scoping and by-status summary shape, and both are strictly
-// read-only):
+// member portal MemberAirtime.tsx — one combined screen for both phone-scoped
+// money rails:
 //   Airtime (server/routers/memberAirtime.ts):
 //     - memberAirtime.myHistory  (paginated, newest first, ALL statuses
 //                                 verbatim incl. failed/pending)
@@ -20,14 +18,29 @@ import { useQuery } from '@tanstack/react-query';
 //     - memberMobileMoney.mySummary      (per-status counts + volumes)
 //     - memberMobileMoney.providers      (registry + honest `configured` flag)
 //
-// ALL READ-ONLY: neither router exposes any mutation (no airtime purchase, no
-// cash-in/out — those are financialProcedure funds rails deferred to the
-// reviewed funds wave), so no purchase/transfer UI exists here and none is
-// faked (web parity note verbatim at the bottom).
+// 2026-10-04 (W10-B4b): the W10-B2 mutations are NOW WIRED, mirroring the web
+// MemberAirtime.tsx W10-B4a sections:
+//   - memberAirtime.vend/confirmVend       (BuyAirtimeSection — two-phase
+//     capture; network select, optional beneficiary phone OMITTED when blank,
+//     ₦50–₦50,000 client guards matching the server zod boundary)
+//   - memberMobileMoney.cashIn/confirmCashIn (MomoCashSection — two-phase)
+//   - memberMobileMoney.cashOut            (PENDING-only honest v1; a
+//     PRECONDITION_FAILED verdict is surfaced VERBATIM, never hidden)
+// Idempotency keys: stable per draft fingerprint (AsyncStorage,
+// memberFundsIntent.tsx), retired on terminal outcome. The capture panel
+// never claims delivery — tri-state only.
 import {
   airtimeApi, mobileMoneyApi, MOMO_PROVIDERS, MomoProvider,
   MemberAirtimeRow, MemberMomoTxRow, MemberStatusSummary,
 } from '../services/api';
+import {
+  MemberCapturePanel,
+  intentIdempotencyKey,
+  isTerminalConfirmation,
+  retireIntentKey,
+  type CaptureConfirmationView,
+  type CaptureInitiationView,
+} from './memberFundsIntent';
 
 const fmt = (n: number, currency = 'NGN') =>
   currency === 'NGN' ? `₦${Number(n).toLocaleString('en-NG')}` : `${Number(n).toLocaleString('en-NG')} ${currency}`;
@@ -62,6 +75,363 @@ function SummaryList({ summary }: { summary: MemberStatusSummary }) {
       <Text style={styles.metaLine}>
         Total: {summary.totalTransactions} over {summary.periodDays} days
       </Text>
+    </View>
+  );
+}
+
+// ── W10-B4b (2026-10-04): funds sections mirroring MemberAirtime.tsx W10-B4a
+// Server zod-boundary copies (memberAirtime.ts:90-94 — never assumed).
+const NETWORKS = ['MTN', 'Glo', 'Airtel', '9mobile'] as const;
+const VEND_MIN_NGN = 50;
+const VEND_MAX_NGN = 50_000;
+const NIGERIAN_PHONE = /^(0|\+234)[789][01]\d{8}$/;
+const VEND_IDEM_SCOPE = 'member-airtime-vend';
+const CASHIN_IDEM_SCOPE = 'member-momo-cashin';
+const CASHOUT_IDEM_SCOPE = 'member-momo-cashout';
+
+/** Buy-airtime form: vend (capture) → authorizationUrl → confirmVend. */
+function BuyAirtimeSection() {
+  const [network, setNetwork] = useState<string>('');
+  const [phone, setPhone] = useState('');
+  const [amount, setAmount] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [vendState, setVendState] = useState<CaptureInitiationView | null>(null);
+  const [vendError, setVendError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<CaptureConfirmationView | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const chosenNetwork = network || NETWORKS[0];
+  const amountNGN = Number(amount);
+  const amountInBounds =
+    Number.isInteger(amountNGN) && amountNGN >= VEND_MIN_NGN && amountNGN <= VEND_MAX_NGN;
+
+  const onVend = async () => {
+    setFormError(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    const trimmedPhone = phone.trim();
+    // zod-exact client guards (server enforces the same rules).
+    if (!amountInBounds) {
+      setFormError(`Enter a whole amount between ₦${VEND_MIN_NGN} and ₦${VEND_MAX_NGN.toLocaleString()}.`);
+      return;
+    }
+    if (trimmedPhone && !NIGERIAN_PHONE.test(trimmedPhone)) {
+      setFormError('Enter a valid Nigerian phone number (e.g. 08031234567).');
+      return;
+    }
+    // The beneficiary phone defaults server-side to the member's own
+    // registered number; an empty field sends NO phoneNumber (zod-exact).
+    const beneficiary = trimmedPhone || null;
+    const intent = { network: chosenNetwork, phoneNumber: beneficiary, amountNGN };
+    setBusy(true);
+    try {
+      const idempotencyKey = await intentIdempotencyKey(VEND_IDEM_SCOPE, JSON.stringify(intent));
+      const data = await airtimeApi.vend({
+        network: chosenNetwork as (typeof NETWORKS)[number],
+        ...(beneficiary ? { phoneNumber: beneficiary } : {}),
+        amountNGN,
+        idempotencyKey,
+      });
+      setVendState({
+        reference: data.reference,
+        authorizationUrl: data.authorizationUrl,
+        amount: data.amount,
+        currency: data.currency,
+        idempotent: data.idempotent,
+      });
+    } catch (e: any) {
+      setVendState(null);
+      setVendError(e?.message || 'Airtime purchase could not be initiated.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onConfirm = async () => {
+    if (!vendState) return;
+    setConfirmError(null);
+    setConfirming(true);
+    try {
+      const data = await airtimeApi.confirmVend(vendState.reference);
+      setConfirmation(data);
+      if (isTerminalConfirmation(data)) await retireIntentKey(VEND_IDEM_SCOPE);
+    } catch (e: any) {
+      setConfirmation(null);
+      setConfirmError(e?.message || 'Verification failed.');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>Network</Text>
+      <View style={styles.filterRow}>
+        {NETWORKS.map((n) => (
+          <TouchableOpacity
+            key={n}
+            style={[styles.chip, chosenNetwork === n && styles.chipActive]}
+            onPress={() => setNetwork(n)}
+            accessibilityLabel={`Network ${n}`}
+          >
+            <Text style={[styles.chipText, chosenNetwork === n && { color: '#fff' }]}>{n}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.fieldLabel}>Phone (optional — defaults to your number)</Text>
+      <TextInput
+        style={styles.input}
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+        placeholder="e.g. 08031234567"
+        placeholderTextColor="#94a3b8"
+        accessibilityLabel="Beneficiary phone"
+      />
+      <Text style={styles.fieldLabel}>Amount (NGN)</Text>
+      <TextInput
+        style={styles.input}
+        value={amount}
+        onChangeText={setAmount}
+        keyboardType="number-pad"
+        placeholder={`${VEND_MIN_NGN} – ${VEND_MAX_NGN.toLocaleString()}`}
+        placeholderTextColor="#94a3b8"
+        accessibilityLabel="Airtime amount"
+      />
+      {formError ? <Text accessibilityRole="alert" style={styles.formError}>{formError}</Text> : null}
+      {vendError ? (
+        <View style={[styles.errorBox, { marginTop: 10 }]}>
+          <Text style={styles.errorText}>Airtime purchase could not be initiated: {vendError}</Text>
+        </View>
+      ) : null}
+      <TouchableOpacity
+        style={[styles.submitBtn, (!amountInBounds || busy) && styles.submitDisabled]}
+        disabled={!amountInBounds || busy}
+        onPress={onVend}
+      >
+        <Text style={styles.submitText}>{busy ? 'Initiating…' : 'Buy airtime'}</Text>
+      </TouchableOpacity>
+      {vendState ? (
+        <MemberCapturePanel
+          initiation={vendState}
+          label="airtime purchase"
+          confirming={confirming}
+          confirmation={confirmation}
+          confirmError={confirmError}
+          onVerify={onConfirm}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+interface CashOutResultView {
+  reference: string;
+  status: string;
+  providerStatus: string;
+  amount?: string;
+  currency?: string;
+  failureReason?: string | null;
+  idempotent?: boolean;
+}
+
+/** Mobile-money cash-in (two-phase) and cash-out (PENDING-only honest v1). */
+function MomoCashSection({
+  providers,
+  limits,
+}: {
+  providers: Array<{ name: string }>;
+  limits: { minAmountNGN: number; maxAmountNGN: number; dailyLimitNGN: number } | undefined;
+}) {
+  const [provider, setProvider] = useState<string>('');
+  const [amount, setAmount] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [cashInState, setCashInState] = useState<CaptureInitiationView | null>(null);
+  const [cashInError, setCashInError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<CaptureConfirmationView | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [cashOutResult, setCashOutResult] = useState<CashOutResultView | null>(null);
+  const [cashOutError, setCashOutError] = useState<string | null>(null);
+  const [cashInBusy, setCashInBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [cashOutBusy, setCashOutBusy] = useState(false);
+
+  const chosenProvider = provider || (providers[0]?.name ?? '');
+  const amountNGN = Number(amount);
+  const amountInBounds =
+    Number.isInteger(amountNGN) &&
+    limits !== undefined &&
+    amountNGN >= limits.minAmountNGN &&
+    amountNGN <= limits.maxAmountNGN;
+
+  const guard = (): boolean => {
+    setFormError(null);
+    if (!chosenProvider) {
+      setFormError('No mobile-money provider is available.');
+      return false;
+    }
+    if (!amountInBounds) {
+      setFormError(
+        limits
+          ? `Enter a whole amount between ${fmt(limits.minAmountNGN)} and ${fmt(limits.maxAmountNGN)}.`
+          : 'Amount limits are unavailable.',
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const onCashIn = async () => {
+    setCashInError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    if (!guard()) return;
+    const intent = { provider: chosenProvider, amountNGN };
+    setCashInBusy(true);
+    try {
+      const idempotencyKey = await intentIdempotencyKey(CASHIN_IDEM_SCOPE, JSON.stringify(intent));
+      const data = await mobileMoneyApi.cashIn({
+        provider: chosenProvider as MomoProvider,
+        amountNGN,
+        idempotencyKey,
+      });
+      setCashInState({
+        reference: data.reference,
+        authorizationUrl: data.authorizationUrl,
+        amount: data.amount,
+        currency: data.currency,
+        idempotent: data.idempotent,
+      });
+    } catch (e: any) {
+      setCashInState(null);
+      setCashInError(e?.message || 'Cash-in could not be initiated.');
+    } finally {
+      setCashInBusy(false);
+    }
+  };
+
+  const onConfirmCashIn = async () => {
+    if (!cashInState) return;
+    setConfirmError(null);
+    setConfirming(true);
+    try {
+      const data = await mobileMoneyApi.confirmCashIn(cashInState.reference);
+      setConfirmation(data);
+      if (isTerminalConfirmation(data)) await retireIntentKey(CASHIN_IDEM_SCOPE);
+    } catch (e: any) {
+      setConfirmation(null);
+      setConfirmError(e?.message || 'Verification failed.');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const onCashOut = async () => {
+    setCashOutError(null);
+    setCashOutResult(null);
+    if (!guard()) return;
+    const intent = { provider: chosenProvider, amountNGN };
+    setCashOutBusy(true);
+    try {
+      const idempotencyKey = await intentIdempotencyKey(CASHOUT_IDEM_SCOPE, JSON.stringify(intent));
+      const data = await mobileMoneyApi.cashOut({
+        provider: chosenProvider as MomoProvider,
+        amountNGN,
+        idempotencyKey,
+      });
+      setCashOutResult(data);
+      if (isTerminalConfirmation(data)) await retireIntentKey(CASHOUT_IDEM_SCOPE);
+    } catch (e: any) {
+      // 2026-10-04 (W10-B4b): the server verdict is surfaced VERBATIM — a
+      // PRECONDITION_FAILED ("provider not configured") is shown, not hidden.
+      setCashOutResult(null);
+      setCashOutError(e?.message || 'Cash-out was not recorded.');
+    } finally {
+      setCashOutBusy(false);
+    }
+  };
+
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>Provider</Text>
+      <View style={styles.filterRow}>
+        {providers.map((p) => (
+          <TouchableOpacity
+            key={p.name}
+            style={[styles.chip, chosenProvider === p.name && styles.chipActive]}
+            onPress={() => setProvider(p.name)}
+            accessibilityLabel={`Cash provider ${p.name}`}
+          >
+            <Text style={[styles.chipText, chosenProvider === p.name && { color: '#fff' }]}>{p.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.fieldLabel}>Cash amount (NGN)</Text>
+      <TextInput
+        style={styles.input}
+        value={amount}
+        onChangeText={setAmount}
+        keyboardType="number-pad"
+        placeholder={limits ? `${limits.minAmountNGN} – ${limits.maxAmountNGN.toLocaleString()}` : 'Amount'}
+        placeholderTextColor="#94a3b8"
+        accessibilityLabel="Cash amount"
+      />
+      {formError ? <Text accessibilityRole="alert" style={styles.formError}>{formError}</Text> : null}
+      {cashInError ? (
+        <View style={[styles.errorBox, { marginTop: 10 }]}>
+          <Text style={styles.errorText}>Cash-in could not be initiated: {cashInError}</Text>
+        </View>
+      ) : null}
+      {cashOutError ? (
+        <View style={[styles.errorBox, { marginTop: 10 }]}>
+          <Text style={styles.errorText}>Cash-out was not recorded: {cashOutError}</Text>
+        </View>
+      ) : null}
+      <View style={styles.btnRow}>
+        <TouchableOpacity
+          style={[styles.submitBtn, { marginTop: 0 }, (!amountInBounds || cashInBusy) && styles.submitDisabled]}
+          disabled={!amountInBounds || cashInBusy}
+          onPress={onCashIn}
+        >
+          <Text style={styles.submitText}>{cashInBusy ? 'Initiating…' : 'Cash in'}</Text>
+        </TouchableOpacity>
+        {/* Cash-out stays ATTEMPTABLE with the honest server verdict — a
+            PRECONDITION_FAILED ("provider not configured") is surfaced
+            verbatim above rather than hiding the operation (2026-10-04,
+            W10-B4b; web parity MemberAirtime.tsx MomoCashSection). */}
+        <TouchableOpacity
+          style={[styles.outlineBtn, (!amountInBounds || cashOutBusy) && styles.submitDisabled]}
+          disabled={!amountInBounds || cashOutBusy}
+          onPress={onCashOut}
+        >
+          <Text style={styles.outlineBtnText}>{cashOutBusy ? 'Requesting…' : 'Cash out'}</Text>
+        </TouchableOpacity>
+      </View>
+      {cashInState ? (
+        <MemberCapturePanel
+          initiation={cashInState}
+          label="cash-in"
+          confirming={confirming}
+          confirmation={confirmation}
+          confirmError={confirmError}
+          onVerify={onConfirmCashIn}
+        />
+      ) : null}
+      {cashOutResult ? (
+        <View style={styles.noteBox} testID="cashout-result">
+          <Text style={styles.noteText}>Cash-out request recorded. Reference: {cashOutResult.reference}</Text>
+          <Text style={styles.noteText}>
+            Status: {cashOutResult.status} — provider: {cashOutResult.providerStatus} — settlement is entirely
+            provider-side; this is NOT a completed payout.
+          </Text>
+          {cashOutResult.failureReason ? (
+            <Text style={styles.errorText}>{cashOutResult.failureReason}</Text>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -114,6 +484,14 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Buy Airtime</Text>
+        <Text style={styles.sectionDesc}>
+          Pay by card/bank via the secure checkout; the vend is dispatched only after your payment is verified — fulfillment is never instant.
+        </Text>
+        <BuyAirtimeSection />
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>Airtime Summary</Text>
         {airtimeSummary.isLoading ? (
           <View style={styles.stateBox}><ActivityIndicator color="#2563eb" /><Text style={styles.stateText}>Loading airtime summary…</Text></View>
@@ -161,6 +539,14 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         ) : momoSummary.data ? (
           <SummaryList summary={momoSummary.data} />
         ) : null}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Cash In / Cash Out</Text>
+        <Text style={styles.sectionDesc}>
+          Cash in by card/bank via the secure checkout; cash out is a provider-side settlement request only — never an instant payout.
+        </Text>
+        <MomoCashSection providers={providers} limits={momoProviders.data?.limits} />
       </View>
 
       <View style={styles.section}>
@@ -241,12 +627,13 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         </View>
       ) : null}
 
-      {/* 2026-10-03 (W9-B5 wave 3): honest read-only note — web parity
-          (MemberAirtime.tsx:343-348); neither router has any
-          purchase/cash-in/cash-out mutation (funds wave). */}
+      {/* 2026-10-04 (W10-B4b): purchase/cash flows are wired above; a
+          submitted vend/cash-in is pending fulfillment and a cash-out is a
+          provider-side settlement request — the ledger below carries the
+          verbatim statuses, never a fabricated completion. */}
       <View style={[styles.section, styles.noteBox]}>
         <Text style={styles.noteText}>
-          Buying airtime or moving money is not available in this app yet — this page shows your history and status only.
+          A submitted purchase or cash-in is pending until the provider confirms it; check the status in your history below. Cash-out settlement is entirely provider-side.
         </Text>
       </View>
       <View style={{ height: 40 }} />
@@ -276,6 +663,16 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#f1f5f9' },
   chipActive: { backgroundColor: '#2563eb' },
   chipText: { fontSize: 12, color: '#334155', fontWeight: '500' },
+  sectionDesc: { fontSize: 12, color: '#64748b', marginBottom: 8 },
+  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#334155', marginTop: 12, marginBottom: 6 },
+  input: { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+  submitBtn: { backgroundColor: '#2563eb', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center', marginTop: 16 },
+  submitDisabled: { opacity: 0.6 },
+  submitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btnRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  outlineBtn: { borderWidth: 1, borderColor: '#2563eb', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center' },
+  outlineBtnText: { color: '#2563eb', fontSize: 15, fontWeight: '700' },
+  formError: { fontSize: 13, color: '#dc2626', marginTop: 10 },
   stateBox: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 16 },
   stateText: { fontSize: 13, color: '#64748b' },
   errorBox: { backgroundColor: '#fef2f2', padding: 12, borderRadius: 8 },

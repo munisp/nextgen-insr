@@ -663,20 +663,26 @@ export const disputesApi = {
 // 1248-1251, 1265). Shapes below are copied from the server router code —
 // never assumed.
 //
-// FUNDS DISCIPLINE (verified against the routers, 2026-10-03): NONE of these
-// routers exposes a money-moving mutation, so no idempotency-key lifecycle
-// (F-02) applies here — that discipline stays on premiumApi only:
-//   - memberBillPayments.ts:1-38 — deliberately NO pay mutation (billPayments.
-//     pay is a `transfer` funds op the `user` role has no permission for);
-//     no member bill history exists either (rows are not member-scopable).
-//   - memberAirtime.ts / memberMobileMoney.ts headers — no vend/cashIn/cashOut
-//     (financialProcedure rails, deferred to the reviewed funds wave).
-//   - memberFxRates.ts:5-8 — NO mutation proc; updateRates/refresh are broken
-//     authz on the base router and never exposed.
-//   - parametricMember.ts:17 — no mutations at all (trigger/payout ops are
-//     admin-only on parametricEngine).
-// Mobile therefore ships NO pay/purchase/exchange/trigger UI — mirroring the
-// web portal exactly (which also wires none).
+// FUNDS DISCIPLINE — 2026-10-04 (W10-B4b): the W10-B2 member-safe funds
+// mutations now ship on these routers and ARE wired below, mirroring the
+// web portal W10-B4a (client/src/pages/member/memberFundsIntent.tsx):
+//   - memberBillPayments.pay/confirmPay, memberAirtime.vend/confirmVend,
+//     memberMobileMoney.cashIn/confirmCashIn — two-phase Paystack capture
+//     (initiation {reference, authorizationUrl, idempotent} → user pays via
+//     the authorizationUrl → confirm* tri-state: submitted=pending NOT
+//     delivered / failed+failed_refund_pending / unknown_outcome held
+//     do-NOT-pay-again; completed ONLY on server status success).
+//   - memberMobileMoney.cashOut — PENDING-only honest v1 (PRECONDITION_FAILED
+//     surfaced verbatim when the provider is unconfigured).
+// All four capture flows take an optional idempotencyKey matching the server
+// zod boundary /^[A-Za-z0-9_-]{8,20}$/; the per-intent key lifecycle
+// (stable per draft fingerprint, rotated on edit, retired on terminal
+// outcome) lives in src/screens/memberFundsIntent.tsx — the SAME discipline
+// as the W9-B4 premiumApi keys below (AsyncStorage per-intent slots).
+//   - memberFxRates.ts:5-8 — still NO mutation proc; none wired.
+//   - parametricMember.ts:17 — still no mutations at all (admin-only ops).
+// Member bill HISTORY remains unshipped (rows are not member-scopable,
+// memberBillPayments.ts header) — the screens disclose that.
 // ---------------------------------------------------------------------------
 
 /** Response shape from memberBillPayments.billers
@@ -697,7 +703,60 @@ export const billsApi = {
     memberQuery<{ valid: boolean; customerNumber: string; biller: string; message: string }>(
       'memberBillPayments.validateCustomer', input,
     ),
+  /** 2026-10-04 (W10-B4b): capture phase of member bill pay
+   *  (memberBillPayments.ts pay, W10-B2). zod-exact input: { biller (registry
+   *  enum), customerNumber 5..20, meterType? prepaid|postpaid, amountNGN int
+   *  within registry MIN/MAX, idempotencyKey? }. NO computed fields — the
+   *  amount is member-chosen within the server-displayed limits. */
+  pay: (input: {
+    biller: string; customerNumber: string; meterType?: 'prepaid' | 'postpaid';
+    amountNGN: number; idempotencyKey?: string;
+  }) => memberMutation<CaptureInitiation>('memberBillPayments.pay', input),
+  /** Post-capture phase: tri-state outcome, NEVER a synchronous "delivered"
+   *  (memberBillPayments.ts confirmPay). zod-exact: { reference 8..32 }. */
+  confirmPay: (reference: string) =>
+    memberMutation<CaptureConfirmation>('memberBillPayments.confirmPay', { reference }),
 };
+
+/** 2026-10-04 (W10-B4b): shapes of the W10-B2 two-phase capture contracts
+ *  (server/lib/memberFunds.ts:285-295,548-560) — copied, never assumed. */
+export interface CaptureInitiation {
+  reference: string;
+  authorizationUrl: string;
+  accessCode?: string;
+  amount: string;
+  currency: string;
+  transactionId: number;
+  status: 'awaiting_payment';
+  idempotent: boolean;
+}
+
+export interface CaptureConfirmation {
+  reference: string;
+  status: string;
+  providerStatus: string;
+  captureStatus: string;
+  amount: string;
+  currency: string;
+  transactionId: number;
+  failureReason: string | null;
+  refundStatus: string | null;
+  resolution?: string;
+  idempotent: boolean;
+}
+
+/** Cash-out result (server/lib/memberFunds.ts:823-831) — PENDING-only. */
+export interface CashOutResult {
+  reference: string;
+  status: string;
+  providerStatus: string;
+  amount: string;
+  currency: string;
+  transactionId: number;
+  failureReason: string | null;
+  resolution?: string;
+  idempotent: boolean;
+}
 
 /** Row shape from memberAirtime.myHistory (memberAirtime.ts:104-125 — scoped
  *  to the caller's phone server-side; ALL statuses verbatim). */
@@ -728,6 +787,19 @@ export const airtimeApi = {
     memberQuery<MemberStatusSummary>(
       'memberAirtime.mySummary', { periodDays: input?.periodDays ?? 30 },
     ),
+  /** 2026-10-04 (W10-B4b): airtime vend capture phase (memberAirtime.ts
+   *  vend, W10-B2). zod-exact: { network (enum MTN|Glo|Airtel|9mobile),
+   *  phoneNumber? (Nigerian format; OMITTED when blank — the server defaults
+   *  the beneficiary to the caller's registered phone), amountNGN int
+   *  ₦50–₦50,000, idempotencyKey? }. */
+  vend: (input: {
+    network: 'MTN' | 'Glo' | 'Airtel' | '9mobile';
+    phoneNumber?: string; amountNGN: number; idempotencyKey?: string;
+  }) => memberMutation<CaptureInitiation>('memberAirtime.vend', input),
+  /** Post-capture phase (memberAirtime.ts confirmVend). zod-exact:
+   *  { reference 8..32 }. */
+  confirmVend: (reference: string) =>
+    memberMutation<CaptureConfirmation>('memberAirtime.confirmVend', { reference }),
 };
 
 /** Row shape from memberMobileMoney.myTransactions
@@ -772,6 +844,19 @@ export const mobileMoneyApi = {
     memberQuery<MemberStatusSummary>(
       'memberMobileMoney.mySummary', { periodDays: input?.periodDays ?? 30 },
     ),
+  /** 2026-10-04 (W10-B4b): momo cash-in capture phase (memberMobileMoney.ts
+   *  cashIn, W10-B2). zod-exact: { provider (enum), amountNGN int
+   *  ₦100–₦300,000, idempotencyKey? }. */
+  cashIn: (input: { provider: MomoProvider; amountNGN: number; idempotencyKey?: string }) =>
+    memberMutation<CaptureInitiation>('memberMobileMoney.cashIn', input),
+  /** Post-capture phase (memberMobileMoney.ts confirmCashIn). */
+  confirmCashIn: (reference: string) =>
+    memberMutation<CaptureConfirmation>('memberMobileMoney.confirmCashIn', { reference }),
+  /** Cash-out: PENDING-only honest v1 (memberMobileMoney.ts cashOut, W10-B2
+   *  design §6.4) — PRECONDITION_FAILED is surfaced verbatim when the
+   *  provider is unconfigured; the result is NEVER a completed payout. */
+  cashOut: (input: { provider: MomoProvider; amountNGN: number; idempotencyKey?: string }) =>
+    memberMutation<CashOutResult>('memberMobileMoney.cashOut', input),
 };
 
 export const fxApi = {
@@ -868,6 +953,65 @@ export const agentApi = {
   getProfile: async (_id: string): Promise<never> => {
     throw new Error('Agent profiles are not available in the app yet.');
   },
+};
+
+// ---------------------------------------------------------------------------
+// 2026-10-04 (W10-B4b): member identity / KYC document submission, mirroring
+// the web portal MemberIdentity.tsx KycSubmitSection (W10-B4a) on the REAL
+// memberIdentity router procs (server/routers/memberIdentity.ts, W10-B3):
+//   - myKycStatus  (honest empty state when no customer profile; session is
+//                   scoped to DOCUMENT-verification sessions only)
+//   - myKycSession (caller-scoped PII-safe read — never returns nin/bvn)
+//   - submitKyc    ({ docType nin|bvn, docNumber exactly 11 digits } STRICT —
+//                   no other fields; one-open-session duplicate guard →
+//                   CONFLICT; verification service fail-closed; status
+//                   transitions ONLY on the service's real adjudication, and
+//                   a transport failure honestly stays "pending" with the
+//                   server's verbatim message).
+// ---------------------------------------------------------------------------
+
+/** Session shape from memberIdentity.myKycStatus (memberIdentity.ts:372-432). */
+export interface MemberKycSessionRow {
+  id: number;
+  status: string;
+  type: string;
+  livenessPassed: boolean | null;
+  livenessScore: number | null;
+  docType: string | null;
+  rejectionReason: string | null;
+  reviewedAt: string | Date | null;
+  createdAt: string | Date | null;
+  updatedAt: string | Date | null;
+}
+
+export interface MemberKycStatus {
+  hasProfile: boolean;
+  hasSession: boolean;
+  status: string;
+  kycLevel: number;
+  session: MemberKycSessionRow | null;
+}
+
+/** submitKyc response (memberIdentity.ts:700-770) — verbatim verdicts. */
+export interface SubmitKycResult {
+  sessionId: number;
+  status: string;
+  verified: boolean;
+  serviceOutcome: 'adjudicated' | 'unavailable';
+  serviceStatus?: string | null;
+  message: string;
+}
+
+export const kycApi = {
+  myKycStatus: () => memberQuery<MemberKycStatus>('memberIdentity.myKycStatus', null),
+  /** PII-safe per-session read (memberIdentity.ts:1142-1189). zod-strict:
+   *  { sessionId: positive int } only. */
+  myKycSession: (sessionId: number) =>
+    memberQuery<MemberKycSessionRow>('memberIdentity.myKycSession', { sessionId }),
+  /** Submit a NIN/BVN for real verification. zod-STRICT: { docType, docNumber }
+   *  only (docImageRef omitted — no upload flow in this batch). */
+  submitKyc: (input: { docType: 'nin' | 'bvn'; docNumber: string }) =>
+    memberMutation<SubmitKycResult>('memberIdentity.submitKyc', input),
 };
 
 // 2026-10-01 (W9-B3): authApi DELETED. The Go BFF exposes no /api/v1/auth/*

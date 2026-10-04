@@ -112,6 +112,8 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
             { label: 'Parametric', icon: '🌦️', screen: 'Policies', params: { screen: 'Parametric' } },
             // Phone OTP verification lives in the Profile stack (identity).
             { label: 'Verify Phone', icon: '📞', screen: 'Profile', params: { screen: 'PhoneVerification' } },
+            // 2026-10-04 (W10-B4b): KYC document submission (W10-B3 submitKyc).
+            { label: 'Verify Identity', icon: '🪪', screen: 'Profile', params: { screen: 'KycSubmit' } },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}
