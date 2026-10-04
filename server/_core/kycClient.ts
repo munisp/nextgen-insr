@@ -144,7 +144,8 @@ export async function verifyBiometric(
     status: (d.status as any) ?? "requires_review",
     overallConfidence: Number(d.overall_confidence ?? 0),
     faceMatch: {
-      match: Boolean(fm.match),
+      // 2026-10-04 (W10-B3-r2): strict — only JSON `true` is a match.
+      match: fm.match === true,
       similarity: Number(fm.similarity ?? 0),
       confidence: Number(fm.confidence ?? 0),
       source: String(fm.source ?? "unknown"),
@@ -156,7 +157,8 @@ export async function verifyBiometric(
       source: String(lv.source ?? "unknown"),
     },
     deepfake: {
-      isReal: Boolean(df.is_real ?? true),
+      // 2026-10-04 (W10-B3-r2): strict + fail-closed on missing (was `?? true`).
+      isReal: df.is_real === true,
       confidence: Number(df.confidence ?? 0),
       source: String(df.source ?? "unknown"),
     },
@@ -178,7 +180,7 @@ function parseQuality(q: Record<string, unknown>) {
     overallQuality: Number(q.overall_quality ?? 0),
     scores: (q.scores ?? {}) as Record<string, number>,
     issues: Array.isArray(q.issues) ? (q.issues as string[]) : [],
-    icaoCompliant: Boolean(q.icao_compliant ?? false),
+    icaoCompliant: q.icao_compliant === true,
   };
 }
 
@@ -205,7 +207,8 @@ export async function checkPassiveLiveness(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    isLive: Boolean(d.is_live),
+    // 2026-10-04 (W10-B3-r2): strict — `Boolean("false")` would report LIVE.
+    isLive: d.is_live === true,
     confidence: Number(d.overall_score ?? 0),
     spoofType: String(d.spoof_type ?? "none"),
     checks: (d.checks ?? {}) as Record<string, unknown>,
@@ -240,10 +243,11 @@ export async function checkActiveLiveness(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    isLive: Boolean(d.is_live),
+    // 2026-10-04 (W10-B3-r2): strict boolean adjudication for live/signal flags.
+    isLive: d.is_live === true,
     confidence: Number(d.overall_score ?? 0),
-    motionDetected: Boolean(d.motion_detected),
-    blinkDetected: Boolean(d.blink_detected),
+    motionDetected: d.motion_detected === true,
+    blinkDetected: d.blink_detected === true,
     framesAnalyzed: Number(d.frames_analyzed ?? 0),
   };
 }
@@ -276,7 +280,8 @@ export async function matchFaces(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    match: Boolean(d.match),
+    // 2026-10-04 (W10-B3-r2): strict — only JSON `true` is a face match.
+    match: d.match === true,
     similarity: Number(d.similarity ?? 0),
     confidence: Number(d.confidence ?? 0),
     model: String(d.model ?? "unknown"),
@@ -340,7 +345,8 @@ export async function detectDeepfake(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    isReal: Boolean(d.is_real ?? true),
+    // 2026-10-04 (W10-B3-r2): strict + fail-closed on missing (was `?? true`).
+    isReal: d.is_real === true,
     confidence: Number(d.confidence ?? 0),
     deepfakeProbability: Number(d.deepfake_probability ?? 0),
     deepfakeType: String(d.deepfake_type ?? "unknown"),
@@ -376,7 +382,7 @@ export async function assessFaceQuality(
     overallQuality: Number(d.overall_quality ?? 0),
     scores: (d.scores ?? {}) as Record<string, number>,
     issues: Array.isArray(d.issues) ? (d.issues as string[]) : [],
-    icaoCompliant: Boolean(d.icao_compliant ?? false),
+    icaoCompliant: d.icao_compliant === true,
   };
 }
 
@@ -406,7 +412,7 @@ export async function checkAntiSpoof(
   const d = res.data as Record<string, unknown>;
   return {
     antiSpoofScore: Number(d.anti_spoof_score ?? 0),
-    isReal: Boolean(d.is_real ?? false),
+    isReal: d.is_real === true,
     spoofType: String(d.spoof_type ?? "unknown"),
     checks: (d.checks ?? {}) as Record<string, unknown>,
   };
@@ -518,7 +524,8 @@ export async function deepfaceVerify(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    verified: Boolean(d.verified),
+    // 2026-10-04 (W10-B3-r2): strict — only JSON `true` is a verification.
+    verified: d.verified === true,
     distance: Number(d.distance ?? 0),
     threshold: Number(d.threshold ?? 0),
     model: String(d.model ?? modelName),
@@ -577,14 +584,14 @@ export async function deepfaceEnsembleVerify(
   const d = res.data as Record<string, unknown>;
   const perModel = (d.results_per_model ?? []) as Record<string, unknown>[];
   return {
-    ensembleVerified: Boolean(d.ensemble_verified),
+    ensembleVerified: d.ensemble_verified === true,
     consensusRatio: Number(d.consensus_ratio ?? 0),
     consensusThreshold: Number(d.consensus_threshold ?? threshold),
     modelsAgreed: Number(d.models_agreed ?? 0),
     modelsTotal: Number(d.models_total ?? 0),
     resultsPerModel: perModel.map(r => ({
       model: String(r.model ?? ""),
-      verified: Boolean(r.verified),
+      verified: r.verified === true,
       distance: r.distance != null ? Number(r.distance) : undefined,
       threshold: r.threshold != null ? Number(r.threshold) : undefined,
       error: r.error ? String(r.error) : undefined,
@@ -737,10 +744,10 @@ export async function deepfaceAntiSpoof(
   const d = res.data as Record<string, unknown>;
   const faces = (d.faces ?? []) as Record<string, unknown>[];
   return {
-    isReal: Boolean(d.is_real),
+    isReal: d.is_real === true,
     faces: faces.map(f => ({
       facialArea: (f.facial_area ?? {}) as Record<string, number>,
-      isReal: Boolean(f.is_real),
+      isReal: f.is_real === true,
       antispoofScore: Number(f.antispoof_score ?? 0),
       confidence: Number(f.confidence ?? 0),
     })),
@@ -788,7 +795,7 @@ export async function deepfaceDetectFaces(
     faces: faces.map(f => ({
       facialArea: (f.facial_area ?? {}) as Record<string, number>,
       confidence: Number(f.confidence ?? 0),
-      isReal: f.is_real != null ? Boolean(f.is_real) : undefined,
+      isReal: f.is_real != null ? f.is_real === true : undefined,
       antispoofScore:
         f.antispoof_score != null ? Number(f.antispoof_score) : undefined,
     })),
@@ -833,7 +840,8 @@ export async function deepfaceEnroll(
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
   return {
-    enrolled: Boolean(d.enrolled),
+    // 2026-10-04 (W10-B3-r2): strict — only JSON `true` confirms enrollment.
+    enrolled: d.enrolled === true,
     identity: String(d.identity ?? identity),
     model: String(d.model ?? modelName),
     embeddingDim: Number(d.embedding_dim ?? 0),
@@ -950,12 +958,16 @@ export async function verifyLivenessChallenge(
   );
   if (!res.ok) return null;
   const d = res.data as Record<string, unknown>;
+  // 2026-10-04 (W10-B3-r2, FINDING-C5): STRICT boolean adjudication — only
+  // the JSON literal `true` is a pass. `Boolean("false") === true` turned a
+  // provider FAIL into a pass; the agent liveness flow (routers/kyc.ts)
+  // records `livenessPassed`/status from this value.
   return {
     challengeId,
-    passed: Boolean(d.passed ?? d.is_live),
+    passed: d.passed === true || d.is_live === true,
     score: Number(d.score ?? d.liveness_score ?? 0),
     method: String(d.method ?? ""),
-    spoofingDetected: Boolean(d.spoofing_detected ?? false),
+    spoofingDetected: d.spoofing_detected === true,
     spoofingType: d.spoofing_type ? String(d.spoofing_type) : undefined,
     raw: res.data,
   };
