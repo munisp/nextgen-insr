@@ -172,10 +172,18 @@ describe("memberMobileMoney router (2026-10-01, R3-b3)", () => {
     });
   });
 
-  it("exposes no funds mutations (cashIn/cashOut deferred funds wave)", async () => {
+  it("exposes the caller-scoped reads + the W10-B2 member-safe funds mutations", async () => {
+    // 2026-10-03 (W10-B2): cashIn/confirmCashIn/cashOut now ship as the
+    // member-safe recomposition (session-derived caller phone, KYC limits,
+    // Paystack capture for cash-in, honest PENDING provider-debit request
+    // for cash-out — never the quarantined agent router). Mutation behavior
+    // is covered in memberMobileMoneyFundsW10B2.test.ts.
     const { memberMobileMoneyRouter } = await import("../memberMobileMoney");
     const procs = Object.keys(memberMobileMoneyRouter._def.procedures);
     expect(procs.sort()).toEqual([
+      "cashIn",
+      "cashOut",
+      "confirmCashIn",
       "mySummary",
       "myTransaction",
       "myTransactions",
