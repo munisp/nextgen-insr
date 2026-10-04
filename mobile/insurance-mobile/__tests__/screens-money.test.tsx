@@ -8,14 +8,18 @@
  * the exact procedure name and input body — matching the server zod schemas
  * (server/routers/memberPhone.ts:93-114).
  *
- * FUNDS DISCIPLINE (verified 2026-10-03): NONE of memberBillPayments /
- * memberAirtime / memberMobileMoney / memberFxRates / parametricMember
- * exposes a money-moving mutation — there is no pay-bill, airtime vend,
- * cash-in/out, exchange or payout-trigger procedure, so NO idempotency-key
- * lifecycle applies (F-02 keys stay on premiumApi.initiatePremiumPayment
- * only) and NO purchase UI exists on these screens (web parity). The only
- * mutations in this wave are the phone-OTP pair, which carry no funds and no
- * idempotency key (throttle/lock are server-side).
+ * FUNDS DISCIPLINE — 2026-10-04 (W10-B4b, honest-contract rewrite): the
+ * W10-B2 member funds mutations (memberBillPayments.pay/confirmPay,
+ * memberAirtime.vend/confirmVend, memberMobileMoney.cashIn/confirmCashIn/
+ * cashOut) NOW EXIST and are wired on these screens — the full flow
+ * coverage (zod-exact bodies, idempotency-key lifecycle, authorizationUrl
+ * handoff, tri-state renders, cashOut PRECONDITION verbatim) lives in
+ * screens-funds.test.tsx. The two pre-existing "not available in this app
+ * yet" assertions below were rewritten to the screens' current honest copy
+ * (the pay flows are real now; member bill HISTORY is still unshipped
+ * server-side and the disclosure text asserts exactly that). memberFxRates /
+ * parametricMember still expose no mutations — unchanged. The phone-OTP pair
+ * carries no funds and no idempotency key (throttle/lock server-side).
  */
 import React from 'react';
 import { screen, waitFor, fireEvent } from '@testing-library/react-native';
@@ -62,8 +66,9 @@ describe('BillsScreen', () => {
     expect(await screen.findByTestId('biller-EKEDC')).toBeTruthy();
     expect(screen.getByText('0.5%')).toBeTruthy();
     expect(screen.getByText(/Limits: ₦100 – ₦500,000 per payment, ₦2,000,000 daily/)).toBeTruthy();
-    // Honest note — no pay-bill mutation exists (web parity).
-    expect(screen.getByText(/Paying a bill is not available in this app yet/i)).toBeTruthy();
+    // 2026-10-04 (W10-B4b): pay is wired now; the remaining honest
+    // disclosure is that member bill HISTORY is not server-scopable yet.
+    expect(screen.getByText(/bill-payment history will appear here once member-scoped/i)).toBeTruthy();
   });
 
   it('discloses honestly when no provider is configured', async () => {
@@ -150,8 +155,9 @@ describe('AirtimeScreen', () => {
     // Pending-provider rows are disclosed, never hidden (raw text; uppercase
     // is only a display transform).
     expect(screen.getAllByText('pending_provider').length).toBeGreaterThanOrEqual(2);
-    // Honest read-only note (web parity).
-    expect(screen.getByText(/Buying airtime or moving money is not available in this app yet/i)).toBeTruthy();
+    // 2026-10-04 (W10-B4b): the honest note now discloses that a submitted
+    // purchase is pending until the provider confirms it (never "delivered").
+    expect(screen.getByText(/pending until the provider confirms it/i)).toBeTruthy();
   });
 
   it('shows the honest empty states', async () => {

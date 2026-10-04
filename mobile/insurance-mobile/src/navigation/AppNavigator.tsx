@@ -38,6 +38,9 @@ import { FxScreen } from '../screens/FxScreen';
 import { ParametricScreen } from '../screens/ParametricScreen';
 // Phone OTP verification (memberPhone router) — Profile stack (identity).
 import { PhoneVerificationScreen } from '../screens/PhoneVerificationScreen';
+// 2026-10-04 (W10-B4b): KYC document submission (memberIdentity.submitKyc,
+// W10-B3) — same Profile/identity stack as PhoneVerification.
+import { KycSubmitScreen } from '../screens/KycSubmitScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SupportScreen } from '../screens/SupportScreen';
@@ -99,6 +102,8 @@ function ProfileStack() {
       {/* 2026-10-03 (W9-B5 wave 3): PhoneVerification was imported and targeted
           by the Dashboard "Verify Phone" tile but never registered — dead-end. */}
       <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
+      {/* 2026-10-04 (W10-B4b): NIN/BVN submission + open-session status panel. */}
+      <Stack.Screen name="KycSubmit" component={KycSubmitScreen} />
     </Stack.Navigator>
   );
 }
