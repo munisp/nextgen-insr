@@ -40,9 +40,12 @@ import {
   makeUnauthenticatedCtx,
 } from "../../lib/__tests__/testHelpers";
 
-// 54396 (distinct from memberPolicies' 54397, auth-f3's 54399 and
-// embedded-factory's 54398) so the suites can run concurrently.
-const PG_PORT = 54396;
+// 24396 (distinct from memberPolicies' 24397, auth-f3's 24399 and
+// embedded-factory's 24398) so the suites can run concurrently.
+// 2026-10-04 (W10-B3 CI fix): port moved 5439x -> 2439x — 5439x sits inside the Linux
+// ephemeral range (32768-60999); OS-assigned ephemeral sockets (probeFreePort suites,
+// wire servers) EADDRINUSEd these fixed ports under CI load (pglite exited 1 flake).
+const PG_PORT = 24396;
 const PG_URL = `postgresql://postgres:postgres@127.0.0.1:${PG_PORT}/postgres`;
 let pgliteChild: ChildProcess | null = null;
 
