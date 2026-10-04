@@ -39,8 +39,8 @@ import {
   makeUnauthenticatedCtx,
 } from "../../lib/__tests__/testHelpers";
 
-// 54394 (distinct from memberPolicies' 54397, memberClaims' 54396,
-// memberLoyalty's 54395, auth-f3's 54399 and embedded-factory's 54398) so
+// Ephemeral probe (memberPolicies' 24397, memberClaims' 24396,
+// memberLoyalty's 24395, auth-f3's 24399 and embedded-factory's 24398 are fixed) so
 // the suites can run concurrently.
 // 2026-10-01 (R3-fix-ci2): hardcoded 54394 collided in CI (EADDRINUSE —
 // another runner process held it). Probe an ephemeral free port instead;

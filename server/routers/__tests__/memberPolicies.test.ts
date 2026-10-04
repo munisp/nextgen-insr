@@ -21,9 +21,12 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-// 54397 (distinct from auth-f3's 54399 and embedded-factory's 54398) so the
+// 24397 (distinct from auth-f3's 24399 and embedded-factory's 24398) so the
 // suites can run concurrently.
-const PG_PORT = 54397;
+// 2026-10-04 (W10-B3 CI fix): port moved 5439x -> 2439x — 5439x sits inside the Linux
+// ephemeral range (32768-60999); OS-assigned ephemeral sockets (probeFreePort suites,
+// wire servers) EADDRINUSEd these fixed ports under CI load (pglite exited 1 flake).
+const PG_PORT = 24397;
 const PG_URL = `postgresql://postgres:postgres@127.0.0.1:${PG_PORT}/postgres`;
 let pgliteChild: ChildProcess | null = null;
 

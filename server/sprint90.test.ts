@@ -396,3 +396,93 @@ describe("Biometric Capabilities Coverage", () => {
     });
   });
 });
+
+// ─── W10-B3-r2 (2026-10-04, FINDING-C5): strict boolean adjudication ────────
+// `Boolean("false") === true` — any non-boolean-true wire value for a
+// security decision field (passed/is_live/verified/match/enrolled) must be
+// treated as NOT a pass. kyc.test.ts (the agent-flow suite) cannot load in
+// environments where node_modules/stripe is broken (pre-existing corruption,
+// unrelated to this change), so this kycClient-level regression coverage
+// lives here where it actually runs; it guards the exact parser the agent
+// liveness flow (routers/kyc.ts verifyLivenessChallenge) consumes.
+describe("kycClient — strict security-decision parsing (W10-B3-r2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("verifyLivenessChallenge: coercive pass values are NOT a pass", async () => {
+    const { verifyLivenessChallenge } = await import("./_core/kycClient");
+    const coercivePayloads: Record<string, unknown>[] = [
+      { passed: "false", score: 0.05 },
+      { passed: 1, score: 0.9 },
+      { passed: "true", score: 0.9 },
+      { is_live: "yes", score: 0.9 },
+      { passed: "1", score: 0.9 },
+      { is_live: 1, score: 0.9 },
+      { score: 0.9 }, // no decision field at all
+    ];
+    for (const payload of coercivePayloads) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      });
+      const result = await verifyLivenessChallenge("chal-x", "frame_b64");
+      expect(result).not.toBeNull();
+      expect(result!.passed).toBe(false);
+    }
+  });
+
+  it("verifyLivenessChallenge: genuine boolean true still passes", async () => {
+    const { verifyLivenessChallenge } = await import("./_core/kycClient");
+    for (const payload of [
+      { passed: true, score: 0.93 },
+      { is_live: true, score: 0.88 },
+    ]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      });
+      const result = await verifyLivenessChallenge("chal-x", "frame_b64");
+      expect(result!.passed).toBe(true);
+    }
+  });
+
+  it("checkPassiveLiveness / matchFaces / deepfaceVerify / deepfaceEnroll: string 'false'/'true' never coerced to a security positive", async () => {
+    const {
+      checkPassiveLiveness,
+      matchFaces,
+      deepfaceVerify,
+      deepfaceEnroll,
+    } = await import("./_core/kycClient");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ is_live: "true", overall_score: 0.9 }),
+    });
+    expect((await checkPassiveLiveness("img"))!.isLive).toBe(false);
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ match: "true", similarity: 0.99 }),
+    });
+    expect((await matchFaces("a", "b"))!.match).toBe(false);
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ verified: "true", distance: 0.1 }),
+    });
+    expect((await deepfaceVerify("a", "b"))!.verified).toBe(false);
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ enrolled: "true", identity: "u1" }),
+    });
+    expect((await deepfaceEnroll("img", "u1"))!.enrolled).toBe(false);
+  });
+});
