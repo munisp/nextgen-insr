@@ -8,8 +8,9 @@
  *   - bills renders the real biller catalog + limits and the honest
  *     unconfigured-provider note; the validateCustomer flow issues the exact
  *     {biller, customerNumber} payload and renders the verdict; and there is
- *     NO pay-bill button anywhere (memberBillPayments has no pay mutation —
- *     honest absence, not a fabricated funds action);
+ *     REAL pay form exists (W10-B2/B4a, 2026-10-04 — pay/confirmPay now
+ *     ship server-side) and is GATED: Pay is disabled until a valid
+ *     validateCustomer verdict + in-bounds amount;
  *   - airtime & mobile money render real-shaped history/summary/transactions
  *     (failed rows disclosed), the provider registry, and the myTransaction
  *     detail flow by ref (exact payload);
@@ -33,7 +34,12 @@ import MemberAirtime from "@/pages/member/MemberAirtime";
 import MemberFx from "@/pages/member/MemberFx";
 import MemberParametric from "@/pages/member/MemberParametric";
 import MemberProducts from "@/pages/member/MemberProducts";
-import { setQuery, resetTrpcMock, getQueryCalls } from "./helpers/trpcMock";
+import {
+  setQuery,
+  resetTrpcMock,
+  getQueryCalls,
+  getMutationCalls,
+} from "./helpers/trpcMock";
 
 const MEMBER = {
   id: 9001,
@@ -283,18 +289,19 @@ describe("MemberBills (W7-B10)", () => {
     expect(screen.getByTestId("validate-result")).toHaveTextContent("Invalid");
   });
 
-  it("has NO pay-bill button (no backend mutation exists) and shows the honest note", () => {
+  it("shows the REAL pay form, gated until validation + amount (W10-B4a rewrite, 2026-10-04)", () => {
+    // 2026-10-04 (W10-B4a): the memberBillPayments.pay/confirmPay mutations
+    // now ship (W10-B2), so the W7-B10 "no pay button" contract is replaced
+    // by the stronger one: the Pay control EXISTS but stays DISABLED until
+    // validateCustomer returns valid:true and the amount is within the
+    // registry limits — and no mutation fires before then. The full pay
+    // flow (zod-exact body, idempotency, tri-state confirm) is covered in
+    // MemberBillsPay.test.tsx.
     setQuery("memberBillPayments.billers", { data: BILLERS });
     render(<MemberBills />);
-    // No payment-initiation control of any kind (the nav "Payments" button
-    // links to the premium-payments page; it initiates no bill pay).
-    expect(
-      screen.queryByRole("button", { name: /pay a bill|pay now|make payment/i })
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/pay a bill/i)).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/Paying a bill is not available in this portal yet/)
-    ).toBeInTheDocument();
+    const payBtn = screen.getByRole("button", { name: "Pay" });
+    expect(payBtn).toBeDisabled();
+    expect(getMutationCalls("memberBillPayments.pay")).toEqual([]);
   });
 
   it("surfaces biller catalog errors and loading state honestly", () => {
@@ -331,7 +338,9 @@ describe("MemberAirtime & Mobile Money (W7-B10)", () => {
     expect(screen.getByText("AIR-001")).toBeInTheDocument();
     expect(screen.getByText("AIR-002")).toBeInTheDocument();
     expect(screen.getByText("Provider timeout")).toBeInTheDocument();
-    expect(screen.getByText("MTN")).toBeInTheDocument();
+    // 2026-10-04 (W10-B4a): "MTN" now also appears as the default network
+    // of the real Buy-Airtime form — assert presence, not uniqueness.
+    expect(screen.getAllByText("MTN").length).toBeGreaterThan(0);
     // Per-status summary is disclosed (failed counted, not hidden).
     expect(screen.getAllByTestId("summary-list")[0]).toHaveTextContent(
       "failed"
@@ -345,7 +354,9 @@ describe("MemberAirtime & Mobile Money (W7-B10)", () => {
     setAll();
     render(<MemberAirtime />);
     expect(screen.getByText("MM-12345")).toBeInTheDocument();
-    expect(screen.getByText("MTN MoMo")).toBeInTheDocument();
+    // 2026-10-04 (W10-B4a): "MTN MoMo" now also appears as the default
+    // provider of the real Cash In/Out form — assert presence.
+    expect(screen.getAllByText("MTN MoMo").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/No mobile-money provider is configured/)
     ).toBeInTheDocument();
