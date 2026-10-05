@@ -29,18 +29,25 @@
  *      <MemberCapturePanel> renders exactly those, verbatim, and never a
  *      fabricated success.
  *
- *   3. authorizationUrl handoff: react-native Linking.openURL (core API,
- *      no new native dependency — expo-web-browser is NOT in package.json,
- *      so the system browser is used; an honest note is rendered next to
- *      the button that checkout opens externally). Never a webview-based
- *      fake "paid" state.
+ *   3. authorizationUrl handoff (2026-10-06, W10-B5): in-app Paystack
+ *      checkout WebView (PaystackCheckoutScreen, react-native-webview)
+ *      instead of the old Linking.openURL system-browser handoff. The
+ *      WebView outcome (completed/cancelled) is UX-only — it auto-triggers
+ *      the confirm mutation via the panel's focus listener; the server-side
+ *      verifyTransaction remains the ONLY source of truth for paid/unpaid.
+ *      Never a webview-based fake "paid" state.
  *
- * Boundary note: tests spy on Linking.openURL (OS boundary) only; the key
- * lifecycle runs against the real in-memory AsyncStorage jest mock.
+ * Boundary note: tests mock react-native-webview (native boundary) and
+ * observe navigation.navigate; the key lifecycle runs against the real
+ * in-memory AsyncStorage jest mock.
  */
-import React from 'react';
-import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  clearCheckoutOutcome,
+  getCheckoutOutcome,
+} from './paystackCheckoutOutcome';
 
 const KEY_PREFIX = '@insureportal/member_funds_idem';
 const KEY_RE = /^[A-Za-z0-9_-]{8,20}$/;
@@ -204,11 +211,21 @@ export function CaptureOutcome({
 
 /**
  * The two-phase capture panel shared by bill pay / airtime vend / cash-in
- * (2026-10-04, W10-B4b — port of the web MemberCapturePanel): real reference
- * + Paystack authorizationUrl handoff via Linking.openURL (system browser —
- * expo-web-browser is not a dependency of this app, so no in-app browser
- * exists; honest disclosure next to the button), then an explicit
- * "I've paid — verify" confirm that renders the tri-state outcome.
+ * (2026-10-04, W10-B4b — port of the web MemberCapturePanel; checkout
+ * handoff updated 2026-10-06, W10-B5): real reference + Paystack
+ * authorizationUrl opened in the in-app PaystackCheckout WebView
+ * ('PaystackCheckout' route), then an explicit "I've paid — verify" confirm
+ * that renders the tri-state outcome.
+ *
+ * W10-B5 auto-confirm: the panel registers a `focus` listener on the
+ * navigation prop. When the user returns from the checkout screen with a
+ * stored outcome matching THIS panel's reference (fail-closed reference
+ * match), 'completed' auto-invokes onVerify (the server still verifies —
+ * UX convenience only) and 'cancelled' shows a neutral "checkout cancelled
+ * — you can retry" note and NEVER confirms. The manual verify button stays
+ * as the fail-closed fallback. Outcome channel = the module-level store in
+ * paystackCheckoutOutcome.ts (route params are non-serializable for
+ * callbacks — see that file's header for the design rationale).
  */
 export function MemberCapturePanel({
   initiation,
@@ -217,6 +234,7 @@ export function MemberCapturePanel({
   confirmation,
   confirmError,
   onVerify,
+  navigation,
 }: {
   initiation: CaptureInitiationView;
   label: string;
@@ -224,7 +242,31 @@ export function MemberCapturePanel({
   confirmation: CaptureConfirmationView | null;
   confirmError: string | null;
   onVerify: () => void;
+  navigation: any;
 }) {
+  // Neutral "checkout cancelled — you can retry" note (cancel NEVER
+  // confirms; the user can always retry manually, fail-closed).
+  const [checkoutCancelled, setCheckoutCancelled] = useState(false);
+
+  // 2026-10-06 (W10-B5): auto-confirm on return from the in-app checkout.
+  // The focus listener reads the module-level outcome store; only an outcome
+  // whose reference matches THIS initiation is consumed (read-then-cleared),
+  // so a stale or foreign outcome can never fire a confirm here.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      const record = getCheckoutOutcome();
+      if (!record || record.reference !== initiation.reference) return;
+      clearCheckoutOutcome();
+      if (record.outcome === 'completed') {
+        setCheckoutCancelled(false);
+        onVerify();
+      } else {
+        setCheckoutCancelled(true);
+      }
+    });
+    return unsubscribe;
+  }, [navigation, initiation.reference, onVerify]);
+
   return (
     <View style={styles.panel} testID="capture-panel">
       <Text style={styles.noteText}>
@@ -237,17 +279,24 @@ export function MemberCapturePanel({
           : ''}
       </Text>
       <Text style={styles.noteText}>
-        Checkout opens in your browser (this app has no in-app browser); return
-        here afterwards and verify.
+        Checkout opens in-app; when it completes we verify automatically. You
+        can also verify manually below at any time.
       </Text>
       <View style={styles.btnRow}>
         <TouchableOpacity
           style={styles.primaryBtn}
           accessibilityLabel="Complete payment"
           onPress={() => {
-            // OS boundary: hand the REAL server-supplied checkout URL to the
-            // system browser. The URL is never rewritten or fabricated.
-            Linking.openURL(initiation.authorizationUrl);
+            // In-app checkout (W10-B5): hand the REAL server-supplied
+            // checkout URL to the PaystackCheckout WebView. The URL is never
+            // rewritten or fabricated; any stale outcome from an earlier
+            // attempt is cleared before opening.
+            clearCheckoutOutcome();
+            setCheckoutCancelled(false);
+            navigation.navigate('PaystackCheckout', {
+              authorizationUrl: initiation.authorizationUrl,
+              reference: initiation.reference,
+            });
           }}
         >
           <Text style={styles.primaryBtnText}>Complete payment</Text>
@@ -263,6 +312,12 @@ export function MemberCapturePanel({
           </Text>
         </TouchableOpacity>
       </View>
+      {checkoutCancelled ? (
+        <Text style={styles.noteText} testID="checkout-cancelled">
+          Checkout cancelled — you can retry whenever you are ready; nothing
+          was verified or charged by cancelling.
+        </Text>
+      ) : null}
       {confirmation ? (
         <CaptureOutcome confirmation={confirmation} label={label} />
       ) : null}

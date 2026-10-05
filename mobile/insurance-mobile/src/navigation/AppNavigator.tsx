@@ -41,6 +41,10 @@ import { PhoneVerificationScreen } from '../screens/PhoneVerificationScreen';
 // 2026-10-04 (W10-B4b): KYC document submission (memberIdentity.submitKyc,
 // W10-B3) — same Profile/identity stack as PhoneVerification.
 import { KycSubmitScreen } from '../screens/KycSubmitScreen';
+// 2026-10-06 (W10-B5): in-app Paystack checkout WebView for the member funds
+// capture panels (Bills pay / Airtime vend / momo cash-in) — registered in
+// PoliciesStack, the same stack as those consumer screens.
+import { PaystackCheckoutScreen } from '../screens/PaystackCheckoutScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SupportScreen } from '../screens/SupportScreen';
@@ -75,6 +79,9 @@ function PoliciesStack() {
       <Stack.Screen name="Airtime" component={AirtimeScreen} />
       <Stack.Screen name="Fx" component={FxScreen} />
       <Stack.Screen name="Parametric" component={ParametricScreen} />
+      {/* 2026-10-06 (W10-B5): shared checkout screen for the W10-B4b capture
+          panels (Bills/Airtime live in this stack). */}
+      <Stack.Screen name="PaystackCheckout" component={PaystackCheckoutScreen} />
     </Stack.Navigator>
   );
 }

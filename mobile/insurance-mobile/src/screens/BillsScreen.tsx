@@ -28,8 +28,9 @@ import { useQuery } from '@tanstack/react-query';
 //     biller+customerNumber+meterType+amountNGN — exactly the fields the
 //     server payload-hash binds), minted fresh on any edit, retired on a
 //     terminal confirm outcome.
-//   - The authorizationUrl handoff uses Linking.openURL (system browser; no
-//     in-app browser dependency exists) + explicit "I've paid — verify".
+//   - The authorizationUrl handoff opens the in-app PaystackCheckout
+//     WebView (2026-10-06, W10-B5 — replaces the Linking.openURL system-
+//     browser handoff); explicit "I've paid — verify" stays as fallback.
 import { billsApi } from '../services/api';
 import {
   MemberCapturePanel,
@@ -321,6 +322,7 @@ export function BillsScreen({ navigation }: { navigation: any }) {
             confirmation={confirmation}
             confirmError={confirmError}
             onVerify={onConfirm}
+            navigation={navigation}
           />
         ) : null}
       </View>

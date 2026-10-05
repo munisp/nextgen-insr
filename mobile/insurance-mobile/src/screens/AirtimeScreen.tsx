@@ -90,7 +90,7 @@ const CASHIN_IDEM_SCOPE = 'member-momo-cashin';
 const CASHOUT_IDEM_SCOPE = 'member-momo-cashout';
 
 /** Buy-airtime form: vend (capture) → authorizationUrl → confirmVend. */
-function BuyAirtimeSection() {
+function BuyAirtimeSection({ navigation }: { navigation: any }) {
   const [network, setNetwork] = useState<string>('');
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
@@ -222,6 +222,8 @@ function BuyAirtimeSection() {
           confirmation={confirmation}
           confirmError={confirmError}
           onVerify={onConfirm}
+   
+          navigation={navigation}
         />
       ) : null}
     </View>
@@ -242,9 +244,11 @@ interface CashOutResultView {
 function MomoCashSection({
   providers,
   limits,
+  navigation,
 }: {
   providers: Array<{ name: string }>;
   limits: { minAmountNGN: number; maxAmountNGN: number; dailyLimitNGN: number } | undefined;
+  navigation: any;
 }) {
   const [provider, setProvider] = useState<string>('');
   const [amount, setAmount] = useState('');
@@ -418,6 +422,8 @@ function MomoCashSection({
           confirmation={confirmation}
           confirmError={confirmError}
           onVerify={onConfirmCashIn}
+   
+          navigation={navigation}
         />
       ) : null}
       {cashOutResult ? (
@@ -488,7 +494,7 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionDesc}>
           Pay by card/bank via the secure checkout; the vend is dispatched only after your payment is verified — fulfillment is never instant.
         </Text>
-        <BuyAirtimeSection />
+        <BuyAirtimeSection navigation={navigation} />
       </View>
 
       <View style={styles.section}>
@@ -546,7 +552,7 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionDesc}>
           Cash in by card/bank via the secure checkout; cash out is a provider-side settlement request only — never an instant payout.
         </Text>
-        <MomoCashSection providers={providers} limits={momoProviders.data?.limits} />
+        <MomoCashSection providers={providers} limits={momoProviders.data?.limits} navigation={navigation} />
       </View>
 
       <View style={styles.section}>

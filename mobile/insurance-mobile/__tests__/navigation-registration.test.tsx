@@ -26,12 +26,19 @@
  * pre-wave actions (FileClaim/Payments/AgentLocator/Emergency). Verified
  * non-vacuous: deleting the PhoneVerification registration from AppNavigator
  * makes this test fail with a missing-registration error.
+ *
+ * 2026-10-06 (W10-B5): the memberFundsIntent capture panels now navigate to
+ * the 'PaystackCheckout' WebView screen — a cross-check asserts every
+ * navigation.navigate target inside src/screens/memberFundsIntent.tsx is
+ * registered in PoliciesStack (the stack hosting Bills/Airtime). Verified
+ * non-vacuous: deleting the PaystackCheckout registration fails that check.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
 const NAVIGATOR_PATH = path.join(__dirname, '..', 'src', 'navigation', 'AppNavigator.tsx');
 const DASHBOARD_PATH = path.join(__dirname, '..', 'src', 'screens', 'DashboardScreen.tsx');
+const FUNDS_INTENT_PATH = path.join(__dirname, '..', 'src', 'screens', 'memberFundsIntent.tsx');
 
 /** Registered screen names per navigator component (order-independent). */
 function extractRegistrations(source: string): Record<string, string[]> {
@@ -52,6 +59,15 @@ function extractRegistrations(source: string): Record<string, string[]> {
 }
 
 interface QuickAction { screen: string; nested?: string }
+
+/** Every `navigation.navigate('X', ...)` target in an arbitrary source file. */
+function extractNavigateTargets(source: string): string[] {
+  const targets: string[] = [];
+  const navRegex = /navigate\('(\w+)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = navRegex.exec(source)) !== null) targets.push(m[1]);
+  return targets;
+}
 
 /** Every `navigation.navigate('X', ...)` quick-action target in the Dashboard. */
 function extractDashboardTargets(source: string): QuickAction[] {
@@ -131,5 +147,15 @@ describe('navigation registration (real AppNavigator vs real Dashboard targets)'
     // The exact regression: Dashboard targets Profile > PhoneVerification.
     expect(registrations.ProfileStack ?? []).toContain('PhoneVerification');
     expect(targets).toContainEqual({ screen: 'Profile', nested: 'PhoneVerification' });
+  });
+
+  it('every memberFundsIntent checkout navigation target is registered in PoliciesStack (W10-B5)', () => {
+    const intentSource = fs.readFileSync(FUNDS_INTENT_PATH, 'utf8');
+    const intentTargets = extractNavigateTargets(intentSource);
+    // Guard against vacuous regex: the W10-B5 handoff MUST be detected.
+    expect(intentTargets).toContain('PaystackCheckout');
+    const policies = registrations.PoliciesStack ?? [];
+    const failures = intentTargets.filter((t) => !policies.includes(t));
+    expect(failures).toEqual([]);
   });
 });

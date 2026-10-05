@@ -110,4 +110,12 @@ export async function resetHarness(): Promise<void> {
   await seedSession();
 }
 
-export const mockNavigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
+// 2026-10-06 (W10-B5): addListener added — the W10-B5 MemberCapturePanel
+// registers a `focus` listener for the checkout auto-confirm; suites capture
+// the handler via mockNavigation.addListener.mock.calls.
+export const mockNavigation = {
+  navigate: jest.fn(),
+  goBack: jest.fn(),
+  setOptions: jest.fn(),
+  addListener: jest.fn((_event: string, _handler: () => void) => jest.fn()),
+};

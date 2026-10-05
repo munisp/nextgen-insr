@@ -28,7 +28,11 @@ let pgliteChild: ChildProcess | null = null;
 let mmServer: HttpServer | null = null;
 // Fixed port: the adapter module captures EMBEDDED_MM_COLLECT_URL at import
 // time, so the provider must be restartable on the SAME address.
-const MM_PORT = 41911;
+// 2026-10-05 (W10-B5 CI fix): 41911 -> 24411 — 41911 sits inside the Linux
+// ephemeral range (32768-60999); an OS-assigned ephemeral socket EADDRINUSEd
+// this fixed port under CI load (same root-cause class as the 5439x pglite
+// flake fixed above; observed PR #290 run, unhandled EADDRINUSE 127.0.0.1:41911).
+const MM_PORT = 24411;
 
 type Caller = ReturnType<
   Awaited<typeof import("./routers/embeddedPartnerFactory")>["embeddedPartnerFactoryRouter"]["createCaller"]
