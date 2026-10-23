@@ -31,8 +31,14 @@ import { useQuery } from '@tanstack/react-query';
 // never claims delivery — tri-state only.
 import {
   airtimeApi, mobileMoneyApi, MOMO_PROVIDERS, MomoProvider,
-  MemberAirtimeRow, MemberMomoTxRow, MemberStatusSummary,
+  MemberAirtimeRow, MemberMomoTxRow, MemberStatusSummary, RecentPayee,
 } from '../services/api';
+// 2026-10-06 (W11-B1c): payee-directory prefill pickers on both funds
+// sections (web parity MemberAirtime.tsx W11-B1b). Selecting a payee
+// prefills IDENTIFIERS ONLY (network+phone / provider), always CLEARS the
+// amount, and resets the capture/validation state — the amount is never
+// auto-prefilled.
+import { RecentPayeePicker } from '../components/RecentPayeePicker';
 import {
   MemberCapturePanel,
   intentIdempotencyKey,
@@ -101,11 +107,32 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
+  // the payee directory (the amount is always cleared, never carried over).
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const chosenNetwork = network || NETWORKS[0];
   const amountNGN = Number(amount);
   const amountInBounds =
     Number.isInteger(amountNGN) && amountNGN >= VEND_MIN_NGN && amountNGN <= VEND_MAX_NGN;
+
+  // 2026-10-06 (W11-B1c): payee-directory prefill (web parity W11-B1b).
+  // Identifiers only (network + phone); the amount is ALWAYS cleared, the
+  // capture state resets, and the fingerprint at Vend time covers the new
+  // values (fresh idempotency key — memberFundsIntent.tsx).
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.network && (NETWORKS as readonly string[]).includes(p.network)) {
+      setNetwork(p.network);
+    }
+    if (p.phone) setPhone(p.phone);
+    setAmount('');
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+    setPrefilledFrom(p.label);
+  };
 
   const onVend = async () => {
     setFormError(null);
@@ -168,6 +195,13 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
 
   return (
     <View>
+      <RecentPayeePicker rail="airtime" onSelect={onPayeeSelect} />
+      {prefilledFrom ? (
+        <Text style={styles.hintText} testID="prefill-hint-airtime">
+          Prefilled from your recent payments ({prefilledFrom}) — review and
+          edit freely; the amount was left blank for you to confirm.
+        </Text>
+      ) : null}
       <Text style={styles.fieldLabel}>Network</Text>
       <View style={styles.filterRow}>
         {NETWORKS.map((n) => (
@@ -262,6 +296,9 @@ function MomoCashSection({
   const [cashInBusy, setCashInBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [cashOutBusy, setCashOutBusy] = useState(false);
+  // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
+  // the payee directory (the amount is always cleared, never carried over).
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const chosenProvider = provider || (providers[0]?.name ?? '');
   const amountNGN = Number(amount);
@@ -270,6 +307,25 @@ function MomoCashSection({
     limits !== undefined &&
     amountNGN >= limits.minAmountNGN &&
     amountNGN <= limits.maxAmountNGN;
+
+  // 2026-10-06 (W11-B1c): payee-directory prefill (web parity W11-B1b).
+  // Identifier only (provider); the amount is ALWAYS cleared and both the
+  // cash-in capture state and the cash-out result reset. The fingerprint at
+  // Cash-in/Cash-out time covers the new values (fresh idempotency key).
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.provider && providers.some((pr) => pr.name === p.provider)) {
+      setProvider(p.provider);
+    }
+    setAmount('');
+    setCashInState(null);
+    setCashInError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setCashOutResult(null);
+    setCashOutError(null);
+    setFormError(null);
+    setPrefilledFrom(p.label);
+  };
 
   const guard = (): boolean => {
     setFormError(null);
@@ -360,6 +416,13 @@ function MomoCashSection({
 
   return (
     <View>
+      <RecentPayeePicker rail="momo" onSelect={onPayeeSelect} />
+      {prefilledFrom ? (
+        <Text style={styles.hintText} testID="prefill-hint-momo">
+          Prefilled from your recent payments ({prefilledFrom}) — review and
+          edit freely; the amount was left blank for you to confirm.
+        </Text>
+      ) : null}
       <Text style={styles.fieldLabel}>Provider</Text>
       <View style={styles.filterRow}>
         {providers.map((p) => (
@@ -686,4 +749,5 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', color: '#94a3b8', paddingVertical: 24, fontSize: 14 },
   noteBox: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginBottom: 10 },
   noteText: { fontSize: 13, color: '#64748b' },
+  hintText: { fontSize: 12, color: '#64748b', marginTop: 8 },
 });

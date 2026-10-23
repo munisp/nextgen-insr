@@ -31,7 +31,12 @@ import { useQuery } from '@tanstack/react-query';
 //   - The authorizationUrl handoff opens the in-app PaystackCheckout
 //     WebView (2026-10-06, W10-B5 — replaces the Linking.openURL system-
 //     browser handoff); explicit "I've paid — verify" stays as fallback.
-import { billsApi } from '../services/api';
+import { billsApi, type RecentPayee } from '../services/api';
+// 2026-10-06 (W11-B1c): payee-directory prefill picker (web parity
+// MemberBills.tsx W11-B1b). Selecting a payee prefills IDENTIFIERS ONLY
+// (biller + meter), always CLEARS the amount, and resets the validation and
+// capture state — the amount is never auto-prefilled.
+import { RecentPayeePicker } from '../components/RecentPayeePicker';
 import {
   MemberCapturePanel,
   intentIdempotencyKey,
@@ -68,6 +73,9 @@ export function BillsScreen({ navigation }: { navigation: any }) {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [payBusy, setPayBusy] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
+  // the payee directory (the amount is always cleared, never carried over).
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const billersQuery = useQuery({
     queryKey: ['memberBillPayments.billers'],
@@ -94,6 +102,27 @@ export function BillsScreen({ navigation }: { navigation: any }) {
     setConfirmation(null);
     setConfirmError(null);
     setCheck({ biller: chosenBiller, customerNumber: customerNumber.trim() });
+  };
+
+  // 2026-10-06 (W11-B1c): payee-directory prefill (web parity W11-B1b). Only
+  // the identifier fields are carried over (biller + meter number); the
+  // amount is ALWAYS cleared so the member confirms it explicitly, and the
+  // capture/validation state resets. The new field values flow into the
+  // idempotency fingerprint at Pay time, so a prefilled draft is a NEW
+  // intent with a fresh key (memberFundsIntent.tsx) — no special handling.
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.billerCode && billers.some((b) => b.name === p.billerCode)) {
+      setBiller(p.billerCode);
+    }
+    if (p.meterNumber) setCustomerNumber(p.meterNumber);
+    setAmount('');
+    // The previous validation no longer matches the new draft — re-lock Pay.
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setPrefilledFrom(p.label);
   };
 
   // Pay is gated on a valid format check for the CURRENT draft (editing the
@@ -212,6 +241,13 @@ export function BillsScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionDesc}>
           Check the customer number, enter an amount within the limits, and pay via the secure checkout. Fulfillment is confirmed after your payment is verified — never instantly.
         </Text>
+        <RecentPayeePicker rail="bill" onSelect={onPayeeSelect} />
+        {prefilledFrom ? (
+          <Text style={styles.hintText} testID="prefill-hint-bill">
+            Prefilled from your recent payments ({prefilledFrom}) — review and
+            edit freely; the amount was left blank for you to confirm.
+          </Text>
+        ) : null}
         <Text style={styles.fieldLabel}>Biller</Text>
         <View style={styles.billerPicker}>
           {billers.map((b) => (
@@ -372,4 +408,5 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 13, color: '#dc2626' },
   noteBox: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginBottom: 10 },
   noteText: { fontSize: 13, color: '#64748b' },
+  hintText: { fontSize: 12, color: '#64748b', marginTop: 8 },
 });
