@@ -326,18 +326,30 @@ describe("Q-wave Q3: pool surplus + telematics + usage cover (integration, real 
 
   // ── 5/6. Telematics ingestion idempotency + scoring ──────────────────────
   describe("telematics UBI", () => {
+    // 2026-10-23 (W11 CI fix): HONEST-CONTRACT REWRITE of trip dates.
+    // Trip timestamps were hardcoded 2026-09-20/21; the rolling-score engine
+    // (server/lib/telematicsScoring.ts) only counts trips inside the trailing
+    // 30-day window, so once wall-clock moved >30d past those dates the score
+    // row vanished and the two score-dependent tests failed. Dates are now
+    // computed relative to now (2 and 3 days ago) — the scored
+    // characteristics (brakes/speeding/night/maxSpeed) are unchanged, so all
+    // numeric expectations below are identical by construction.
+    const trip1Start = new Date(Date.now() - 3 * 24 * 3600 * 1000);
+    const trip1End = new Date(trip1Start.getTime() + 1800_000);
+    const trip2Start = new Date(Date.now() - 2 * 24 * 3600 * 1000);
+    const trip2End = new Date(trip2Start.getTime() + 3600_000);
     const batch = {
       policyId: POLICY_ID,
       trips: [
         {
           clientTripId: "q3-trip-00000001", deviceId: "dev-a",
-          startedAt: "2026-09-20T08:00:00Z", endedAt: "2026-09-20T08:30:00Z",
+          startedAt: trip1Start.toISOString(), endedAt: trip1End.toISOString(),
           distanceKm: 25, durationSeconds: 1800, hardBrakes: 1, speedingEvents: 0,
           corneringEvents: 0, nightDrivingSeconds: 0, maxSpeedKmh: 95, rawEventCount: 120,
         },
         {
           clientTripId: "q3-trip-00000002", deviceId: "dev-a",
-          startedAt: "2026-09-21T22:00:00Z", endedAt: "2026-09-21T23:00:00Z",
+          startedAt: trip2Start.toISOString(), endedAt: trip2End.toISOString(),
           distanceKm: 25, durationSeconds: 3600, hardBrakes: 6, speedingEvents: 4,
           corneringEvents: 2, nightDrivingSeconds: 3600, maxSpeedKmh: 135, rawEventCount: 200,
         },
