@@ -46,6 +46,10 @@ import {
   type CaptureConfirmationView,
   type CaptureInitiationView,
 } from "./memberFundsIntent";
+import {
+  RecentPayeePicker,
+  type RecentPayee,
+} from "./RecentPayeePicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,6 +156,8 @@ function BuyAirtimeSection() {
   const [confirmation, setConfirmation] =
     useState<CaptureConfirmationView | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // 2026-10-05 (W11-B1b): provenance label after a payee-directory prefill.
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const confirmMutation = trpc.memberAirtime.confirmVend.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
@@ -184,6 +190,24 @@ function BuyAirtimeSection() {
     Number.isInteger(amountNGN) &&
     amountNGN >= VEND_MIN_NGN &&
     amountNGN <= VEND_MAX_NGN;
+
+  // 2026-10-05 (W11-B1b): payee-directory prefill — network + phone only;
+  // the amount is ALWAYS cleared (never silently carried into a submit).
+  // The prefilled values flow into the vend idempotency fingerprint, so any
+  // edit mints a new intent key (memberFundsIntent.tsx).
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.network && (NETWORKS as readonly string[]).includes(p.network)) {
+      setNetwork(p.network);
+    }
+    if (p.phone) setPhone(p.phone);
+    setAmount("");
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+    setPrefilledFrom(p.label);
+  };
 
   const onVend = () => {
     setFormError(null);
@@ -223,6 +247,16 @@ function BuyAirtimeSection() {
 
   return (
     <div className="space-y-4 max-w-lg">
+      <RecentPayeePicker rail="airtime" onSelect={onPayeeSelect} />
+      {prefilledFrom ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="prefill-hint-airtime"
+        >
+          Prefilled from your recent payments ({prefilledFrom}) — review and
+          edit freely; the amount was left blank for you to confirm.
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="vend-network">Network</Label>
@@ -321,6 +355,8 @@ function MomoCashSection({
     null
   );
   const [cashOutError, setCashOutError] = useState<string | null>(null);
+  // 2026-10-05 (W11-B1b): provenance label after a payee-directory prefill.
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const confirmMutation = trpc.memberMobileMoney.confirmCashIn.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
@@ -366,6 +402,24 @@ function MomoCashSection({
     limits !== undefined &&
     amountNGN >= limits.minAmountNGN &&
     amountNGN <= limits.maxAmountNGN;
+
+  // 2026-10-05 (W11-B1b): payee-directory prefill — provider only (the
+  // cash-in/cash-out form has no wallet-number field; the wallet number is
+  // shown on the chip for recognition). The amount is ALWAYS cleared.
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.provider && providers.some((pr) => pr.name === p.provider)) {
+      setProvider(p.provider);
+    }
+    setAmount("");
+    setCashInState(null);
+    setCashInError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setCashOutResult(null);
+    setCashOutError(null);
+    setFormError(null);
+    setPrefilledFrom(p.label);
+  };
 
   const guard = (): boolean => {
     setFormError(null);
@@ -417,6 +471,16 @@ function MomoCashSection({
 
   return (
     <div className="space-y-4 max-w-lg">
+      <RecentPayeePicker rail="momo" onSelect={onPayeeSelect} />
+      {prefilledFrom ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="prefill-hint-momo"
+        >
+          Prefilled from your recent payments ({prefilledFrom}) — review and
+          edit freely; the amount was left blank for you to confirm.
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="momo-provider">Provider</Label>

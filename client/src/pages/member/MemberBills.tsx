@@ -45,6 +45,10 @@ import {
   type CaptureConfirmationView,
   type CaptureInitiationView,
 } from "./memberFundsIntent";
+import {
+  RecentPayeePicker,
+  type RecentPayee,
+} from "./RecentPayeePicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,6 +107,9 @@ export default function MemberBills() {
   const [confirmation, setConfirmation] =
     useState<CaptureConfirmationView | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // 2026-10-05 (W11-B1b): provenance label when the draft was prefilled from
+  // the payee directory (the amount is always cleared, never carried over).
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   const billersQuery = trpc.memberBillPayments.billers.useQuery(undefined, {
     retry: false,
@@ -161,6 +168,27 @@ export default function MemberBills() {
     setConfirmation(null);
     setConfirmError(null);
     setCheck({ biller: chosenBiller, customerNumber: customerNumber.trim() });
+  };
+
+  // 2026-10-05 (W11-B1b): payee-directory prefill. Only the identifier
+  // fields are carried over (biller + meter number); the amount is ALWAYS
+  // cleared so the member confirms it explicitly. The new field values flow
+  // into the idempotency fingerprint at Pay time, so a prefilled-then-edited
+  // draft is a NEW intent with a fresh key (memberFundsIntent.tsx) — no
+  // special handling needed here.
+  const onPayeeSelect = (p: RecentPayee) => {
+    if (p.billerCode && billers.some((b) => b.name === p.billerCode)) {
+      setBiller(p.billerCode);
+    }
+    if (p.meterNumber) setCustomerNumber(p.meterNumber);
+    setAmount("");
+    // The previous validation no longer matches the new draft — re-lock Pay.
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setPrefilledFrom(p.label);
   };
 
   // Pay is gated on a valid format check for the CURRENT draft (editing the
@@ -257,6 +285,18 @@ export default function MemberBills() {
           title="Pay a Bill"
           description="Check the customer number, enter an amount within the limits, and pay by card/bank via the secure checkout. Fulfillment is confirmed after your payment is verified — never instantly."
         >
+          <div className="mb-4">
+            <RecentPayeePicker rail="bill" onSelect={onPayeeSelect} />
+          </div>
+          {prefilledFrom ? (
+            <p
+              className="text-xs text-muted-foreground mb-4"
+              data-testid="prefill-hint"
+            >
+              Prefilled from your recent payments ({prefilledFrom}) — review
+              and edit freely; the amount was left blank for you to confirm.
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="biller">Biller</Label>
