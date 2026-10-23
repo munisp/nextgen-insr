@@ -197,7 +197,47 @@ export const claimsApi = {
   getTimeline: async (_id: string): Promise<never> => {
     throw new Error('Claim timeline is not available in the app yet.');
   },
+  /** 2026-10-06 (W11-B1c): read-only claim-form prefill
+   *  (memberClaims.getClaimPrefill, server/routers/memberClaims.ts:242,
+   *  W11-B1a). Ownership is asserted server-side FIRST (dual-identity,
+   *  non-enumerating NOT_FOUND on foreign ids); the payload is the real
+   *  policy snapshot + the caller's member contact + the caller's LAST
+   *  claim on that policy (or null). Web parity: MemberClaims.tsx W11-B1b. */
+  prefill: (policyId: number) =>
+    memberQuery<ClaimPrefillView>('memberClaims.getClaimPrefill', { policyId: Number(policyId) }),
 };
+
+/** 2026-10-06 (W11-B1c): memberClaims.getClaimPrefill payload — copied from
+ *  server/routers/memberClaims.ts:249-303, never assumed. */
+export interface ClaimPrefillView {
+  policy: {
+    id: number;
+    policyNumber: string;
+    status: string;
+    coverageType: string | null;
+    sumInsured: string | null;
+    annualPremium: string | null;
+    startDate: string | Date | null;
+    endDate: string | Date | null;
+    assetDetails: unknown;
+    productName: string | null;
+    productCode: string | null;
+  };
+  member: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+  } | null;
+  lastClaim: {
+    claimNumber: string;
+    status: string;
+    claimType: string | null;
+    claimedAmount: string | null;
+    incidentDate: string | Date | null;
+    createdAt: string | Date | null;
+  } | null;
+}
 
 // 2026-10-03 (W9-B4): premium payments rewired onto the REAL hardened
 // memberPayments router (server/routers/memberPayments.ts):
@@ -857,6 +897,46 @@ export const mobileMoneyApi = {
    *  provider is unconfigured; the result is NEVER a completed payout. */
   cashOut: (input: { provider: MomoProvider; amountNGN: number; idempotencyKey?: string }) =>
     memberMutation<CashOutResult>('memberMobileMoney.cashOut', input),
+};
+
+// ---------------------------------------------------------------------------
+// 2026-10-06 (W11-B1c): member payee DIRECTORY (memberPayees router,
+// server/routers/memberPayees.ts, W11-B1a; web parity RecentPayeePicker.tsx,
+// W11-B1b). READ + REMOVE only: payee rows are recorded SERVER-SIDE after
+// gateway-verified captures (server/lib/memberPayees.ts recordPayee) — the
+// client NEVER writes payees. `list` returns the caller's own decrypted
+// rows (PII decrypted server-side for the owner only), most-recently-used
+// first, ≤50; `remove` is ownership-scoped with non-enumerating NOT_FOUND.
+// ---------------------------------------------------------------------------
+
+/** Server zod enum exactly (memberPayees.ts PAYEE_RAILS). */
+export type PayeeRail = 'bill' | 'airtime' | 'momo';
+
+/** One decrypted payee row from memberPayees.list (memberPayees.ts
+ *  decryptPayeeRow — Dates revive via the superjson envelope). */
+export interface RecentPayee {
+  id: string;
+  rail: PayeeRail;
+  label: string;
+  billerCode?: string | null;
+  meterNumber?: string | null;
+  network?: string | null;
+  phone?: string | null;
+  provider?: string | null;
+  walletNumber?: string | null;
+  lastAmountKobo?: number | null;
+  useCount?: number;
+  lastUsedAt?: string | Date | null;
+}
+
+export const payeesApi = {
+  /** Caller's recent payees for one rail (zod: { rail? } optional-nullable). */
+  list: (rail: PayeeRail) =>
+    memberQuery<{ payees: RecentPayee[] }>('memberPayees.list', { rail }),
+  /** Delete one of the CALLER'S payees. zod-exact: { id: uuid };
+   *  NOT_FOUND (non-enumerating) on foreign/nonexistent ids. */
+  remove: (id: string) =>
+    memberMutation<{ removed: boolean; id: string }>('memberPayees.remove', { id }),
 };
 
 export const fxApi = {

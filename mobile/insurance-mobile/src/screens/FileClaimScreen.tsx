@@ -14,6 +14,10 @@ import { useOfflineSync } from '../services/offlineSync';
 import { claimsApi } from '../services/api';
 import { memberQuery, memberMutation } from '../services/memberTrpc';
 
+const fmtNgn = (n: number) => `₦${Number(n).toLocaleString('en-NG')}`;
+const fmtDate = (d: string | Date | null | undefined) =>
+  d ? new Date(d).toLocaleDateString('en-NG') : '—';
+
 export function FileClaimScreen({ navigation }: { navigation: any }) {
   const { enqueue, state } = useOfflineSync();
   const [form, setForm] = useState({ type: '', description: '', amount: '', policyNumber: '' });
@@ -35,6 +39,26 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
       return res?.policies ?? [];
     },
   });
+
+  // 2026-10-06 (W11-B1c): claim-form prefill (web parity MemberClaims.tsx
+  // W11-B1b). When a policy is selected, memberClaims.getClaimPrefill
+  // returns the caller-owned policy snapshot + member contact + the member's
+  // last claim on that policy. A NOT_FOUND (foreign/nonexistent id —
+  // unreachable from the real picker) degrades silently: the form stays
+  // fully usable, nothing is fabricated.
+  const prefillQuery = useQuery({
+    queryKey: ['memberClaims.getClaimPrefill', selectedPolicyId],
+    queryFn: () => claimsApi.prefill(selectedPolicyId!),
+    enabled: selectedPolicyId !== null,
+    retry: false,
+  });
+  if (prefillQuery.isError) {
+    console.warn(
+      'memberClaims.getClaimPrefill failed; prefill disabled:',
+      (prefillQuery.error as Error)?.message,
+    );
+  }
+  const prefill = selectedPolicyId !== null ? prefillQuery.data : undefined;
 
   async function handleSubmit() {
     if (!form.type || !form.description) { Alert.alert('Required', 'Please fill in claim type and description'); return; }
@@ -131,6 +155,46 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
           </View>
         )}
 
+        {/* 2026-10-06 (W11-B1c): read-only prefill panel (web parity). The
+            fields are shown for review only — the claim form below is still
+            filled explicitly by the member. */}
+        {prefill ? (
+          <View style={styles.prefillBox} testID="claim-prefill">
+            <Text style={styles.prefillHint}>
+              Prefilled from your policy and member records — review before
+              filing; these fields are read-only here.
+            </Text>
+            <Text style={styles.prefillRow}>Policy #: {prefill.policy.policyNumber}</Text>
+            {prefill.policy.productName ? (
+              <Text style={styles.prefillRow}>Product: {prefill.policy.productName}</Text>
+            ) : null}
+            {prefill.policy.coverageType ? (
+              <Text style={styles.prefillRow}>Coverage: {prefill.policy.coverageType}</Text>
+            ) : null}
+            <Text style={styles.prefillRow}>
+              Sum insured: {fmtNgn(Number(prefill.policy.sumInsured ?? 0))}
+            </Text>
+            {prefill.member ? (
+              <Text style={styles.prefillRow}>
+                Contact: {prefill.member.firstName} {prefill.member.lastName}
+                {prefill.member.email ? ` · ${prefill.member.email}` : ''}
+                {prefill.member.phone ? ` · ${prefill.member.phone}` : ''}
+              </Text>
+            ) : null}
+            {prefill.policy.assetDetails ? (
+              <Text style={styles.prefillRow}>
+                Asset details: {JSON.stringify(prefill.policy.assetDetails)}
+              </Text>
+            ) : null}
+            {prefill.lastClaim ? (
+              <Text style={styles.prefillHint}>
+                Your last claim on this policy: {prefill.lastClaim.claimNumber}{' '}
+                ({prefill.lastClaim.status}, {fmtDate(prefill.lastClaim.createdAt)}).
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         <Text style={styles.label}>Description *</Text>
         <TextInput style={[styles.input, styles.textarea]} value={form.description} onChangeText={(v) => setForm({ ...form, description: v })} multiline numberOfLines={4} placeholder="Describe the incident..." placeholderTextColor="#94a3b8" />
 
@@ -172,6 +236,9 @@ const styles = StyleSheet.create({
   evidenceBtnText: { fontSize: 14, fontWeight: '500', color: '#334155' },
   offlineNote: { backgroundColor: '#fef3c7', padding: 12, borderRadius: 8, marginTop: 16 },
   offlineNoteText: { fontSize: 12, color: '#92400e', textAlign: 'center' },
+  prefillBox: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginTop: 12, gap: 4 },
+  prefillHint: { fontSize: 12, color: '#64748b' },
+  prefillRow: { fontSize: 13, color: '#0f172a' },
   submitBtn: { backgroundColor: '#2563eb', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginTop: 24 },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
