@@ -384,7 +384,10 @@ describe("Sprint 46: Data Integrity", () => {
     // PG persistence for Sprint 64 F13 post-chat CSAT surveys). 274 + 1 =
     // 275. Honest-count drift, not a weakening — the gate still counts
     // information_schema at runtime; measured number wins.
-    expect(stats.totalTables).toBe(275);
+    // 2026-10-23 (W11-B1a): +1 table payee_directory (per-member per-rail
+    // payee memory, encrypted identifiers, HMAC blind-index upsert).
+    // 275 + 1 = 276.
+    expect(stats.totalTables).toBe(276);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
