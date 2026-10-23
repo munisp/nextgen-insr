@@ -34,11 +34,14 @@ import { z } from "zod";
 import {
   claimDocuments,
   claims,
+  customers,
   insuranceProducts,
   policies,
 } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { resolveMemberCustomer } from "../lib/memberFunds";
+import { assertPolicyOwnershipDual } from "../lib/memberGuards";
 import { insuranceWorkflowsRouter } from "./insuranceWorkflows";
 
 type DrizzleDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -217,8 +220,93 @@ export const memberClaimsRouter = router({
     }),
 
   /**
-   * The caller's ACTIVE policies — the real policy picker source for
-   * FileClaim.tsx. Caller-scoped via policies.customerId = ctx.user.id
+   * W11-B1a (2026-10-05): member-safe claim-form prefill for one of the
+   * CALLER'S policies. Ownership is dual-space
+   * (memberGuards.assertPolicyOwnershipDual — portal rows pin
+   * policies.customerId = ctx.user.id, wallet-era rows pin the resolved
+   * customers.id); any miss → NOT_FOUND (non-enumerating).
+   *
+   * Returns ONLY fields that actually exist in the schema:
+   *   - policy: policyNumber / coverageType / sumInsured / annualPremium /
+   *     startDate / endDate / status + product name/code (insurance_products
+   *     join). `assetDetails` is policies.metadata verbatim — the ONLY
+   *     insured-asset detail carrier on the policy record (schema.ts:4938);
+   *     null when the policy has none.
+   *   - member: the caller's contact from the session-resolved customers row
+   *     (null when the member has no customer profile — the users.id identity
+   *     still owns portal-filed policies).
+   *   - lastClaim: the caller's most recent claim against THIS policy
+   *     (claimantId = ctx.user.id — claims.claimantId is users.id, same
+   *     precedent as myClaims) or null.
+   */
+  getClaimPrefill: protectedProcedure
+    .input(z.object({ policyId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const d = await db();
+      const customer = await resolveMemberCustomer(d, ctx.user.id);
+      await assertPolicyOwnershipDual(d, input.policyId, ctx.user.id, customer?.id ?? null);
+
+      const [policy] = await d
+        .select({
+          id: policies.id,
+          policyNumber: policies.policyNumber,
+          status: policies.status,
+          coverageType: policies.coverageType,
+          sumInsured: policies.sumInsured,
+          annualPremium: policies.annualPremium,
+          startDate: policies.startDate,
+          endDate: policies.endDate,
+          assetDetails: policies.metadata,
+          productName: insuranceProducts.name,
+          productCode: insuranceProducts.productCode,
+        })
+        .from(policies)
+        .innerJoin(insuranceProducts, eq(insuranceProducts.id, policies.productId))
+        .where(eq(policies.id, input.policyId))
+        .limit(1);
+      // Ownership was asserted above; a missing join row means inconsistent
+      // product reference — fail closed, never fabricate.
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+
+      const [lastClaim] = await d
+        .select({
+          claimNumber: claims.claimNumber,
+          status: claims.status,
+          claimType: claims.claimType,
+          claimedAmount: claims.claimedAmount,
+          incidentDate: claims.incidentDate,
+          createdAt: claims.createdAt,
+        })
+        .from(claims)
+        .where(and(eq(claims.policyId, input.policyId), eq(claims.claimantId, ctx.user.id)))
+        .orderBy(desc(claims.id))
+        .limit(1);
+
+      let member: {
+        firstName: string;
+        lastName: string;
+        email: string | null;
+        phone: string | null;
+      } | null = null;
+      if (customer) {
+        const [c] = await d
+          .select({
+            firstName: customers.firstName,
+            lastName: customers.lastName,
+            email: customers.email,
+            phone: customers.phone,
+          })
+          .from(customers)
+          .where(eq(customers.id, customer.id))
+          .limit(1);
+        member = c ?? null;
+      }
+
+      return { policy, member, lastClaim: lastClaim ?? null };
+    }),
+
+  /**
+   * The caller's ACTIVE policies — the real policy picker source for   * FileClaim.tsx. Caller-scoped via policies.customerId = ctx.user.id
    * (same convention as parametricMember.myCoverage, R2).
    */
   myPoliciesPicker: protectedProcedure.query(async ({ ctx }) => {

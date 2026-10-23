@@ -109,8 +109,13 @@ describe("Sprint 95: Router Implementation", () => {
   // caller-scoped member surfaces for onboarding progress, structured
   // NPS feedback, and phone OTP verification). 491 + 3 = 494, measured
   // via ls server/routers/*.ts | grep -v .test.
-  it("should have 494 router files", () => {
-    expect(routerFiles.length).toBe(494);
+  // via ls server/routers/*.ts | grep -v .test.
+  // 2026-10-23 drift fix (W11-B1a): verified live count = 495. Added
+  // memberPayees.ts (registered as memberPayees — per-member payee
+  // directory: list/rename/remove, ownership enforced in predicate).
+  // 494 + 1 = 495, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 495 router files", () => {
+    expect(routerFiles.length).toBe(495);
   });
 
   it("should have zero empty routers (router({}))", () => {

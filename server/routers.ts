@@ -372,6 +372,8 @@ import { memberPaymentsRouter } from "./routers/memberPayments";
 import { memberMobileMoneyRouter } from "./routers/memberMobileMoney";
 import { memberAirtimeRouter } from "./routers/memberAirtime";
 import { memberBillPaymentsRouter } from "./routers/memberBillPayments";
+// W11-B1a (2026-10-05): member payee directory (bill/airtime/momo).
+import { memberPayeesRouter } from "./routers/memberPayees";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
@@ -1248,6 +1250,10 @@ export const appRouter = router({
   memberMobileMoney: memberMobileMoneyRouter,
   memberAirtime: memberAirtimeRouter,
   memberBillPayments: memberBillPaymentsRouter,
+  // W11-B1a (2026-10-05): member payee directory — caller-scoped list/
+  // rename/remove over payee_directory; recording is server-side only
+  // (memberFunds confirm success path). Router count +1.
+  memberPayees: memberPayeesRouter,
   memberFxRates: memberFxRatesRouter,
   // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
   // endorsements/quote-cart. insuranceWorkflows requestRenewal/
