@@ -69,6 +69,11 @@ import {
   type ProviderClientConfig,
 } from "./providerDispatch";
 import { resolveProviderTx } from "./providerResolution";
+import {
+  recordPayee,
+  type PayeeIdentifiers,
+  type PayeeRail,
+} from "./memberPayees";
 import { logger } from "../_core/logger";
 import type { DrizzleDb } from "./memberGuards";
 
@@ -578,6 +583,58 @@ function confirmationOf(tx: Transaction, idempotent: boolean, resolution?: strin
 }
 
 /**
+ * 2026-10-05 (W11-B1a): map a freshly CAPTURED row onto its payee-directory
+ * record. Identifiers come from the row metadata written at initiation
+ * (server-validated input, never re-read from the confirm request). CO
+ * (cash-out) has no capture leg and no saved-payee mapping — skipped.
+ * Missing customer binding or an incomplete identifier tuple → no-op
+ * (recordPayee returns null; a payee we cannot dedupe is never recorded).
+ */
+async function recordPayeeForCapture(
+  d: DrizzleDb,
+  kind: MemberFundsKind,
+  tx: Transaction
+): Promise<void> {
+  const meta = metaOf(tx);
+  const customerId = meta.memberCustomerId;
+  if (typeof customerId !== "number") return;
+  let rail: PayeeRail;
+  let identifiers: PayeeIdentifiers;
+  const dispatch = (meta.dispatchPayload as Record<string, unknown> | undefined) ?? {};
+  switch (kind.refPrefix) {
+    case "BP":
+      rail = "bill";
+      identifiers = {
+        billerCode: meta.biller as string | undefined,
+        meterNumber: meta.customerNumber as string | undefined,
+      };
+      break;
+    case "AV":
+      rail = "airtime";
+      identifiers = {
+        network: meta.network as string | undefined,
+        phone: meta.phoneNumber as string | undefined,
+      };
+      break;
+    case "CI":
+      rail = "momo";
+      identifiers = {
+        provider: meta.provider as string | undefined,
+        walletNumber: dispatch.customerPhone as string | undefined,
+      };
+      break;
+    default:
+      return; // CO: no payee concept
+  }
+  await recordPayee(d, {
+    customerId,
+    rail,
+    identifiers,
+    amountKobo: Math.round(Number(tx.amount) * 100),
+  });
+}
+
+/**
  * Phase 2 for pay / vend / cashIn: server-side Paystack verify (kobo-exact
  * amount match, "success" only) → guarded capture transition → provider
  * fulfillment dispatch (tri-state). Replay-safe: an already-dispatched row
@@ -691,6 +748,19 @@ export async function confirmMemberCapture(opts: {
       if (!fresh) throw new TRPCError({ code: "NOT_FOUND", message: "Transaction not found" });
       return confirmMemberCapture({ d, ctx, kind, reference });
     }
+    // 2026-10-05 (W11-B1a): the capture is now gateway-VERIFIED successful —
+    // record the destination in the member payee directory (bill/airtime/
+    // momo cash-in only; cash-out has no saved-payee concept). This runs
+    // exactly once per payment (the replay paths above return before this
+    // point) and is ERROR-ISOLATED: a payee-record failure must never fail
+    // the funds confirm — log and continue. Conversely, failed/pending
+    // payments never reach this point, so they never create payee entries.
+    await recordPayeeForCapture(d, kind, captured).catch(error => {
+      logger.error(
+        `[MemberFunds] ${reference} payee-directory record failed (payment unaffected): ` +
+          (error instanceof Error ? error.message : String(error))
+      );
+    });
     return dispatchMemberFulfillment(d, kind, captured, false);
   }
 

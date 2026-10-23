@@ -43,6 +43,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -6591,3 +6592,65 @@ export const csatSurveys = pgTable(
   })
 );
 export type CsatSurvey = typeof csatSurveys.$inferSelect;
+
+
+// ─── Payee Directory (W11-B1a, 2026-10-05) ───────────────────────────────────
+/**
+ * payee_directory: per-member saved payees for the member funds rails
+ * (bill / airtime / momo), recorded ONLY after a gateway-verified successful
+ * capture (server/lib/memberFunds.ts confirmMemberCapture) via
+ * server/lib/memberPayees.ts recordPayee.
+ *
+ * Natural-key dedupe: encryptPii() uses random IVs, so encrypted identifier
+ * columns can never be unique-indexed or matched. `naturalKey` is a keyed
+ * HMAC-SHA256 blind index over the rail-specific identifier tuple (same
+ * discipline as customers.bvnHash / piiDedupeHash, G2 audit 2026-02), giving
+ * deterministic upsert on UNIQUE (customerId, rail, naturalKey).
+ *
+ * PII at rest: meterNumber / phone / walletNumber are AES-256-GCM encrypted
+ * ("pii:v1:..." envelope, server/lib/piiCrypto.ts); billerCode / network /
+ * provider are non-personal routing identifiers and stay plaintext.
+ *
+ * Isolation: every read/write is scoped by customerId = the session-resolved
+ * customers.id; no cross-member row is ever returned.
+ */
+export const payeeRailEnum = pgEnum("payee_rail", ["bill", "airtime", "momo"]);
+
+export const payeeDirectory = pgTable(
+  "payee_directory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: integer("customerId")
+      .notNull()
+      .references(() => customers.id),
+    rail: payeeRailEnum("rail").notNull(),
+    /** Optional member-chosen nickname (never part of the natural key). */
+    label: text("label"),
+    billerCode: text("billerCode"),
+    /** Encrypted at rest (piiCrypto envelope) — bill meter/account number. */
+    meterNumber: text("meterNumber"),
+    network: text("network"),
+    /** Encrypted at rest — airtime beneficiary phone. */
+    phone: text("phone"),
+    provider: text("provider"),
+    /** Encrypted at rest — momo wallet number. */
+    walletNumber: text("walletNumber"),
+    /** HMAC-SHA256 blind index of the rail identifier tuple (upsert key). */
+    naturalKey: text("naturalKey").notNull(),
+    lastAmountKobo: bigint("lastAmountKobo", { mode: "number" }),
+    useCount: integer("useCount").default(0).notNull(),
+    lastUsedAt: timestamp("lastUsedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("payee_dir_customer_idx").on(t.customerId),
+    naturalUnique: uniqueIndex("payee_dir_natural_unique").on(
+      t.customerId,
+      t.rail,
+      t.naturalKey
+    ),
+  })
+);
+export type PayeeDirectoryEntry = typeof payeeDirectory.$inferSelect;
+export type InsertPayeeDirectoryEntry = typeof payeeDirectory.$inferInsert;
