@@ -6,6 +6,9 @@
  *   - memberClaims.myPoliciesPicker  (caller's ACTIVE policies for the form)
  *   - memberClaims.fileClaim         (mutation; ownership re-verified
  *     server-side, foreign ids are non-enumerating NOT_FOUND)
+ *   - memberClaims.getClaimPrefill   (W11-B1b, 2026-10-05: read-only prefill
+ *     panel — policy snapshot + member contact + last claim on the selected
+ *     policy; NOT_FOUND degrades silently, the form stays usable)
  *
  * Honest states only: loading skeletons, empty state, error card.
  */
@@ -61,6 +64,26 @@ export default function MemberClaims() {
   const pickerQuery = trpc.memberClaims.myPoliciesPicker.useQuery(undefined, {
     retry: false,
   });
+
+  // 2026-10-05 (W11-B1b): claim-form prefill. When a policy is selected, the
+  // server returns the caller-owned policy snapshot + member contact + the
+  // member's last claim on that policy (memberClaims.getClaimPrefill). A
+  // NOT_FOUND (foreign/nonexistent id — unreachable from the real picker)
+  // degrades silently: the form stays fully usable, nothing is fabricated.
+  const selectedPolicyId = Number(policyId);
+  const prefillEnabled =
+    policyId !== "" && Number.isInteger(selectedPolicyId) && selectedPolicyId > 0;
+  const prefillQuery = trpc.memberClaims.getClaimPrefill.useQuery(
+    { policyId: prefillEnabled ? selectedPolicyId : 0 },
+    { enabled: prefillEnabled, retry: false }
+  );
+  if (prefillQuery.isError) {
+    console.warn(
+      "memberClaims.getClaimPrefill failed; prefill disabled:",
+      prefillQuery.error.message
+    );
+  }
+  const prefill = prefillEnabled ? prefillQuery.data : undefined;
 
   const fileMutation = trpc.memberClaims.fileClaim.useMutation({
     onSuccess: () => {
@@ -241,6 +264,67 @@ export default function MemberClaims() {
                   />
                 </div>
               </div>
+              {prefill ? (
+                <div
+                  className="text-sm border rounded-md p-3 space-y-2"
+                  data-testid="claim-prefill"
+                >
+                  <p className="text-xs text-muted-foreground">
+                    Prefilled from your policy and member records — review
+                    before filing; these fields are read-only here.
+                  </p>
+                  <dl className="grid grid-cols-2 gap-2">
+                    <dt className="text-muted-foreground">Policy #</dt>
+                    <dd className="font-mono">{prefill.policy.policyNumber}</dd>
+                    {prefill.policy.productName ? (
+                      <>
+                        <dt className="text-muted-foreground">Product</dt>
+                        <dd>{prefill.policy.productName}</dd>
+                      </>
+                    ) : null}
+                    {prefill.policy.coverageType ? (
+                      <>
+                        <dt className="text-muted-foreground">Coverage</dt>
+                        <dd>{prefill.policy.coverageType}</dd>
+                      </>
+                    ) : null}
+                    <dt className="text-muted-foreground">Sum insured</dt>
+                    <dd>{fmtNgn(Number(prefill.policy.sumInsured ?? 0))}</dd>
+                    {prefill.member ? (
+                      <>
+                        <dt className="text-muted-foreground">Contact</dt>
+                        <dd>
+                          {prefill.member.firstName} {prefill.member.lastName}
+                          {prefill.member.email
+                            ? ` · ${prefill.member.email}`
+                            : ""}
+                          {prefill.member.phone
+                            ? ` · ${prefill.member.phone}`
+                            : ""}
+                        </dd>
+                      </>
+                    ) : null}
+                    {prefill.policy.assetDetails ? (
+                      <>
+                        <dt className="text-muted-foreground">Asset details</dt>
+                        <dd className="font-mono text-xs break-all">
+                          {JSON.stringify(prefill.policy.assetDetails)}
+                        </dd>
+                      </>
+                    ) : null}
+                  </dl>
+                  {prefill.lastClaim ? (
+                    <p className="text-xs text-muted-foreground">
+                      Your last claim on this policy:{" "}
+                      <span className="font-mono">
+                        {prefill.lastClaim.claimNumber}
+                      </span>{" "}
+                      ({prefill.lastClaim.status},{" "}
+                      {fmtDate(prefill.lastClaim.createdAt)}).
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="incident-description">
                   Incident description
