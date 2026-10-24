@@ -54,6 +54,34 @@ export interface InsightActionView {
 
 const MAX_SHOWN = 3;
 
+/**
+ * 2026-10-26 (W13-B, verify-w11b3b Finding 2): DISPLAY-ONLY fallback mirror
+ * of the canonical server priority map in server/lib/memberInsights.ts
+ * (nextBestActionsFor: policy_renewal_due 100 / failed_refund_pending 90 /
+ * recurring_bill_due 70 / kyc_incomplete 40). The SERVER remains the source
+ * of truth — it sorts priority desc, ties by type asc; this client-side
+ * stable sort only protects the top-3 render if a response ever arrives
+ * unsorted. Do NOT "fix" ranking here; change the server map instead.
+ */
+const TYPE_PRIORITY_FALLBACK: Record<InsightActionView["type"], number> = {
+  policy_renewal_due: 100,
+  failed_refund_pending: 90,
+  recurring_bill_due: 70,
+  kyc_incomplete: 40,
+};
+
+/** Defensive stable re-sort (Array.prototype.sort is stable per ES2019):
+ *  effective priority desc, ties by type asc — mirrors the server order. */
+function sortByPriority(actions: InsightActionView[]): InsightActionView[] {
+  const effective = (a: InsightActionView) =>
+    a.priority ?? TYPE_PRIORITY_FALLBACK[a.type] ?? 0;
+  return [...actions].sort((a, b) =>
+    effective(b) !== effective(a)
+      ? effective(b) - effective(a)
+      : a.type.localeCompare(b.type)
+  );
+}
+
 /** sessionStorage key: action keys dismissed for THIS browser session. */
 const SESSION_DISMISS_KEY = "nba-dismissed-session";
 /** localStorage key: action keys dismissed "forever" (device-local only —
@@ -89,8 +117,13 @@ export function insightActionKey(a: InsightActionView): string {
   return `${a.type}:${String(ref)}`;
 }
 
-/** CTA destination per action type — navigation only, into existing flows. */
-export function insightCta(a: InsightActionView): { href: string; label: string } {
+/** CTA destination per action type — navigation only, into existing flows.
+ *  2026-10-26 (W13-B verifier advisory): FAIL-CLOSED on an UNKNOWN future
+ *  action type — returns null so the panel hides the row rather than
+ *  crashing the portal shell or rendering a dead-clickable suggestion. */
+export function insightCta(
+  a: InsightActionView
+): { href: string; label: string } | null {
   switch (a.type) {
     case "policy_renewal_due": {
       const policyId = a.payload.policyId;
@@ -116,6 +149,8 @@ export function insightCta(a: InsightActionView): { href: string; label: string 
       };
     case "kyc_incomplete":
       return { href: "/member/identity", label: "Complete KYC" };
+    default:
+      return null;
   }
 }
 
@@ -149,8 +184,10 @@ export function NextActionsPanel() {
     sessionDismissed = new Set();
     foreverDismissed = new Set();
   }
-  const visible = all
+  const visible = sortByPriority(all)
     .filter(a => {
+      // Unroutable (unknown future type) → hidden, not dead-clickable.
+      if (!insightCta(a)) return false;
       const k = insightActionKey(a);
       return !sessionDismissed.has(k) && !foreverDismissed.has(k);
     })
@@ -190,6 +227,7 @@ export function NextActionsPanel() {
         <ul className="space-y-3">
           {visible.map(a => {
             const cta = insightCta(a);
+            if (!cta) return null; // unreachable — filtered above; satisfies TS
             return (
               <li
                 key={insightActionKey(a)}

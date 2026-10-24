@@ -287,8 +287,13 @@ export default function MemberBills() {
     check !== null &&
     check.biller === chosenBiller &&
     check.customerNumber === customerNumber.trim();
+  // 2026-10-26 (W13-B): also locked while the anomaly check is in flight —
+  // rapid Pay taps must not multi-dispatch (verify-w11b3b Finding 1).
   const canPay =
-    validationCurrent && amountInBounds && !payMutation.isPending;
+    validationCurrent &&
+    amountInBounds &&
+    !payMutation.isPending &&
+    !anomalyGate.checking;
 
   const onPay = () => {
     if (!canPay || !check) return;
@@ -482,7 +487,11 @@ export default function MemberBills() {
               Validate
             </Button>
             <Button onClick={onPay} disabled={!canPay}>
-              {payMutation.isPending ? "Initiating…" : "Pay"}
+              {payMutation.isPending
+                ? "Initiating…"
+                : anomalyGate.checking
+                  ? "Checking…"
+                  : "Pay"}
             </Button>
           </div>
           {check ? (

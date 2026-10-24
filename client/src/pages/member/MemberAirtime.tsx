@@ -287,6 +287,10 @@ function BuyAirtimeSection() {
   };
 
   const onVend = () => {
+    // 2026-10-26 (W13-B): in-flight guard — a re-tap while the anomaly check
+    // or the vend itself is in flight must not re-enter (verify-w11b3b
+    // Finding 1); the button is also disabled in that state.
+    if (anomalyGate.checking || vendMutation.isPending) return;
     setFormError(null);
     setVendError(null);
     setConfirmation(null);
@@ -429,9 +433,15 @@ function BuyAirtimeSection() {
       {recurringPrompt.node}
       <Button
         onClick={onVend}
-        disabled={!amountInBounds || vendMutation.isPending}
+        disabled={
+          !amountInBounds || vendMutation.isPending || anomalyGate.checking
+        }
       >
-        {vendMutation.isPending ? "Initiating…" : "Buy airtime"}
+        {vendMutation.isPending
+          ? "Initiating…"
+          : anomalyGate.checking
+            ? "Checking…"
+            : "Buy airtime"}
       </Button>
       {vendState ? (
         <MemberCapturePanel
