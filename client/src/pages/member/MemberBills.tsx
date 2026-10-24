@@ -56,6 +56,10 @@ import {
 // check is a UX-ONLY signal, never a security gate — anomalous:false or a
 // check error proceeds normally (see insightsGuards.tsx header).
 import { useAmountAnomalyGate, useRecurringPrompt } from "./insightsGuards";
+// 2026-10-25 (W11-B4b): one-shot omnibox prefill handoff (PREFILL-ONLY —
+// the parsed draft lands in normal form state; the member still validates
+// and taps Pay, and the anomaly gate still runs on submit).
+import { takeOmniboxPrefill } from "./omniboxPrefill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,6 +135,26 @@ export default function MemberBills() {
   // 2026-10-24 (W11-B3b): Phase 3 insights guards (UX-only).
   const anomalyGate = useAmountAnomalyGate("bill");
   const recurringPrompt = useRecurringPrompt("bill");
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill (PREFILL-ONLY).
+  // The parsed biller/meter/amount land in the NORMAL form state; Pay stays
+  // locked until the member validates and taps Pay, and the anomaly
+  // soft-confirm gate still runs on submit — nothing is auto-submitted.
+  useEffect(() => {
+    const prefill = takeOmniboxPrefill("bill");
+    if (!prefill || prefill.rail !== "bill") return;
+    setBiller(prefill.billerCode);
+    setCustomerNumber(prefill.customerNumber);
+    setAmount(String(prefill.amountNGN));
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setPrefilledFrom("omnibox");
+    overrideTracked.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const billersQuery = trpc.memberBillPayments.billers.useQuery(undefined, {
     retry: false,
@@ -357,8 +381,9 @@ export default function MemberBills() {
               className="text-xs text-muted-foreground mb-4"
               data-testid="prefill-hint"
             >
-              Prefilled from your recent payments ({prefilledFrom}) — review
-              and edit freely; the amount was left blank for you to confirm.
+              {prefilledFrom === "omnibox"
+                ? "Prefilled from your omnibox request — review and edit freely, then validate and pay when you're ready."
+                : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
             </p>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2">

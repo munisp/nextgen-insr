@@ -1156,3 +1156,50 @@ export const insightsApi = {
     amountKobo: number;
   }) => memberQuery<AmountAnomalyResult>('memberInsights.amountAnomalyCheck', input),
 };
+
+// ---------------------------------------------------------------------------
+// 2026-10-25 (W11-B4b): Phase 4 NL omnibox over the W11-B4a router
+// (server/routers/memberIntent.ts — parseIntent / resolvePayeeHint).
+// PREFILL-ONLY: parseIntent PARSES ONLY (server header — there is no
+// execute proc). A ready intent is handed to the existing validated flow
+// screens as route-param prefill; the member reviews and taps the normal
+// Pay/Buy button (all existing guards re-run on submit). Shapes below copy
+// server/lib/memberIntentParser.ts (ParseResult), never assumed.
+// ---------------------------------------------------------------------------
+
+/** Client view of server MemberIntent (memberIntentParser.ts:78-96). */
+export type MemberIntentView =
+  | { flow: 'airtime_vend'; network: string; phone: string; amountNGN: number }
+  | { flow: 'bill_pay'; billerCode: string; customerNumber: string; amountNGN: number }
+  | { flow: 'momo_cash_in'; provider: string; amountNGN: number }
+  | { flow: 'navigate'; target: 'claims_file' | 'policy_renewal' };
+
+/** Client view of server ParseResult (memberIntentParser.ts:106-116). */
+export type MemberIntentParseResult =
+  | { status: 'ready'; intent: MemberIntentView }
+  | {
+      status: 'clarification';
+      flow: MemberIntentView['flow'] | null;
+      missing: string[];
+      /** Best-effort extracted fields — NEVER guessed values. */
+      partial: Record<string, string | number>;
+      reason: string;
+    }
+  | { status: 'unsupported'; reason: string };
+
+export interface MemberIntentParseResponse {
+  result: MemberIntentParseResult;
+  /** Caller-scoped payee match for one-tap confirm (id + label only). */
+  payee: { payeeId: string; label: string } | null;
+}
+
+export const intentApi = {
+  /** Parse one omnibox string into a structured intent PROPOSAL. A
+   *  mutation (parse-only; writes nothing funds-side). */
+  parse: (text: string) =>
+    memberMutation<MemberIntentParseResponse>('memberIntent.parseIntent', { text }),
+  /** Biller alias hint (pure lookup; { billerCode: null } on a miss —
+   *  never a nearest-guess). */
+  resolvePayeeHint: (billerText: string) =>
+    memberQuery<{ billerCode: string | null }>('memberIntent.resolvePayeeHint', { billerText }),
+};

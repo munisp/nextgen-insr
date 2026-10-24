@@ -111,7 +111,7 @@ const CASHOUT_IDEM_SCOPE = 'member-momo-cashout';
 const UX_FLOW = 'member-airtime';
 
 /** Buy-airtime form: vend (capture) → authorizationUrl → confirmVend. */
-function BuyAirtimeSection({ navigation }: { navigation: any }) {
+function BuyAirtimeSection({ navigation, route }: { navigation: any; route?: any }) {
   const [network, setNetwork] = useState<string>('');
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
@@ -137,6 +137,28 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
     trackEvent(UX_FLOW, 'form_started', { step: 'buy_airtime' });
   }, []);
   const overrideTracked = useRef(false);
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill route param
+  // (PREFILL-ONLY). Network/phone/amount land in the NORMAL form state;
+  // the member still taps Buy airtime and the anomaly soft-confirm still
+  // runs on submit — nothing is auto-submitted.
+  useEffect(() => {
+    const prefill = route?.params?.omniboxPrefill;
+    if (!prefill || prefill.rail !== 'airtime') return;
+    if ((NETWORKS as readonly string[]).includes(prefill.network)) {
+      setNetwork(prefill.network);
+    }
+    setPhone(String(prefill.phone ?? ''));
+    setAmount(String(prefill.amountNGN));
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+    setPrefilledFrom('omnibox');
+    navigation.setParams?.({ omniboxPrefill: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const chosenNetwork = network || NETWORKS[0];
   const amountNGN = Number(amount);
@@ -287,8 +309,9 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
       <RecentPayeePicker rail="airtime" onSelect={onPayeeSelect} />
       {prefilledFrom ? (
         <Text style={styles.hintText} testID="prefill-hint-airtime">
-          Prefilled from your recent payments ({prefilledFrom}) — review and
-          edit freely; the amount was left blank for you to confirm.
+          {prefilledFrom === 'omnibox'
+            ? "Prefilled from your omnibox request — review and edit freely, then buy when you're ready."
+            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </Text>
       ) : null}
       <Text style={styles.fieldLabel}>Network</Text>
@@ -390,10 +413,12 @@ function MomoCashSection({
   providers,
   limits,
   navigation,
+  route,
 }: {
   providers: Array<{ name: string }>;
   limits: { minAmountNGN: number; maxAmountNGN: number; dailyLimitNGN: number } | undefined;
   navigation: any;
+  route?: any;
 }) {
   const [provider, setProvider] = useState<string>('');
   const [amount, setAmount] = useState('');
@@ -417,6 +442,28 @@ function MomoCashSection({
     trackEvent(UX_FLOW, 'form_started', { step: 'momo_cash' });
   }, []);
   const overrideTracked = useRef(false);
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill route param
+  // (PREFILL-ONLY). Provider/amount land in the NORMAL form state; the
+  // member still taps the normal Cash in button — nothing auto-submits.
+  useEffect(() => {
+    const prefill = route?.params?.omniboxPrefill;
+    if (!prefill || prefill.rail !== 'momo') return;
+    if (providers.some((pr) => pr.name === prefill.provider)) {
+      setProvider(prefill.provider);
+    }
+    setAmount(String(prefill.amountNGN));
+    setCashInState(null);
+    setCashInError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setCashOutResult(null);
+    setCashOutError(null);
+    setFormError(null);
+    setPrefilledFrom('omnibox');
+    navigation.setParams?.({ omniboxPrefill: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const chosenProvider = provider || (providers[0]?.name ?? '');
   const amountNGN = Number(amount);
@@ -560,8 +607,9 @@ function MomoCashSection({
       <RecentPayeePicker rail="momo" onSelect={onPayeeSelect} />
       {prefilledFrom ? (
         <Text style={styles.hintText} testID="prefill-hint-momo">
-          Prefilled from your recent payments ({prefilledFrom}) — review and
-          edit freely; the amount was left blank for you to confirm.
+          {prefilledFrom === 'omnibox'
+            ? "Prefilled from your omnibox request — review and edit freely, then cash in when you're ready."
+            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </Text>
       ) : null}
       <Text style={styles.fieldLabel}>Provider</Text>
@@ -648,7 +696,7 @@ function MomoCashSection({
   );
 }
 
-export function AirtimeScreen({ navigation }: { navigation: any }) {
+export function AirtimeScreen({ navigation, route }: { navigation: any; route?: any }) {
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [providerFilter, setProviderFilter] = useState<'all' | MomoProvider>('all');
 
@@ -700,7 +748,7 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionDesc}>
           Pay by card/bank via the secure checkout; the vend is dispatched only after your payment is verified — fulfillment is never instant.
         </Text>
-        <BuyAirtimeSection navigation={navigation} />
+        <BuyAirtimeSection navigation={navigation} route={route} />
       </View>
 
       <View style={styles.section}>
@@ -758,7 +806,7 @@ export function AirtimeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionDesc}>
           Cash in by card/bank via the secure checkout; cash out is a provider-side settlement request only — never an instant payout.
         </Text>
-        <MomoCashSection providers={providers} limits={momoProviders.data?.limits} navigation={navigation} />
+        <MomoCashSection providers={providers} limits={momoProviders.data?.limits} navigation={navigation} route={route} />
       </View>
 
       <View style={styles.section}>

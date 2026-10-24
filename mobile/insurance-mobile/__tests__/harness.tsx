@@ -117,5 +117,8 @@ export const mockNavigation = {
   navigate: jest.fn(),
   goBack: jest.fn(),
   setOptions: jest.fn(),
+  // 2026-10-25 (W11-B4b): the omnibox prefill consumers clear the one-shot
+  // route param via setParams({ omniboxPrefill: undefined }).
+  setParams: jest.fn(),
   addListener: jest.fn((_event: string, _handler: () => void) => jest.fn()),
 };
