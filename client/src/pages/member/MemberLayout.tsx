@@ -12,6 +12,10 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
+// 2026-10-24 (W11-B2c): register the UX-instrumentation sender for every
+// /member/* page (fail-silent; the hook is unconditional so early returns
+// below stay hook-safe).
+import { useUxTracking } from "@/lib/uxTrack";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -91,6 +95,9 @@ export default function MemberLayout({ children }: { children: ReactNode }) {
     redirectOnUnauthenticated: true,
     redirectPath: `/member/login?returnTo=${encodeURIComponent(location)}`,
   });
+  // 2026-10-24 (W11-B2c): wire memberUxEvents.track as the uxTrack sender
+  // (fail-silent — tracking never blocks the member UX).
+  useUxTracking();
 
   if (loading) {
     return (

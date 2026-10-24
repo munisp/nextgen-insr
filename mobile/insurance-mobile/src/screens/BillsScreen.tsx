@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
 } from 'react-native';
@@ -45,6 +45,8 @@ import {
   type CaptureConfirmationView,
   type CaptureInitiationView,
 } from './memberFundsIntent';
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from '../services/uxTrack';
 
 const fmtNgn = (n: number) => `₦${Number(n).toLocaleString('en-NG')}`;
 
@@ -57,7 +59,17 @@ const ELECTRICITY_BILLERS = [
 /** AsyncStorage scope for the bill-pay draft idempotency key. */
 const IDEM_SCOPE = 'member-bill-pay';
 
+/** 2026-10-24 (W11-B2c): instrumentation flow name (web parity). */
+const UX_FLOW = 'member-bills';
+
 export function BillsScreen({ navigation }: { navigation: any }) {
+  // 2026-10-24 (W11-B2c): form_started once per screen mount.
+  useEffect(() => {
+    trackEvent(UX_FLOW, 'form_started');
+  }, []);
+  // prefill_overridden fires at most once per prefilled draft; a new payee
+  // select re-arms it.
+  const overrideTracked = useRef(false);
   const [biller, setBiller] = useState<string>('');
   const [customerNumber, setCustomerNumber] = useState<string>('');
   // Submitted validation params — the query only fires after Validate (web
@@ -123,6 +135,20 @@ export function BillsScreen({ navigation }: { navigation: any }) {
     setConfirmation(null);
     setConfirmError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (the member editing a prefilled IDENTIFIER field next).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, 'prefill_accepted', {
+      metadata: { rail: 'bill', hasMeterNumber: Boolean(p.meterNumber) },
+    });
+  };
+
+  // 2026-10-24 (W11-B2c): an edit of a prefilled identifier field after a
+  // payee select — tracked ONCE per draft, field NAME only, never the value.
+  const trackPrefillOverride = (fieldName: 'biller' | 'customerNumber') => {
+    if (!prefilledFrom || overrideTracked.current) return;
+    overrideTracked.current = true;
+    trackEvent(UX_FLOW, 'prefill_overridden', { fieldName });
   };
 
   // Pay is gated on a valid format check for the CURRENT draft (editing the
@@ -186,6 +212,8 @@ export function BillsScreen({ navigation }: { navigation: any }) {
     try {
       const data = await billsApi.confirmPay(payState.reference);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) trackEvent(UX_FLOW, 'completed');
       // Terminal outcome → retire the draft key (a fresh intent needs a new
       // key; a non-terminal outcome keeps it so retrying confirm is safe).
       if (isTerminalConfirmation(data)) await retireIntentKey(IDEM_SCOPE);
@@ -254,7 +282,7 @@ export function BillsScreen({ navigation }: { navigation: any }) {
             <TouchableOpacity
               key={b.name}
               style={[styles.chip, chosenBiller === b.name && styles.chipActive]}
-              onPress={() => setBiller(b.name)}
+              onPress={() => { trackPrefillOverride('biller'); setBiller(b.name); }}
               accessibilityLabel={`Biller ${b.name}`}
             >
               <Text style={[styles.chipText, chosenBiller === b.name && { color: '#fff' }]}>{b.name}</Text>
@@ -265,7 +293,7 @@ export function BillsScreen({ navigation }: { navigation: any }) {
         <TextInput
           style={styles.input}
           value={customerNumber}
-          onChangeText={setCustomerNumber}
+          onChangeText={(v) => { trackPrefillOverride('customerNumber'); setCustomerNumber(v); }}
           placeholder="e.g. 12345678901"
           placeholderTextColor="#94a3b8"
           accessibilityLabel="Customer number"
@@ -278,7 +306,12 @@ export function BillsScreen({ navigation }: { navigation: any }) {
                 <TouchableOpacity
                   key={m}
                   style={[styles.chip, meterType === m && styles.chipActive]}
-                  onPress={() => setMeterType(m)}
+                  onPress={() => {
+                    // 2026-10-24 (W11-B2c): discrete change — enum value,
+                    // never member-typed text.
+                    trackEvent(UX_FLOW, 'field_edited', { fieldName: 'meterType' });
+                    setMeterType(m);
+                  }}
                   accessibilityLabel={`Meter ${m}`}
                 >
                   <Text style={[styles.chipText, meterType === m && { color: '#fff' }]}>{m}</Text>
@@ -292,6 +325,9 @@ export function BillsScreen({ navigation }: { navigation: any }) {
           style={styles.input}
           value={amount}
           onChangeText={setAmount}
+          // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; field NAME only —
+          // the amount value is never sent.
+          onBlur={() => trackEvent(UX_FLOW, 'field_edited', { fieldName: 'amount' })}
           keyboardType="number-pad"
           placeholder={limits ? `${limits.minAmountNGN} – ${limits.maxAmountNGN}` : 'Amount'}
           placeholderTextColor="#94a3b8"

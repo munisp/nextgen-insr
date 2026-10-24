@@ -31,8 +31,10 @@
  * Idempotency keys are stable per draft and retired on terminal outcomes
  * (memberFundsIntent.tsx). No success state is ever fabricated.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from "@/lib/uxTrack";
 import MemberLayout, {
   MemberError,
   MemberLoading,
@@ -133,6 +135,9 @@ const VEND_IDEM_SCOPE = "member-airtime-vend";
 const CASHIN_IDEM_SCOPE = "member-momo-cashin";
 const CASHOUT_IDEM_SCOPE = "member-momo-cashout";
 
+/** 2026-10-24 (W11-B2c): instrumentation flow name for this surface. */
+const UX_FLOW = "member-airtime";
+
 interface CashOutResultView {
   reference: string;
   status: string;
@@ -159,10 +164,21 @@ function BuyAirtimeSection() {
   // 2026-10-05 (W11-B1b): provenance label after a payee-directory prefill.
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
+  // 2026-10-24 (W11-B2c): form_started once per section mount; the
+  // prefill-override probe fires at most once per prefilled draft.
+  useEffect(() => {
+    trackEvent(UX_FLOW, "form_started", { step: "buy_airtime" });
+  }, []);
+  const overrideTracked = useRef(false);
+
   const confirmMutation = trpc.memberAirtime.confirmVend.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
       setConfirmError(null);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) {
+        trackEvent(UX_FLOW, "completed", { step: "buy_airtime" });
+      }
       if (isTerminalConfirmation(data)) retireIntentKey(VEND_IDEM_SCOPE);
     },
     onError: (err: { message: string }) => {
@@ -207,6 +223,26 @@ function BuyAirtimeSection() {
     setConfirmError(null);
     setFormError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (phone is the prefilled IDENTIFIER here).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, "prefill_accepted", {
+      step: "buy_airtime",
+      metadata: { rail: "airtime", hasPhone: Boolean(p.phone) },
+    });
+  };
+
+  const onPhoneChange = (value: string) => {
+    // 2026-10-24 (W11-B2c): override of a prefilled identifier — once per
+    // draft, field NAME only, never the typed value.
+    if (prefilledFrom && !overrideTracked.current) {
+      overrideTracked.current = true;
+      trackEvent(UX_FLOW, "prefill_overridden", {
+        step: "buy_airtime",
+        fieldName: "phone",
+      });
+    }
+    setPhone(value);
   };
 
   const onVend = () => {
@@ -260,7 +296,17 @@ function BuyAirtimeSection() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="vend-network">Network</Label>
-          <Select value={chosenNetwork} onValueChange={setNetwork}>
+          <Select
+            value={chosenNetwork}
+            onValueChange={(v) => {
+              // 2026-10-24 (W11-B2c): enum value, discrete change.
+              trackEvent(UX_FLOW, "field_edited", {
+                step: "buy_airtime",
+                fieldName: "network",
+              });
+              setNetwork(v);
+            }}
+          >
             <SelectTrigger id="vend-network">
               <SelectValue placeholder="Network" />
             </SelectTrigger>
@@ -278,7 +324,7 @@ function BuyAirtimeSection() {
           <Input
             id="vend-phone"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => onPhoneChange(e.target.value)}
             placeholder="Defaults to your number"
           />
         </div>
@@ -289,6 +335,13 @@ function BuyAirtimeSection() {
             inputMode="numeric"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; NAME only.
+            onBlur={() =>
+              trackEvent(UX_FLOW, "field_edited", {
+                step: "buy_airtime",
+                fieldName: "amount",
+              })
+            }
             placeholder={`${VEND_MIN_NGN} – ${VEND_MAX_NGN.toLocaleString()}`}
           />
         </div>
@@ -358,10 +411,21 @@ function MomoCashSection({
   // 2026-10-05 (W11-B1b): provenance label after a payee-directory prefill.
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
+  // 2026-10-24 (W11-B2c): form_started once per section mount; the
+  // prefill-override probe fires at most once per prefilled draft.
+  useEffect(() => {
+    trackEvent(UX_FLOW, "form_started", { step: "momo_cash" });
+  }, []);
+  const overrideTracked = useRef(false);
+
   const confirmMutation = trpc.memberMobileMoney.confirmCashIn.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
       setConfirmError(null);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) {
+        trackEvent(UX_FLOW, "completed", { step: "momo_cash" });
+      }
       if (isTerminalConfirmation(data)) retireIntentKey(CASHIN_IDEM_SCOPE);
     },
     onError: (err: { message: string }) => {
@@ -419,6 +483,30 @@ function MomoCashSection({
     setCashOutError(null);
     setFormError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (provider is the prefilled IDENTIFIER here).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, "prefill_accepted", {
+      step: "momo_cash",
+      metadata: { rail: "momo", hasProvider: Boolean(p.provider) },
+    });
+  };
+
+  const onProviderChange = (value: string) => {
+    // 2026-10-24 (W11-B2c): override of the prefilled identifier — once per
+    // draft, field NAME only.
+    if (prefilledFrom && !overrideTracked.current) {
+      overrideTracked.current = true;
+      trackEvent(UX_FLOW, "prefill_overridden", {
+        step: "momo_cash",
+        fieldName: "provider",
+      });
+    }
+    trackEvent(UX_FLOW, "field_edited", {
+      step: "momo_cash",
+      fieldName: "provider",
+    });
+    setProvider(value);
   };
 
   const guard = (): boolean => {
@@ -504,6 +592,13 @@ function MomoCashSection({
             inputMode="numeric"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; NAME only.
+            onBlur={() =>
+              trackEvent(UX_FLOW, "field_edited", {
+                step: "momo_cash",
+                fieldName: "amount",
+              })
+            }
             placeholder={
               limits
                 ? `${limits.minAmountNGN} – ${limits.maxAmountNGN.toLocaleString()}`

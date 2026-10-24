@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput,
 } from 'react-native';
@@ -47,6 +47,8 @@ import {
   type CaptureConfirmationView,
   type CaptureInitiationView,
 } from './memberFundsIntent';
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from '../services/uxTrack';
 
 const fmt = (n: number, currency = 'NGN') =>
   currency === 'NGN' ? `₦${Number(n).toLocaleString('en-NG')}` : `${Number(n).toLocaleString('en-NG')} ${currency}`;
@@ -95,6 +97,9 @@ const VEND_IDEM_SCOPE = 'member-airtime-vend';
 const CASHIN_IDEM_SCOPE = 'member-momo-cashin';
 const CASHOUT_IDEM_SCOPE = 'member-momo-cashout';
 
+/** 2026-10-24 (W11-B2c): instrumentation flow name (web parity). */
+const UX_FLOW = 'member-airtime';
+
 /** Buy-airtime form: vend (capture) → authorizationUrl → confirmVend. */
 function BuyAirtimeSection({ navigation }: { navigation: any }) {
   const [network, setNetwork] = useState<string>('');
@@ -110,6 +115,13 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
   // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
   // the payee directory (the amount is always cleared, never carried over).
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
+
+  // 2026-10-24 (W11-B2c): form_started once per section mount; the
+  // prefill-override probe fires at most once per prefilled draft.
+  useEffect(() => {
+    trackEvent(UX_FLOW, 'form_started', { step: 'buy_airtime' });
+  }, []);
+  const overrideTracked = useRef(false);
 
   const chosenNetwork = network || NETWORKS[0];
   const amountNGN = Number(amount);
@@ -132,6 +144,23 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
     setConfirmError(null);
     setFormError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (phone is the prefilled IDENTIFIER here).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, 'prefill_accepted', {
+      step: 'buy_airtime',
+      metadata: { rail: 'airtime', hasPhone: Boolean(p.phone) },
+    });
+  };
+
+  const onPhoneChange = (value: string) => {
+    // 2026-10-24 (W11-B2c): override of a prefilled identifier — once per
+    // draft, field NAME only, never the typed value.
+    if (prefilledFrom && !overrideTracked.current) {
+      overrideTracked.current = true;
+      trackEvent(UX_FLOW, 'prefill_overridden', { step: 'buy_airtime', fieldName: 'phone' });
+    }
+    setPhone(value);
   };
 
   const onVend = async () => {
@@ -184,6 +213,8 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
     try {
       const data = await airtimeApi.confirmVend(vendState.reference);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) trackEvent(UX_FLOW, 'completed', { step: 'buy_airtime' });
       if (isTerminalConfirmation(data)) await retireIntentKey(VEND_IDEM_SCOPE);
     } catch (e: any) {
       setConfirmation(null);
@@ -208,7 +239,11 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
           <TouchableOpacity
             key={n}
             style={[styles.chip, chosenNetwork === n && styles.chipActive]}
-            onPress={() => setNetwork(n)}
+            onPress={() => {
+              // 2026-10-24 (W11-B2c): discrete change — enum value.
+              trackEvent(UX_FLOW, 'field_edited', { step: 'buy_airtime', fieldName: 'network' });
+              setNetwork(n);
+            }}
             accessibilityLabel={`Network ${n}`}
           >
             <Text style={[styles.chipText, chosenNetwork === n && { color: '#fff' }]}>{n}</Text>
@@ -219,7 +254,7 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
       <TextInput
         style={styles.input}
         value={phone}
-        onChangeText={setPhone}
+        onChangeText={onPhoneChange}
         keyboardType="phone-pad"
         placeholder="e.g. 08031234567"
         placeholderTextColor="#94a3b8"
@@ -230,6 +265,8 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
         style={styles.input}
         value={amount}
         onChangeText={setAmount}
+        // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; NAME only.
+        onBlur={() => trackEvent(UX_FLOW, 'field_edited', { step: 'buy_airtime', fieldName: 'amount' })}
         keyboardType="number-pad"
         placeholder={`${VEND_MIN_NGN} – ${VEND_MAX_NGN.toLocaleString()}`}
         placeholderTextColor="#94a3b8"
@@ -300,6 +337,13 @@ function MomoCashSection({
   // the payee directory (the amount is always cleared, never carried over).
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
+  // 2026-10-24 (W11-B2c): form_started once per section mount; the
+  // prefill-override probe fires at most once per prefilled draft.
+  useEffect(() => {
+    trackEvent(UX_FLOW, 'form_started', { step: 'momo_cash' });
+  }, []);
+  const overrideTracked = useRef(false);
+
   const chosenProvider = provider || (providers[0]?.name ?? '');
   const amountNGN = Number(amount);
   const amountInBounds =
@@ -325,6 +369,24 @@ function MomoCashSection({
     setCashOutError(null);
     setFormError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (provider is the prefilled IDENTIFIER here).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, 'prefill_accepted', {
+      step: 'momo_cash',
+      metadata: { rail: 'momo', hasProvider: Boolean(p.provider) },
+    });
+  };
+
+  const onProviderChange = (value: string) => {
+    // 2026-10-24 (W11-B2c): override of the prefilled identifier — once per
+    // draft, field NAME only.
+    if (prefilledFrom && !overrideTracked.current) {
+      overrideTracked.current = true;
+      trackEvent(UX_FLOW, 'prefill_overridden', { step: 'momo_cash', fieldName: 'provider' });
+    }
+    trackEvent(UX_FLOW, 'field_edited', { step: 'momo_cash', fieldName: 'provider' });
+    setProvider(value);
   };
 
   const guard = (): boolean => {
@@ -380,6 +442,8 @@ function MomoCashSection({
     try {
       const data = await mobileMoneyApi.confirmCashIn(cashInState.reference);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) trackEvent(UX_FLOW, 'completed', { step: 'momo_cash' });
       if (isTerminalConfirmation(data)) await retireIntentKey(CASHIN_IDEM_SCOPE);
     } catch (e: any) {
       setConfirmation(null);
@@ -403,6 +467,9 @@ function MomoCashSection({
         idempotencyKey,
       });
       setCashOutResult(data);
+      // 2026-10-24 (W11-B2c): cash-out has no capture leg — a recorded
+      // PENDING request IS the completion of this form's UX flow.
+      trackEvent(UX_FLOW, 'completed', { step: 'momo_cash' });
       if (isTerminalConfirmation(data)) await retireIntentKey(CASHOUT_IDEM_SCOPE);
     } catch (e: any) {
       // 2026-10-04 (W10-B4b): the server verdict is surfaced VERBATIM — a
@@ -429,7 +496,7 @@ function MomoCashSection({
           <TouchableOpacity
             key={p.name}
             style={[styles.chip, chosenProvider === p.name && styles.chipActive]}
-            onPress={() => setProvider(p.name)}
+            onPress={() => onProviderChange(p.name)}
             accessibilityLabel={`Cash provider ${p.name}`}
           >
             <Text style={[styles.chipText, chosenProvider === p.name && { color: '#fff' }]}>{p.name}</Text>
@@ -441,6 +508,8 @@ function MomoCashSection({
         style={styles.input}
         value={amount}
         onChangeText={setAmount}
+        // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; NAME only.
+        onBlur={() => trackEvent(UX_FLOW, 'field_edited', { step: 'momo_cash', fieldName: 'amount' })}
         keyboardType="number-pad"
         placeholder={limits ? `${limits.minAmountNGN} – ${limits.maxAmountNGN.toLocaleString()}` : 'Amount'}
         placeholderTextColor="#94a3b8"
