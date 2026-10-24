@@ -114,8 +114,13 @@ describe("Sprint 95: Router Implementation", () => {
   // memberPayees.ts (registered as memberPayees — per-member payee
   // directory: list/rename/remove, ownership enforced in predicate).
   // 494 + 1 = 495, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 495 router files", () => {
-    expect(routerFiles.length).toBe(495);
+  // 2026-10-24 drift fix (W11-B2): verified live count = 496. Added
+  // memberUxEvents.ts (registered as memberUxEvents — privacy-minimal UX
+  // instrumentation: batch track, caller-scoped mySummary, admin-only
+  // aggregate funnel). 495 + 1 = 496, measured via
+  // ls server/routers/*.ts | grep -v .test.
+  it("should have 496 router files", () => {
+    expect(routerFiles.length).toBe(496);
   });
 
   it("should have zero empty routers (router({}))", () => {

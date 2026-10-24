@@ -374,6 +374,8 @@ import { memberAirtimeRouter } from "./routers/memberAirtime";
 import { memberBillPaymentsRouter } from "./routers/memberBillPayments";
 // W11-B1a (2026-10-05): member payee directory (bill/airtime/momo).
 import { memberPayeesRouter } from "./routers/memberPayees";
+// W11-B2 (2026-10-24): UX instrumentation backbone (privacy-minimal).
+import { memberUxEventsRouter } from "./routers/memberUxEvents";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
@@ -1254,6 +1256,10 @@ export const appRouter = router({
   // rename/remove over payee_directory; recording is server-side only
   // (memberFunds confirm success path). Router count +1.
   memberPayees: memberPayeesRouter,
+  // W11-B2 (2026-10-24): UX instrumentation — track (batch, idempotent),
+  // mySummary (caller-scoped transparency), adminFunnel (admin-only
+  // aggregate). Router count +1.
+  memberUxEvents: memberUxEventsRouter,
   memberFxRates: memberFxRatesRouter,
   // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
   // endorsements/quote-cart. insuranceWorkflows requestRenewal/

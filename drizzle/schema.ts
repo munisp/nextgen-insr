@@ -6654,3 +6654,50 @@ export const payeeDirectory = pgTable(
 );
 export type PayeeDirectoryEntry = typeof payeeDirectory.$inferSelect;
 export type InsertPayeeDirectoryEntry = typeof payeeDirectory.$inferInsert;
+
+// ── W11-B2 (2026-10-24): ux_events — privacy-minimal UX instrumentation ─────
+// Member-intelligence Phase 2 backbone. NO PII payloads: flow names, event
+// kinds, field NAMES (never values), step names, and a small scrubbed
+// metadata bag (zod-enforced <= 64-char strings; numbers/booleans for
+// durations/counts). sessionId is a CLIENT-GENERATED per-session uuid,
+// deliberately NOT the auth session id. Retention: 90 days (purge job owned
+// by ops; see migration 0091 comment). Idempotency: (customerId,
+// clientEventId) unique — client batch retries never double-count.
+export const uxEvents = pgTable(
+  "ux_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: integer("customerId")
+      .notNull()
+      .references(() => customers.id),
+    /** Client-generated per-session uuid (NOT the auth session). */
+    sessionId: text("sessionId").notNull(),
+    /** e.g. 'bill_pay' | 'airtime_vend' | 'momo_cash_in' | 'claim_file' | 'kyc_submit'. */
+    flow: text("flow").notNull(),
+    /** zod-validated enum-ish (server/routers/memberUxEvents.ts). */
+    event: text("event").notNull(),
+    /** Field NAME only — never the value. */
+    fieldName: text("fieldName"),
+    step: text("step"),
+    /** Small scrubbed bag: numeric durations/counts, short strings only. */
+    metadataJson: jsonb("metadataJson"),
+    /** Client idempotency key (uuid) — unique per customer. */
+    clientEventId: uuid("clientEventId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("ux_events_customer_idx").on(t.customerId),
+    customerFlowCreatedIdx: index("ux_events_customer_flow_created_idx").on(
+      t.customerId,
+      t.flow,
+      t.createdAt
+    ),
+    clientEventUnique: uniqueIndex("ux_events_client_event_unique").on(
+      t.customerId,
+      t.clientEventId
+    ),
+    createdIdx: index("ux_events_created_idx").on(t.createdAt),
+  })
+);
+export type UxEvent = typeof uxEvents.$inferSelect;
+export type InsertUxEvent = typeof uxEvents.$inferInsert;

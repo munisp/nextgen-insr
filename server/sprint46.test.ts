@@ -387,7 +387,10 @@ describe("Sprint 46: Data Integrity", () => {
     // 2026-10-23 (W11-B1a): +1 table payee_directory (per-member per-rail
     // payee memory, encrypted identifiers, HMAC blind-index upsert).
     // 275 + 1 = 276.
-    expect(stats.totalTables).toBe(276);
+    // 2026-10-24 (W11-B2): +1 table ux_events (privacy-minimal UX
+    // instrumentation backbone; no PII payloads, idempotent clientEventId).
+    // 276 + 1 = 277.
+    expect(stats.totalTables).toBe(277);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
