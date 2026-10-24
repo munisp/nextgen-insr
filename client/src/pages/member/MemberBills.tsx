@@ -30,8 +30,10 @@
  *   - The authorizationUrl handoff mirrors MemberPayments (target=_blank
  *     link + explicit "I've paid — verify"), never a fake success screen.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from "@/lib/uxTrack";
 import MemberLayout, {
   MemberError,
   MemberLoading,
@@ -90,7 +92,17 @@ const ELECTRICITY_BILLERS = [
 /** sessionStorage scope for the bill-pay draft idempotency key. */
 const IDEM_SCOPE = "member-bill-pay";
 
+/** 2026-10-24 (W11-B2c): instrumentation flow name for this surface. */
+const UX_FLOW = "member-bills";
+
 export default function MemberBills() {
+  // 2026-10-24 (W11-B2c): form_started once per page mount.
+  useEffect(() => {
+    trackEvent(UX_FLOW, "form_started");
+  }, []);
+  // prefill_overridden fires at most once per prefilled draft; a new payee
+  // select re-arms it.
+  const overrideTracked = useRef(false);
   const [biller, setBiller] = useState<string>("");
   const [customerNumber, setCustomerNumber] = useState<string>("");
   // Submitted validation params — the query only fires after Validate.
@@ -123,6 +135,8 @@ export default function MemberBills() {
     onSuccess: (data: CaptureConfirmationView) => {
       setConfirmError(null);
       setConfirmation(data);
+      // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
+      if (isTerminalConfirmation(data)) trackEvent(UX_FLOW, "completed");
       // Terminal outcome → retire the draft key (a fresh intent needs a new
       // key; a non-terminal outcome keeps it so retrying confirm is safe).
       if (isTerminalConfirmation(data)) retireIntentKey(IDEM_SCOPE);
@@ -189,6 +203,30 @@ export default function MemberBills() {
     setConfirmation(null);
     setConfirmError(null);
     setPrefilledFrom(p.label);
+    // 2026-10-24 (W11-B2c): prefill accepted; re-arm the once-per-draft
+    // override probe (the member editing a prefilled IDENTIFIER field next).
+    overrideTracked.current = false;
+    trackEvent(UX_FLOW, "prefill_accepted", {
+      metadata: { rail: "bill", hasMeterNumber: Boolean(p.meterNumber) },
+    });
+  };
+
+  // 2026-10-24 (W11-B2c): an edit of a prefilled identifier field after a
+  // payee select — tracked ONCE per draft, field NAME only, never the value.
+  const trackPrefillOverride = (fieldName: "biller" | "customerNumber") => {
+    if (!prefilledFrom || overrideTracked.current) return;
+    overrideTracked.current = true;
+    trackEvent(UX_FLOW, "prefill_overridden", { fieldName });
+  };
+
+  const onCustomerNumberChange = (value: string) => {
+    trackPrefillOverride("customerNumber");
+    setCustomerNumber(value);
+  };
+
+  const onBillerChange = (value: string) => {
+    trackPrefillOverride("biller");
+    setBiller(value);
   };
 
   // Pay is gated on a valid format check for the CURRENT draft (editing the
@@ -300,7 +338,7 @@ export default function MemberBills() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="biller">Biller</Label>
-              <Select value={chosenBiller} onValueChange={setBiller}>
+              <Select value={chosenBiller} onValueChange={onBillerChange}>
                 <SelectTrigger id="biller">
                   <SelectValue placeholder="Select biller" />
                 </SelectTrigger>
@@ -318,7 +356,7 @@ export default function MemberBills() {
               <Input
                 id="customerNumber"
                 value={customerNumber}
-                onChange={(e) => setCustomerNumber(e.target.value)}
+                onChange={(e) => onCustomerNumberChange(e.target.value)}
                 placeholder="e.g. 12345678901"
               />
             </div>
@@ -327,9 +365,14 @@ export default function MemberBills() {
                 <Label htmlFor="meterType">Meter type</Label>
                 <Select
                   value={meterType}
-                  onValueChange={(v) =>
-                    setMeterType(v as "prepaid" | "postpaid")
-                  }
+                  onValueChange={(v) => {
+                    // 2026-10-24 (W11-B2c): discrete change — no per-keystroke
+                    // noise, value is an enum (never member-typed text).
+                    trackEvent(UX_FLOW, "field_edited", {
+                      fieldName: "meterType",
+                    });
+                    setMeterType(v as "prepaid" | "postpaid");
+                  }}
                 >
                   <SelectTrigger id="meterType">
                     <SelectValue placeholder="Meter type" />
@@ -348,6 +391,11 @@ export default function MemberBills() {
                 inputMode="numeric"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+                // 2026-10-24 (W11-B2c): onBlur, NOT per keystroke; field NAME
+                // only — the amount value is never sent.
+                onBlur={() =>
+                  trackEvent(UX_FLOW, "field_edited", { fieldName: "amount" })
+                }
                 placeholder={
                   limits
                     ? `${limits.minAmountNGN} – ${limits.maxAmountNGN}`

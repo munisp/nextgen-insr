@@ -12,8 +12,10 @@
  *
  * Honest states only: loading skeletons, empty state, error card.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from "@/lib/uxTrack";
 import MemberLayout, {
   MemberError,
   MemberLoading,
@@ -51,6 +53,10 @@ const fmtDate = (d: string | Date | null | undefined) =>
 
 export default function MemberClaims() {
   const utils = trpc.useUtils();
+  // 2026-10-24 (W11-B2c): form_started once per page mount.
+  useEffect(() => {
+    trackEvent("member-claims", "form_started");
+  }, []);
   const [policyId, setPolicyId] = useState<string>("");
   const [claimType, setClaimType] = useState<string>("");
   const [incidentDate, setIncidentDate] = useState<string>("");
@@ -93,6 +99,9 @@ export default function MemberClaims() {
       setClaimedAmount("");
       setDescription("");
       toast.success("Claim filed");
+      // 2026-10-24 (W11-B2c): the claim was accepted server-side — the form
+      // flow is complete (no typed values are tracked).
+      trackEvent("member-claims", "completed");
       utils.memberClaims.myClaims.invalidate();
     },
     onError: (err) => {

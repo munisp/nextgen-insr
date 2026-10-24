@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { useQuery } from '@tanstack/react-query';
@@ -13,6 +13,8 @@ import { useOfflineSync } from '../services/offlineSync';
 // 2026-10-03 (W9-B4): routed through memberTrpc (Bearer + 401 refresh-retry).
 import { claimsApi } from '../services/api';
 import { memberQuery, memberMutation } from '../services/memberTrpc';
+// 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
+import { trackEvent } from '../services/uxTrack';
 
 const fmtNgn = (n: number) => `₦${Number(n).toLocaleString('en-NG')}`;
 const fmtDate = (d: string | Date | null | undefined) =>
@@ -24,6 +26,11 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
   const [evidence, setEvidence] = useState<Array<{ uri: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [selectedPolicyId, setSelectedPolicyId] = useState<number | null>(null);
+
+  // 2026-10-24 (W11-B2c): form_started once per screen mount.
+  useEffect(() => {
+    trackEvent('member-claims', 'form_started');
+  }, []);
 
   const claimTypes = ['Motor Accident', 'Health/Medical', 'Property Damage', 'Life/Death', 'Marine Cargo', 'Fire/Burglary', 'Travel', 'Agricultural'];
 
@@ -92,6 +99,9 @@ export function FileClaimScreen({ navigation }: { navigation: any }) {
           incidentDescription: form.description,
           documents: [],
         });
+        // 2026-10-24 (W11-B2c): the claim was accepted server-side — the
+        // form flow is complete (no typed values are tracked).
+        trackEvent('member-claims', 'completed');
         Alert.alert('Claim Filed', 'Your claim was submitted and accepted by the server.', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
