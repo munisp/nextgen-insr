@@ -41,6 +41,15 @@ export const UX_EVENT_KINDS = [
   'recommendation_accepted',
   'recommendation_dismissed',
   'recommendation_dismissed_forever',
+  // 2026-10-25 (W11-B4b): omnibox NL-intent surface events. The server enum
+  // (memberUxEvents.ts UX_EVENT_KINDS) is extended in a separate server
+  // batch — until then these kinds are dropped by the server zod enum and
+  // the tracker stays fail-silent by contract. Metadata discipline is
+  // unchanged: intent TYPE / rail only — never raw text/amounts/identifiers.
+  'omnibox_opened',
+  'intent_parsed',
+  'prefill_applied',
+  'clarify_shown',
 ] as const;
 export type UxEventKind = (typeof UX_EVENT_KINDS)[number];
 

@@ -73,7 +73,7 @@ const IDEM_SCOPE = 'member-bill-pay';
 /** 2026-10-24 (W11-B2c): instrumentation flow name (web parity). */
 const UX_FLOW = 'member-bills';
 
-export function BillsScreen({ navigation }: { navigation: any }) {
+export function BillsScreen({ navigation, route }: { navigation: any; route?: any }) {
   // 2026-10-24 (W11-B2c): form_started once per screen mount.
   useEffect(() => {
     trackEvent(UX_FLOW, 'form_started');
@@ -131,6 +131,27 @@ export function BillsScreen({ navigation }: { navigation: any }) {
     setConfirmError(null);
     setCheck({ biller: chosenBiller, customerNumber: customerNumber.trim() });
   };
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill route param
+  // (PREFILL-ONLY). The parsed biller/meter/amount land in the NORMAL form
+  // state; Pay stays locked until the member validates and taps Pay, and
+  // the anomaly soft-confirm still runs on submit — nothing auto-submits.
+  useEffect(() => {
+    const prefill = route?.params?.omniboxPrefill;
+    if (!prefill || prefill.rail !== 'bill') return;
+    setBiller(String(prefill.billerCode ?? ''));
+    setCustomerNumber(String(prefill.customerNumber ?? ''));
+    setAmount(String(prefill.amountNGN));
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setPrefilledFrom('omnibox');
+    overrideTracked.current = false;
+    navigation.setParams?.({ omniboxPrefill: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 2026-10-06 (W11-B1c): payee-directory prefill (web parity W11-B1b). Only
   // the identifier fields are carried over (biller + meter number); the
@@ -331,8 +352,9 @@ export function BillsScreen({ navigation }: { navigation: any }) {
         <RecentPayeePicker rail="bill" onSelect={onPayeeSelect} />
         {prefilledFrom ? (
           <Text style={styles.hintText} testID="prefill-hint-bill">
-            Prefilled from your recent payments ({prefilledFrom}) — review and
-            edit freely; the amount was left blank for you to confirm.
+            {prefilledFrom === 'omnibox'
+              ? "Prefilled from your omnibox request — review and edit freely, then validate and pay when you're ready."
+              : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
           </Text>
         ) : null}
         <Text style={styles.fieldLabel}>Biller</Text>

@@ -56,6 +56,10 @@ import {
 // (memberInsights). UX-ONLY signal, never a security gate — anomalous:false
 // or a check error proceeds normally (see insightsGuards.tsx header).
 import { useAmountAnomalyGate, useRecurringPrompt } from "./insightsGuards";
+// 2026-10-25 (W11-B4b): one-shot omnibox prefill handoff (PREFILL-ONLY —
+// the parsed draft lands in normal form state; the member still taps the
+// normal Buy/Cash-in button and the anomaly gate still runs on submit).
+import { takeOmniboxPrefill } from "./omniboxPrefill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -178,6 +182,26 @@ function BuyAirtimeSection() {
     trackEvent(UX_FLOW, "form_started", { step: "buy_airtime" });
   }, []);
   const overrideTracked = useRef(false);
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill (PREFILL-ONLY).
+  // Network/phone/amount land in the NORMAL form state; the member still
+  // taps Buy airtime and the anomaly soft-confirm still runs on submit.
+  useEffect(() => {
+    const prefill = takeOmniboxPrefill("airtime");
+    if (!prefill || prefill.rail !== "airtime") return;
+    if ((NETWORKS as readonly string[]).includes(prefill.network)) {
+      setNetwork(prefill.network);
+    }
+    setPhone(prefill.phone);
+    setAmount(String(prefill.amountNGN));
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+    setPrefilledFrom("omnibox");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const confirmMutation = trpc.memberAirtime.confirmVend.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
@@ -314,8 +338,9 @@ function BuyAirtimeSection() {
           className="text-xs text-muted-foreground"
           data-testid="prefill-hint-airtime"
         >
-          Prefilled from your recent payments ({prefilledFrom}) — review and
-          edit freely; the amount was left blank for you to confirm.
+          {prefilledFrom === "omnibox"
+            ? "Prefilled from your omnibox request — review and edit freely, then buy when you're ready."
+            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -446,6 +471,28 @@ function MomoCashSection({
     trackEvent(UX_FLOW, "form_started", { step: "momo_cash" });
   }, []);
   const overrideTracked = useRef(false);
+
+  // 2026-10-25 (W11-B4b): consume a one-shot omnibox prefill (PREFILL-ONLY).
+  // Provider/amount land in the NORMAL form state; the member still taps
+  // the normal Cash in button — nothing is auto-submitted. (The anomaly
+  // gate for momo runs server-side in the cashIn flow; no client change.)
+  useEffect(() => {
+    const prefill = takeOmniboxPrefill("momo");
+    if (!prefill || prefill.rail !== "momo") return;
+    if (providers.some((pr) => pr.name === prefill.provider)) {
+      setProvider(prefill.provider);
+    }
+    setAmount(String(prefill.amountNGN));
+    setCashInState(null);
+    setCashInError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setCashOutResult(null);
+    setCashOutError(null);
+    setFormError(null);
+    setPrefilledFrom("omnibox");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const confirmMutation = trpc.memberMobileMoney.confirmCashIn.useMutation({
     onSuccess: (data: CaptureConfirmationView) => {
@@ -594,8 +641,9 @@ function MomoCashSection({
           className="text-xs text-muted-foreground"
           data-testid="prefill-hint-momo"
         >
-          Prefilled from your recent payments ({prefilledFrom}) — review and
-          edit freely; the amount was left blank for you to confirm.
+          {prefilledFrom === "omnibox"
+            ? "Prefilled from your omnibox request — review and edit freely, then cash in when you're ready."
+            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">

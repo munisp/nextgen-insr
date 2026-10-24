@@ -20,6 +20,10 @@ import { useUxTracking } from "@/lib/uxTrack";
 // (memberInsights.nextBestActions) — renders below the header; empty or
 // failed query hides it (silent degrade, suggestions never block).
 import { NextActionsPanel } from "./NextActionsPanel";
+// 2026-10-25 (W11-B4b): NL omnibox (memberIntent.parseIntent) — PREFILL-ONLY;
+// a ready intent routes to the existing validated flow with values prefilled,
+// never executes a payment.
+import { Omnibox } from "./Omnibox";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -158,6 +162,7 @@ export default function MemberLayout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       </header>
+      <Omnibox />
       <NextActionsPanel />
       <main>{children}</main>
     </div>
