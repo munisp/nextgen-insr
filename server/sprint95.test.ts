@@ -124,8 +124,13 @@ describe("Sprint 95: Router Implementation", () => {
   // intelligence: nextBestActions / recurringCandidates /
   // amountAnomalyCheck, caller-scoped, no writes, no new tables).
   // 496 + 1 = 497, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 497 router files", () => {
-    expect(routerFiles.length).toBe(497);
+  // 2026-10-24 drift fix (W11-B4a): verified live count = 498. Added
+  // memberIntent.ts (registered as memberIntent — deterministic NL omnibox
+  // parser: parseIntent proposal-only (no execute) + resolvePayeeHint,
+  // caller-scoped payee_directory enrichment, 60/hour rate limit).
+  // 497 + 1 = 498, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 498 router files", () => {
+    expect(routerFiles.length).toBe(498);
   });
 
   it("should have zero empty routers (router({}))", () => {
