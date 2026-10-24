@@ -119,8 +119,13 @@ describe("Sprint 95: Router Implementation", () => {
   // instrumentation: batch track, caller-scoped mySummary, admin-only
   // aggregate funnel). 495 + 1 = 496, measured via
   // ls server/routers/*.ts | grep -v .test.
-  it("should have 496 router files", () => {
-    expect(routerFiles.length).toBe(496);
+  // 2026-10-24 drift fix (W11-B3a): verified live count = 497. Added
+  // memberInsights.ts (registered as memberInsights — read-only heuristic
+  // intelligence: nextBestActions / recurringCandidates /
+  // amountAnomalyCheck, caller-scoped, no writes, no new tables).
+  // 496 + 1 = 497, measured via ls server/routers/*.ts | grep -v .test.
+  it("should have 497 router files", () => {
+    expect(routerFiles.length).toBe(497);
   });
 
   it("should have zero empty routers (router({}))", () => {

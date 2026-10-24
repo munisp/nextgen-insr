@@ -376,6 +376,8 @@ import { memberBillPaymentsRouter } from "./routers/memberBillPayments";
 import { memberPayeesRouter } from "./routers/memberPayees";
 // W11-B2 (2026-10-24): UX instrumentation backbone (privacy-minimal).
 import { memberUxEventsRouter } from "./routers/memberUxEvents";
+// W11-B3a (2026-10-24): heuristic intelligence (read-only suggestions).
+import { memberInsightsRouter } from "./routers/memberInsights";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
@@ -1260,6 +1262,11 @@ export const appRouter = router({
   // mySummary (caller-scoped transparency), adminFunnel (admin-only
   // aggregate). Router count +1.
   memberUxEvents: memberUxEventsRouter,
+  // W11-B3a (2026-10-24): heuristic intelligence — nextBestActions /
+  // recurringCandidates / amountAnomalyCheck. Read-only caller-scoped
+  // suggestions computed from real data; no writes, no new tables.
+  // Router count +1.
+  memberInsights: memberInsightsRouter,
   memberFxRates: memberFxRatesRouter,
   // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
   // endorsements/quote-cart. insuranceWorkflows requestRenewal/
