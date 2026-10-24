@@ -3850,6 +3850,11 @@ export const dataConsentRecords = pgTable(
     revokedAt: timestamp("revoked_at"),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    // 2026-10-25 (W12-R1): consent expiry + withdrawal audit columns.
+    // Status is derived: active = granted AND revokedAt IS NULL AND
+    // (expiresAt IS NULL OR expiresAt > now()).
+    expiresAt: timestamp("expires_at"),
+    withdrawalReason: text("withdrawal_reason"),
     version: integer("version").default(1),
     createdAt: timestamp("created_at").defaultNow(),
   },
