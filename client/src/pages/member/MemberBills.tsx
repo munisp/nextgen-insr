@@ -51,6 +51,11 @@ import {
   RecentPayeePicker,
   type RecentPayee,
 } from "./RecentPayeePicker";
+// 2026-10-25 (W11-B4c-2): OCR "Scan a bill" intake (memberBillScan.parse).
+// PREFILL-ONLY — Apply feeds the extracted identifiers through the SAME
+// onPayeeSelect path below (amount always cleared, validation/pay reset);
+// the scanned amount is only an explicit suggestion chip.
+import { ScanBillButton, SCAN_PREFILL_LABEL } from "./ScanBillButton";
 // 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
 // (memberInsights.amountAnomalyCheck / recurringCandidates). The anomaly
 // check is a UX-ONLY signal, never a security gate — anomalous:false or a
@@ -373,8 +378,13 @@ export default function MemberBills() {
           title="Pay a Bill"
           description="Check the customer number, enter an amount within the limits, and pay by card/bank via the secure checkout. Fulfillment is confirmed after your payment is verified — never instantly."
         >
-          <div className="mb-4">
+          <div className="mb-4 space-y-3">
             <RecentPayeePicker rail="bill" onSelect={onPayeeSelect} />
+            <ScanBillButton
+              rail="bill"
+              onApply={onPayeeSelect}
+              onAmountSuggestion={(ngn) => setAmount(String(ngn))}
+            />
           </div>
           {prefilledFrom ? (
             <p
@@ -383,7 +393,9 @@ export default function MemberBills() {
             >
               {prefilledFrom === "omnibox"
                 ? "Prefilled from your omnibox request — review and edit freely, then validate and pay when you're ready."
-                : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
+                : prefilledFrom === SCAN_PREFILL_LABEL
+                  ? "Prefilled from your scanned bill photo — review and edit freely, then validate and pay when you're ready."
+                  : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
             </p>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2">

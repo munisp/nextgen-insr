@@ -30,11 +30,12 @@ import { vi } from "vitest";
 
 vi.mock("@/lib/trpc", async () => await import("./helpers/trpcMock"));
 
-// trackEvent spy wrapping the REAL implementation (2026-10-25, W11-B4b CI
-// fix): the 4 omnibox kinds are deliberately DROPPED at the uxTrack enqueue
-// boundary until B4c-1 extends the server UX_EVENT_KINDS enum, so the
-// instrumentation contract is asserted at the trackEvent call site (kind +
-// scrubbed metadata), and the boundary drop is asserted separately below.
+// trackEvent spy wrapping the REAL implementation. 2026-10-25 update
+// (W11-B4c-2): the 4 omnibox kinds are ACCEPTED by the server
+// UX_EVENT_KINDS enum since the merged B4c-1 batch (PR #304), so they now
+// pass the uxTrack enqueue boundary and flush to memberUxEvents.track —
+// asserted below. The call-site assertion (kind + scrubbed metadata) stays
+// as the PII-discipline probe.
 vi.mock("@/lib/uxTrack", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/uxTrack")>();
   return { ...actual, trackEvent: vi.fn(actual.trackEvent) };
@@ -320,8 +321,10 @@ describe("Omnibox (W11-B4b) — clarification / unsupported / error", () => {
     expect(screen.queryByTestId("omnibox-ready")).not.toBeInTheDocument();
     expect(nonTrackingMutationPaths()).toEqual(["memberIntent.parseIntent"]);
 
-    // clarify_shown is emitted at the call site (dropped at the enqueue
-    // boundary until B4c-1 extends the server enum — asserted below).
+    // clarify_shown is emitted at the call site. (2026-10-25, W11-B4c-2:
+    // it is server-accepted since B4c-1 / PR #304, so it queues and
+    // flushes normally — the enqueue/flush behavior for the omnibox kinds
+    // is asserted in the instrumentation-discipline test below.)
     expect(
       trackEventMock.mock.calls.some(
         ([flow, event, opts]) =>
@@ -366,7 +369,7 @@ describe("Omnibox (W11-B4b) — clarification / unsupported / error", () => {
 });
 
 describe("Omnibox (W11-B4b) — instrumentation discipline", () => {
-  it("emits omnibox_opened / intent_parsed (type only) / prefill_applied (rail only) via trackEvent with scrubbed metadata, and the enqueue boundary drops the not-yet-server-accepted kinds", async () => {
+  it("emits omnibox_opened / intent_parsed (type only) / prefill_applied (rail only) via trackEvent with scrubbed metadata, and (post-B4c-1) they now flow through the queue to memberUxEvents.track", async () => {
     setMutation("memberIntent.parseIntent", {
       data: {
         result: {
@@ -408,17 +411,21 @@ describe("Omnibox (W11-B4b) — instrumentation discipline", () => {
       expect(blob).not.toContain("MTN airtime");
     }
 
-    // Boundary discipline (2026-10-25, W11-B4b CI fix): the 4 omnibox kinds
-    // are not server-accepted until B4c-1, so NOTHING flushed to
-    // memberUxEvents.track may carry them (they were dropped at enqueue).
+    // Boundary discipline (2026-10-25, W11-B4c-2 update): the server enum
+    // ACCEPTS the 4 omnibox kinds since the B4c-1 batch (merged PR #304),
+    // so they are now queued and flushed to memberUxEvents.track — with the
+    // same scrubbed metadata asserted above (the no-PII sweep covers both
+    // the trackEvent calls and what actually lands on the wire).
     const flushed = await trackedEvents();
+    const flushedKinds = flushed.map((e) => e.event);
+    expect(flushedKinds).toContain("omnibox_opened");
+    expect(flushedKinds).toContain("intent_parsed");
+    expect(flushedKinds).toContain("prefill_applied");
     for (const e of flushed) {
-      expect([
-        "omnibox_opened",
-        "intent_parsed",
-        "prefill_applied",
-        "clarify_shown",
-      ]).not.toContain(e.event);
+      const blob = JSON.stringify(e.metadataJson ?? {});
+      expect(blob).not.toContain("08031234567");
+      expect(blob).not.toContain("2000");
+      expect(blob).not.toContain("MTN airtime");
     }
   });
 });

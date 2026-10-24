@@ -37,6 +37,12 @@ import { billsApi, type RecentPayee } from '../services/api';
 // (biller + meter), always CLEARS the amount, and resets the validation and
 // capture state — the amount is never auto-prefilled.
 import { RecentPayeePicker } from '../components/RecentPayeePicker';
+// 2026-10-25 (W11-B4c-3): OCR bill-scan intake (memberBillScan.parse).
+// PREFILL-ONLY: Apply feeds IDENTIFIERS through the SAME prefill contract
+// as the payee picker (biller only on catalog match, amount always cleared,
+// validation/capture state reset); the scanned amount is a suggestion chip
+// requiring an explicit tap — never silently set, never auto-submitted.
+import { BillScanSection } from '../components/BillScanSection';
 import {
   MemberCapturePanel,
   intentIdempotencyKey,
@@ -178,6 +184,39 @@ export function BillsScreen({ navigation, route }: { navigation: any; route?: an
     trackEvent(UX_FLOW, 'prefill_accepted', {
       metadata: { rail: 'bill', hasMeterNumber: Boolean(p.meterNumber) },
     });
+  };
+
+  // 2026-10-25 (W11-B4c-3): scan prefill "Apply" — the SAME prefill
+  // contract as onPayeeSelect: biller only on a catalog match, customer
+  // number carried over, the amount ALWAYS cleared (the scanned amount is
+  // filled only by the explicit suggestion-chip tap below), and the
+  // validation/capture state resets so Pay re-locks.
+  const onScanApply = (ids: { billerCode?: string; customerNumber?: string }) => {
+    if (ids.billerCode && billers.some((b) => b.name === ids.billerCode)) {
+      setBiller(ids.billerCode);
+    }
+    if (ids.customerNumber) setCustomerNumber(ids.customerNumber);
+    setAmount('');
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setPrefilledFrom('bill_scan');
+    overrideTracked.current = false;
+  };
+
+  // Explicit amount-chip tap: fill the amount with the scanned suggestion
+  // and reset the pay/validation state (a new amount is a new intent — a
+  // fresh idempotency key is minted at Pay time; the anomaly soft-confirm
+  // still runs on submit). NEVER invoked automatically by the scan.
+  const onScanAmount = (amountKobo: number) => {
+    setAmount(String(Math.round(amountKobo / 100)));
+    setCheck(null);
+    setPayState(null);
+    setPayError(null);
+    setConfirmation(null);
+    setConfirmError(null);
   };
 
   // 2026-10-24 (W11-B2c): an edit of a prefilled identifier field after a
@@ -350,11 +389,14 @@ export function BillsScreen({ navigation, route }: { navigation: any; route?: an
           Check the customer number, enter an amount within the limits, and pay via the secure checkout. Fulfillment is confirmed after your payment is verified — never instantly.
         </Text>
         <RecentPayeePicker rail="bill" onSelect={onPayeeSelect} />
+        <BillScanSection rail="bill" onApply={onScanApply} onApplyAmount={onScanAmount} />
         {prefilledFrom ? (
           <Text style={styles.hintText} testID="prefill-hint-bill">
             {prefilledFrom === 'omnibox'
               ? "Prefilled from your omnibox request — review and edit freely, then validate and pay when you're ready."
-              : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
+              : prefilledFrom === 'bill_scan'
+                ? "Prefilled from your scanned bill photo — review and edit freely; the amount was left blank for you to confirm."
+                : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
           </Text>
         ) : null}
         <Text style={styles.fieldLabel}>Biller</Text>

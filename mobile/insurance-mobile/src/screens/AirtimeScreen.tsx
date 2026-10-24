@@ -39,6 +39,12 @@ import {
 // amount, and resets the capture/validation state — the amount is never
 // auto-prefilled.
 import { RecentPayeePicker } from '../components/RecentPayeePicker';
+// 2026-10-25 (W11-B4c-3): OCR bill-scan intake (memberBillScan.parse,
+// rail "airtime"). PREFILL-ONLY: Apply feeds IDENTIFIERS through the SAME
+// prefill contract as the payee picker (network only on a catalog match,
+// phone carried over, amount always cleared, capture state reset); the
+// scanned amount is a suggestion chip requiring an explicit tap.
+import { BillScanSection } from '../components/BillScanSection';
 import {
   MemberCapturePanel,
   intentIdempotencyKey,
@@ -190,6 +196,39 @@ function BuyAirtimeSection({ navigation, route }: { navigation: any; route?: any
     });
   };
 
+  // 2026-10-25 (W11-B4c-3): scan prefill "Apply" — the SAME prefill
+  // contract as onPayeeSelect: the scanned biller code maps onto the
+  // NETWORK only on a catalog match (no nearest-guess), the customer
+  // number maps onto the beneficiary phone, the amount is ALWAYS cleared
+  // (filled only by the explicit suggestion-chip tap below), and the
+  // capture state resets so Buy re-locks behind the normal submit path.
+  const onScanApply = (ids: { billerCode?: string; customerNumber?: string }) => {
+    if (ids.billerCode && (NETWORKS as readonly string[]).includes(ids.billerCode)) {
+      setNetwork(ids.billerCode);
+    }
+    if (ids.customerNumber) setPhone(ids.customerNumber);
+    setAmount('');
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+    setPrefilledFrom('bill_scan');
+    overrideTracked.current = false;
+  };
+
+  // Explicit amount-chip tap: fill the scanned amount and reset the vend
+  // state (a new amount is a new intent; the anomaly soft-confirm still
+  // runs on submit). NEVER invoked automatically by the scan.
+  const onScanAmount = (amountKobo: number) => {
+    setAmount(String(Math.round(amountKobo / 100)));
+    setVendState(null);
+    setVendError(null);
+    setConfirmation(null);
+    setConfirmError(null);
+    setFormError(null);
+  };
+
   const onPhoneChange = (value: string) => {
     // 2026-10-24 (W11-B2c): override of a prefilled identifier — once per
     // draft, field NAME only, never the typed value.
@@ -307,11 +346,14 @@ function BuyAirtimeSection({ navigation, route }: { navigation: any; route?: any
   return (
     <View>
       <RecentPayeePicker rail="airtime" onSelect={onPayeeSelect} />
+      <BillScanSection rail="airtime" onApply={onScanApply} onApplyAmount={onScanAmount} />
       {prefilledFrom ? (
         <Text style={styles.hintText} testID="prefill-hint-airtime">
           {prefilledFrom === 'omnibox'
             ? "Prefilled from your omnibox request — review and edit freely, then buy when you're ready."
-            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
+            : prefilledFrom === 'bill_scan'
+              ? "Prefilled from your scanned photo — review and edit freely; the amount was left blank for you to confirm."
+              : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </Text>
       ) : null}
       <Text style={styles.fieldLabel}>Network</Text>
