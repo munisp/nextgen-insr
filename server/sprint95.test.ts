@@ -129,8 +129,14 @@ describe("Sprint 95: Router Implementation", () => {
   // parser: parseIntent proposal-only (no execute) + resolvePayeeHint,
   // caller-scoped payee_directory enrichment, 60/hour rate limit).
   // 497 + 1 = 498, measured via ls server/routers/*.ts | grep -v .test.
-  it("should have 498 router files", () => {
-    expect(routerFiles.length).toBe(498);
+  // 2026-10-25 drift fix (W11-B4c-1): verified live count = 499. Added
+  // memberBillScan.ts (registered as memberBillScan — OCR bill-photo
+  // intake: parse proc, honest fail-closed manual_entry fallbacks, 30/hour
+  // PG-count rate limit, no image persistence, no funds writes, no new
+  // tables). 498 + 1 = 499, measured via
+  // ls server/routers/*.ts | grep -v .test.
+  it("should have 499 router files", () => {
+    expect(routerFiles.length).toBe(499);
   });
 
   it("should have zero empty routers (router({}))", () => {
