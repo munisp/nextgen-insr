@@ -4,6 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../store/authStore';
 import { useOfflineSync } from '../services/offlineSync';
 import { policyApi, claimsApi } from '../services/api';
+// 2026-10-24 (W11-B3b): ranked next-best-action suggestions
+// (memberInsights.nextBestActions) — hidden when empty or failed.
+import { NextActionsPanel } from '../components/NextActionsPanel';
 
 export function DashboardScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
@@ -86,6 +89,10 @@ export function DashboardScreen({ navigation }: { navigation: any }) {
           <Text style={styles.statLabel}>Total Coverage</Text>
         </View>
       </View>
+
+      {/* 2026-10-24 (W11-B3b): Phase 3 suggestions panel (suggestions only;
+          CTAs navigate into existing flows; empty/error hides it). */}
+      <NextActionsPanel navigation={navigation} />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>

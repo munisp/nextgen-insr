@@ -47,6 +47,17 @@ import {
 } from './memberFundsIntent';
 // 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
 import { trackEvent } from '../services/uxTrack';
+// 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
+// (memberInsights via insightsApi). UX-ONLY signals, never security gates —
+// anomalous:false or a check error proceeds normally (insightsGuards.ts).
+import {
+  checkAmountAnomaly,
+  findRecurringMatch,
+  markRecurringPromptShown,
+  recurringPromptAlreadyShown,
+} from '../services/insightsGuards';
+import { insightsApi } from '../services/api';
+import { AnomalySoftConfirm, RecurringPromptNote } from '../components/InsightsWidgets';
 
 const fmtNgn = (n: number) => `₦${Number(n).toLocaleString('en-NG')}`;
 
@@ -88,6 +99,11 @@ export function BillsScreen({ navigation }: { navigation: any }) {
   // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
   // the payee directory (the amount is always cleared, never carried over).
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
+  // 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring prompt state.
+  const [softConfirm, setSoftConfirm] = useState<{ amountKobo: number; multiple: number | null } | null>(null);
+  const [recurringPrompt, setRecurringPrompt] = useState<{ cadenceDays: number } | null>(null);
+  // The armed proceed callback lives in a ref (never in render state).
+  const pendingPay = useRef<(() => Promise<void>) | null>(null);
 
   const billersQuery = useQuery({
     queryKey: ['memberBillPayments.billers'],
@@ -172,6 +188,7 @@ export function BillsScreen({ navigation }: { navigation: any }) {
     setPayError(null);
     setConfirmation(null);
     setConfirmError(null);
+    setSoftConfirm(null);
     // Idempotency fingerprint = exactly the funds-relevant fields the server
     // payload-hash binds (memberBillPayments.pay idemPayload).
     const intent = {
@@ -180,29 +197,56 @@ export function BillsScreen({ navigation }: { navigation: any }) {
       meterType: isElectricity ? meterType : null,
       amountNGN,
     };
+    const doPay = async () => {
+      setPayBusy(true);
+      try {
+        const idempotencyKey = await intentIdempotencyKey(IDEM_SCOPE, JSON.stringify(intent));
+        const data = await billsApi.pay({
+          biller: check.biller,
+          customerNumber: check.customerNumber,
+          ...(isElectricity ? { meterType } : {}),
+          amountNGN,
+          idempotencyKey,
+        });
+        setPayState({
+          reference: data.reference,
+          authorizationUrl: data.authorizationUrl,
+          amount: data.amount,
+          currency: data.currency,
+          idempotent: data.idempotent,
+        });
+      } catch (e: any) {
+        setPayState(null);
+        setPayError(e?.message || 'Payment could not be initiated.');
+      } finally {
+        setPayBusy(false);
+      }
+    };
+    // 2026-10-24 (W11-B3b): anomaly soft-confirm AFTER validation passes,
+    // BEFORE pay fires. UX-only — null (error) or anomalous:false proceeds
+    // straight to doPay; anomalous:true requires the explicit extra tap.
     setPayBusy(true);
-    try {
-      const idempotencyKey = await intentIdempotencyKey(IDEM_SCOPE, JSON.stringify(intent));
-      const data = await billsApi.pay({
-        biller: check.biller,
-        customerNumber: check.customerNumber,
-        ...(isElectricity ? { meterType } : {}),
-        amountNGN,
-        idempotencyKey,
-      });
-      setPayState({
-        reference: data.reference,
-        authorizationUrl: data.authorizationUrl,
-        amount: data.amount,
-        currency: data.currency,
-        idempotent: data.idempotent,
-      });
-    } catch (e: any) {
-      setPayState(null);
-      setPayError(e?.message || 'Payment could not be initiated.');
-    } finally {
-      setPayBusy(false);
+    const verdict = await checkAmountAnomaly(
+      'bill',
+      { billerCode: check.biller, meterNumber: check.customerNumber },
+      Math.round(amountNGN * 100),
+    );
+    setPayBusy(false);
+    if (verdict?.anomalous) {
+      pendingPay.current = doPay;
+      setSoftConfirm({ amountKobo: Math.round(amountNGN * 100), multiple: verdict.multiple });
+      return;
     }
+    await doPay();
+  };
+
+  // 2026-10-24 (W11-B3b): explicit soft-confirm tap → the armed payment.
+  const onSoftConfirm = async () => {
+    const proceed = pendingPay.current;
+    setSoftConfirm(null);
+    pendingPay.current = null;
+    trackEvent(UX_FLOW, 'recommendation_accepted', { metadata: { action: 'anomaly_soft_confirm' } });
+    if (proceed) await proceed();
   };
 
   const onConfirm = async () => {
@@ -217,6 +261,21 @@ export function BillsScreen({ navigation }: { navigation: any }) {
       // Terminal outcome → retire the draft key (a fresh intent needs a new
       // key; a non-terminal outcome keeps it so retrying confirm is safe).
       if (isTerminalConfirmation(data)) await retireIntentKey(IDEM_SCOPE);
+      // 2026-10-24 (W11-B3b): recurring-payment prompt at the completed
+      // moment — once per app session per rail; rail + average-amount join
+      // (the candidate naturalKey is a server-side blind index).
+      if (isTerminalConfirmation(data) && data.amount != null && !recurringPromptAlreadyShown('bill')) {
+        try {
+          const res = await insightsApi.recurringCandidates();
+          const match = findRecurringMatch(res?.candidates, 'bill', Number(data.amount));
+          if (match) {
+            markRecurringPromptShown('bill');
+            setRecurringPrompt({ cadenceDays: match.cadenceDays });
+          }
+        } catch {
+          /* detections-only signal — a lookup failure never disturbs the confirm UX */
+        }
+      }
     } catch (e: any) {
       setConfirmation(null);
       setConfirmError(e?.message || 'Verification failed.');
@@ -385,6 +444,22 @@ export function BillsScreen({ navigation }: { navigation: any }) {
           <View style={[styles.errorBox, { marginTop: 12 }]}>
             <Text style={styles.errorText}>Payment could not be initiated: {payError}</Text>
           </View>
+        ) : null}
+        {/* 2026-10-24 (W11-B3b): inline anomaly soft-confirm + recurring
+            prompt (UX-only, never block the payment). */}
+        {softConfirm ? (
+          <AnomalySoftConfirm
+            amountKobo={softConfirm.amountKobo}
+            multiple={softConfirm.multiple}
+            onConfirm={onSoftConfirm}
+            onCancel={() => { setSoftConfirm(null); pendingPay.current = null; }}
+          />
+        ) : null}
+        {recurringPrompt ? (
+          <RecurringPromptNote
+            cadenceDays={recurringPrompt.cadenceDays}
+            onDismiss={() => setRecurringPrompt(null)}
+          />
         ) : null}
         {payState ? (
           <MemberCapturePanel

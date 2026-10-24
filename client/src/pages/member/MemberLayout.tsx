@@ -16,6 +16,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 // /member/* page (fail-silent; the hook is unconditional so early returns
 // below stay hook-safe).
 import { useUxTracking } from "@/lib/uxTrack";
+// 2026-10-24 (W11-B3b): ranked next-best-action suggestions panel
+// (memberInsights.nextBestActions) — renders below the header; empty or
+// failed query hides it (silent degrade, suggestions never block).
+import { NextActionsPanel } from "./NextActionsPanel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -154,6 +158,7 @@ export default function MemberLayout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       </header>
+      <NextActionsPanel />
       <main>{children}</main>
     </div>
   );

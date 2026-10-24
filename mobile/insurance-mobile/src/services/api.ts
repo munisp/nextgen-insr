@@ -1098,3 +1098,61 @@ export const kycApi = {
 // routes — login/register/forgot-password/biometric all 404'd. Real auth is
 // Keycloak OIDC (src/services/keycloakAuth.ts); profile comes from the
 // monolith tRPC auth.me (server/routers.ts:571, Bearer-verified via JWKS).
+
+// ---------------------------------------------------------------------------
+// 2026-10-24 (W11-B3b): Phase 3 member-intelligence client surface over the
+// W11-B3a router (server/routers/memberInsights.ts, mounted at
+// server/routers.ts:1272). READ-ONLY suggestions computed from the caller's
+// real data — shapes below copied from server/lib/memberInsights.ts
+// (InsightAction / RecurringCandidate / AnomalyResult), never assumed.
+// The anomaly check is a UX-ONLY soft-confirm signal, NOT a security gate:
+// the server fails closed (insufficient history → anomalous:false) and the
+// screens proceed normally on anomalous:false OR any error.
+// ---------------------------------------------------------------------------
+
+/** One memberInsights.nextBestActions element (server InsightAction). */
+export interface InsightActionView {
+  type: 'policy_renewal_due' | 'failed_refund_pending' | 'recurring_bill_due' | 'kyc_incomplete';
+  priority: number;
+  explain: string;
+  payload: Record<string, unknown>;
+}
+
+/** One memberInsights.recurringCandidates element (server RecurringCandidate).
+ *  naturalKey is a server-side keyed-HMAC blind index — NOT client-computable. */
+export interface RecurringCandidateView {
+  naturalKey: string;
+  rail: 'bill' | 'airtime' | 'momo';
+  occurrences: number;
+  cadenceDays: number;
+  averageAmountKobo: number;
+  dueSoon: boolean;
+}
+
+export interface AmountAnomalyResult {
+  anomalous: boolean;
+  multiple: number | null;
+  reason: string;
+}
+
+export const insightsApi = {
+  /** Ranked next-best actions (suggestions only — ids/refs, no actions). */
+  nextBestActions: () =>
+    memberQuery<{ actions: InsightActionView[] }>('memberInsights.nextBestActions', null),
+  /** Detections-only recurring list (state:"detections_only" — W11-B3a ships
+   *  no server accept/dismiss state; dismissal is client-local). */
+  recurringCandidates: () =>
+    memberQuery<{ candidates: RecurringCandidateView[]; state: 'detections_only' }>(
+      'memberInsights.recurringCandidates', null,
+    ),
+  /** Conservative soft-confirm check vs the caller's OWN history for the
+   *  payee. zod-exact input (memberInsights.ts:84-96). */
+  amountAnomalyCheck: (input: {
+    rail: 'bill' | 'airtime' | 'momo';
+    identifiers: {
+      billerCode?: string; meterNumber?: string; network?: string;
+      phone?: string; provider?: string; walletNumber?: string;
+    };
+    amountKobo: number;
+  }) => memberQuery<AmountAnomalyResult>('memberInsights.amountAnomalyCheck', input),
+};
