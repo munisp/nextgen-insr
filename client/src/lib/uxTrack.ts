@@ -55,6 +55,54 @@ export const UX_EVENT_KINDS = [
 ] as const;
 export type UxEventKind = (typeof UX_EVENT_KINDS)[number];
 
+// ── Server-accepted kinds (2026-10-25, W11-B4b CI fix) ────────────────────
+// The tRPC mutation input type is inferred from the SERVER zod schema
+// (memberUxEvents.track), whose event enum is the source of truth. The 4
+// omnibox kinds (W11-B4b) are CLIENT-side vocabulary ahead of the server:
+// the B4c-1 batch extends UX_EVENT_KINDS server-side; until that lands in
+// the build this client typechecks against, the inferred ServerAcceptedKind
+// union below excludes them and isServerAcceptedKind() drops them at the
+// ENQUEUE boundary — explicitly, never queued, so the queue never grows
+// with undeliverable events and the requeue discipline for accepted kinds
+// is untouched. WHEN B4c-1 LANDS: add the 4 omnibox kinds to
+// SERVER_ACCEPTED_KINDS below — the _AllListedKindsAreServerAccepted
+// tripwire proves every listed kind is inside the server's enum.
+type TrackMutationInput = Parameters<
+  ReturnType<typeof trpc.memberUxEvents.track.useMutation>["mutate"]
+>[0];
+/** Event-kind union the server's zod enum accepts (inferred, not copied). */
+export type ServerAcceptedKind =
+  TrackMutationInput["events"][number]["event"];
+
+/** The kinds accepted on main today (pre-B4c-1): the original W11-B2 nine.
+ *  Every entry is compile-time-checked against ServerAcceptedKind below. */
+const SERVER_ACCEPTED_KINDS = [
+  "form_started",
+  "field_edited",
+  "prefill_accepted",
+  "prefill_overridden",
+  "step_abandoned",
+  "completed",
+  "recommendation_accepted",
+  "recommendation_dismissed",
+  "recommendation_dismissed_forever",
+] as const;
+
+/** Compile-time tripwire: a listed kind the server rejects fails the build. */
+type _AllListedKindsAreServerAccepted =
+  (typeof SERVER_ACCEPTED_KINDS)[number] extends ServerAcceptedKind
+    ? true
+    : "SERVER_ACCEPTED_KINDS lists a kind the server enum rejects";
+const _listedKindsAreAccepted: _AllListedKindsAreServerAccepted = true;
+
+/** Lookup set keyed by string — no narrowing cast needed. */
+const SERVER_ACCEPTED_SET: ReadonlySet<string> = new Set(SERVER_ACCEPTED_KINDS);
+
+/** Type guard: true iff the server's zod enum accepts this kind TODAY. */
+function isServerAcceptedKind(kind: UxEventKind): kind is ServerAcceptedKind {
+  return SERVER_ACCEPTED_SET.has(kind);
+}
+
 /** Server caps (memberUxEvents.ts UX_EVENTS_BATCH_MAX / metadata scrub). */
 const BATCH_MAX = 20;
 const FLUSH_AT = 10;
@@ -72,7 +120,8 @@ interface QueuedEvent {
   clientEventId: string;
   sessionId: string;
   flow: string;
-  event: UxEventKind;
+  /** Only server-accepted kinds are ever queued (see isServerAcceptedKind). */
+  event: ServerAcceptedKind;
   fieldName?: string;
   step?: string;
   metadataJson?: Record<string, number | boolean | null | string>;
@@ -143,6 +192,14 @@ export function trackEvent(
   opts: UxTrackOptions = {}
 ): void {
   try {
+    // 2026-10-25 (W11-B4b CI fix): explicit, typed drop at the ENQUEUE
+    // boundary for kinds the server's zod enum does not accept yet (the 4
+    // omnibox kinds, until B4c-1 extends UX_EVENT_KINDS). The event is
+    // never queued — an undeliverable event would otherwise be requeued
+    // forever and poison the batch for the accepted kinds it travels with.
+    if (!isServerAcceptedKind(event)) {
+      return;
+    }
     queue.push({
       clientEventId: mintUuid(),
       sessionId: sessionId(),

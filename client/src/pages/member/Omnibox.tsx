@@ -48,42 +48,27 @@ import { Sparkles } from "lucide-react";
 /** 2026-10-25 (W11-B4b): instrumentation flow name for this surface. */
 const UX_FLOW = "member-omnibox";
 
-// ── Client view of the server contract (memberIntentParser.ts, W11-B4a) ──
-// Shapes mirror ParseResult exactly; the client never re-derives them.
-
-type MemberIntentView =
-  | { flow: "airtime_vend"; network: string; phone: string; amountNGN: number }
-  | { flow: "bill_pay"; billerCode: string; customerNumber: string; amountNGN: number }
-  | { flow: "momo_cash_in"; provider: string; amountNGN: number }
-  | { flow: "navigate"; target: "claims_file" | "policy_renewal" };
-
-type ParseResultView =
-  | { status: "ready"; intent: MemberIntentView }
-  | {
-      status: "clarification";
-      flow: MemberIntentView["flow"] | null;
-      missing: string[];
-      partial: Record<string, string | number>;
-      reason: string;
-    }
-  | { status: "unsupported"; reason: string };
-
-interface ParseResponseView {
-  result: ParseResultView;
-  payee: { payeeId: string; label: string } | null;
-}
+// ── Server contract types — INFERRED from the tRPC mutation, never
+// hand-written in parallel (2026-10-25 CI fix): if the server contract
+// (memberIntent.ts / memberIntentParser.ts) changes, this file fails to
+// compile instead of silently drifting.
+type ParseResponse = Awaited<
+  ReturnType<
+    ReturnType<typeof trpc.memberIntent.parseIntent.useMutation>["mutateAsync"]
+  >
+>;
+type ParseResultView = ParseResponse["result"];
+type MemberIntentView = Extract<ParseResultView, { status: "ready" }>["intent"];
+type ClarificationView = Extract<ParseResultView, { status: "clarification" }>;
 
 type OmniboxState =
   | { phase: "idle" }
   | { phase: "loading" }
   | { phase: "ready"; intent: MemberIntentView; payeeLabel: string | null }
-  | {
-      phase: "clarify";
-      flow: MemberIntentView["flow"] | null;
-      missing: string[];
-      partial: Record<string, string | number>;
-      reason: string;
-    }
+  | ({ phase: "clarify" } & Pick<
+      ClarificationView,
+      "flow" | "missing" | "partial" | "reason"
+    >)
   | { phase: "unsupported"; reason: string }
   | { phase: "error" };
 
@@ -185,7 +170,7 @@ export function Omnibox() {
   const openedTracked = useRef(false);
 
   const parseMutation = trpc.memberIntent.parseIntent.useMutation({
-    onSuccess: (data: ParseResponseView) => {
+    onSuccess: (data: ParseResponse) => {
       const result = data.result;
       // intent_parsed: the intent TYPE only — never the raw text, amount,
       // or any identifier (metadata scrub rules).

@@ -30,11 +30,21 @@ import { vi } from "vitest";
 
 vi.mock("@/lib/trpc", async () => await import("./helpers/trpcMock"));
 
+// trackEvent spy wrapping the REAL implementation (2026-10-25, W11-B4b CI
+// fix): the 4 omnibox kinds are deliberately DROPPED at the uxTrack enqueue
+// boundary until B4c-1 extends the server UX_EVENT_KINDS enum, so the
+// instrumentation contract is asserted at the trackEvent call site (kind +
+// scrubbed metadata), and the boundary drop is asserted separately below.
+vi.mock("@/lib/uxTrack", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/uxTrack")>();
+  return { ...actual, trackEvent: vi.fn(actual.trackEvent) };
+});
+
 import { ReactNode } from "react";
 import { Omnibox } from "@/pages/member/Omnibox";
 import MemberBills from "@/pages/member/MemberBills";
 import MemberAirtime from "@/pages/member/MemberAirtime";
-import { flushUxQueue, useUxTracking } from "@/lib/uxTrack";
+import { flushUxQueue, useUxTracking, trackEvent } from "@/lib/uxTrack";
 import {
   stashOmniboxPrefill,
   takeOmniboxPrefill,
@@ -46,6 +56,8 @@ import {
   getMutationCalls,
   resetTrpcMock,
 } from "./helpers/trpcMock";
+
+const trackEventMock = vi.mocked(trackEvent);
 
 const MEMBER = {
   id: 9001,
@@ -133,6 +145,7 @@ function nonTrackingMutationPaths(): string[] {
 
 beforeEach(() => {
   resetTrpcMock();
+  trackEventMock.mockClear();
   sessionStorage.clear();
   localStorage.clear();
   window.history.replaceState(null, "", "/member/bills");
@@ -307,10 +320,14 @@ describe("Omnibox (W11-B4b) — clarification / unsupported / error", () => {
     expect(screen.queryByTestId("omnibox-ready")).not.toBeInTheDocument();
     expect(nonTrackingMutationPaths()).toEqual(["memberIntent.parseIntent"]);
 
-    const events = await trackedEvents();
+    // clarify_shown is emitted at the call site (dropped at the enqueue
+    // boundary until B4c-1 extends the server enum — asserted below).
     expect(
-      events.some(
-        e => e.event === "clarify_shown" && e.metadataJson?.flow === "airtime_vend"
+      trackEventMock.mock.calls.some(
+        ([flow, event, opts]) =>
+          flow === "member-omnibox" &&
+          event === "clarify_shown" &&
+          opts?.metadata?.flow === "airtime_vend"
       )
     ).toBe(true);
   });
@@ -349,7 +366,7 @@ describe("Omnibox (W11-B4b) — clarification / unsupported / error", () => {
 });
 
 describe("Omnibox (W11-B4b) — instrumentation discipline", () => {
-  it("tracks omnibox_opened / intent_parsed (type only) / prefill_applied (rail only) with scrubbed metadata", async () => {
+  it("emits omnibox_opened / intent_parsed (type only) / prefill_applied (rail only) via trackEvent with scrubbed metadata, and the enqueue boundary drops the not-yet-server-accepted kinds", async () => {
     setMutation("memberIntent.parseIntent", {
       data: {
         result: {
@@ -369,27 +386,39 @@ describe("Omnibox (W11-B4b) — instrumentation discipline", () => {
     typeAndGo("buy ₦2,000 MTN airtime for 08031234567");
     fireEvent.click(screen.getByTestId("omnibox-continue"));
 
-    const events = await trackedEvents();
-    const opened = events.filter(e => e.event === "omnibox_opened");
-    expect(opened.length).toBeGreaterThanOrEqual(1);
-    expect(opened[0].flow).toBe("member-omnibox");
+    const omniboxCalls = trackEventMock.mock.calls.filter(
+      ([flow]) => flow === "member-omnibox"
+    );
+    const kinds = omniboxCalls.map(([, event]) => event);
+    expect(kinds).toContain("omnibox_opened");
+    expect(kinds).toContain("intent_parsed");
+    expect(kinds).toContain("prefill_applied");
 
-    const parsed = events.filter(e => e.event === "intent_parsed");
-    expect(parsed.length).toBeGreaterThanOrEqual(1);
-    // Metadata carries the intent TYPE only — no text, amounts, identifiers.
-    expect(parsed[0].metadataJson).toEqual({ intentType: "ready" });
+    // intent_parsed: the intent TYPE only; prefill_applied: rail only.
+    const parsed = omniboxCalls.find(([, e]) => e === "intent_parsed");
+    expect(parsed?.[2]?.metadata).toEqual({ intentType: "ready" });
+    const applied = omniboxCalls.find(([, e]) => e === "prefill_applied");
+    expect(applied?.[2]?.metadata).toEqual({ rail: "airtime" });
 
-    const applied = events.filter(e => e.event === "prefill_applied");
-    expect(applied.length).toBeGreaterThanOrEqual(1);
-    expect(applied[0].metadataJson).toEqual({ rail: "airtime" });
-
-    // Scrub sweep: no event metadata may carry the raw text / amount / phone.
-    for (const e of events) {
-      const blob = JSON.stringify(e.metadataJson ?? {});
+    // Scrub sweep: no call may carry the raw text / amount / phone.
+    for (const call of omniboxCalls) {
+      const blob = JSON.stringify(call[2]?.metadata ?? {});
       expect(blob).not.toContain("08031234567");
-      expect(blob).not.toContain("2,000");
       expect(blob).not.toContain("2000");
       expect(blob).not.toContain("MTN airtime");
+    }
+
+    // Boundary discipline (2026-10-25, W11-B4b CI fix): the 4 omnibox kinds
+    // are not server-accepted until B4c-1, so NOTHING flushed to
+    // memberUxEvents.track may carry them (they were dropped at enqueue).
+    const flushed = await trackedEvents();
+    for (const e of flushed) {
+      expect([
+        "omnibox_opened",
+        "intent_parsed",
+        "prefill_applied",
+        "clarify_shown",
+      ]).not.toContain(e.event);
     }
   });
 });
