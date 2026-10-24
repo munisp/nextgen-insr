@@ -50,6 +50,14 @@ export const UX_EVENT_KINDS = [
   'intent_parsed',
   'prefill_applied',
   'clarify_shown',
+  // 2026-10-25 (W11-B4c-3): OCR bill-scan surface events (flow "bill_scan").
+  // Same discipline as the omnibox kinds above: no server-type inference
+  // exists on this fetch transport, so the metadata scrub is MANUAL —
+  // callers pass rail + outcome status ONLY, never extracted values
+  // (biller/customer number/amount).
+  'scan_started',
+  'scan_succeeded',
+  'scan_failed',
 ] as const;
 export type UxEventKind = (typeof UX_EVENT_KINDS)[number];
 

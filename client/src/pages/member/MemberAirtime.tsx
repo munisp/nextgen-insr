@@ -52,6 +52,10 @@ import {
   RecentPayeePicker,
   type RecentPayee,
 } from "./RecentPayeePicker";
+// 2026-10-25 (W11-B4c-2): OCR "Scan a bill" intake (memberBillScan.parse).
+// PREFILL-ONLY — Apply feeds the extracted network/phone through the SAME
+// onPayeeSelect path below; the scanned amount is only a suggestion chip.
+import { ScanBillButton, SCAN_PREFILL_LABEL } from "./ScanBillButton";
 // 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
 // (memberInsights). UX-ONLY signal, never a security gate — anomalous:false
 // or a check error proceeds normally (see insightsGuards.tsx header).
@@ -333,6 +337,11 @@ function BuyAirtimeSection() {
   return (
     <div className="space-y-4 max-w-lg">
       <RecentPayeePicker rail="airtime" onSelect={onPayeeSelect} />
+      <ScanBillButton
+        rail="airtime"
+        onApply={onPayeeSelect}
+        onAmountSuggestion={(ngn) => setAmount(String(ngn))}
+      />
       {prefilledFrom ? (
         <p
           className="text-xs text-muted-foreground"
@@ -340,7 +349,9 @@ function BuyAirtimeSection() {
         >
           {prefilledFrom === "omnibox"
             ? "Prefilled from your omnibox request — review and edit freely, then buy when you're ready."
-            : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
+            : prefilledFrom === SCAN_PREFILL_LABEL
+              ? "Prefilled from your scanned bill photo — review and edit freely, then buy when you're ready."
+              : `Prefilled from your recent payments (${prefilledFrom}) — review and edit freely; the amount was left blank for you to confirm.`}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">

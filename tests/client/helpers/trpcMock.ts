@@ -69,6 +69,13 @@ export function getMutationCalls(path: string): unknown[] {
   return mutationCalls.filter(c => c.path === path).map(c => c.input);
 }
 
+/** 2026-10-25 (W11-B4c-2): every mutation path invoked so far — lets tests
+ *  audit the FULL call list (e.g. "only memberBillScan.parse and
+ *  memberUxEvents.track were called"). */
+export function getAllMutationPaths(): string[] {
+  return mutationCalls.map(c => c.path);
+}
+
 /** Inputs recorded for <path>.useQuery(input) calls (W7-B10). */
 export function getQueryCalls(path: string): unknown[] {
   return queryCalls.filter(c => c.path === path).map(c => c.input);

@@ -42,31 +42,40 @@ export const UX_EVENT_KINDS = [
   "recommendation_accepted",
   "recommendation_dismissed",
   "recommendation_dismissed_forever",
-  // 2026-10-25 (W11-B4b): omnibox NL-intent surface events. NOTE: the
-  // server enum (memberUxEvents.ts UX_EVENT_KINDS) is extended in a
-  // separate server batch — until then these kinds are dropped by the
-  // server zod enum and the tracker stays fail-silent by contract
-  // (tracking NEVER breaks the UX). Metadata discipline is unchanged:
-  // intent TYPE / rail only — never raw text, amounts, or identifiers.
+  // 2026-10-25 (W11-B4b): omnibox NL-intent surface events. ACCEPTED
+  // server-side since the B4c-1 batch (memberUxEvents.ts UX_EVENT_KINDS,
+  // merged PR #304, 2026-10-25) — see SERVER_ACCEPTED_KINDS below. Metadata
+  // discipline unchanged: intent TYPE / rail only — never raw text,
+  // amounts, or identifiers.
   "omnibox_opened",
   "intent_parsed",
   "prefill_applied",
   "clarify_shown",
+  // 2026-10-25 (W11-B4c-2): bill-scan intake funnel events (ScanBillButton,
+  // flow "bill_scan"). CLIENT-side vocabulary ahead of the server — the
+  // server zod enum does NOT accept these yet, so they are dropped
+  // fail-silently at the enqueue boundary (isServerAcceptedKind), exactly
+  // the pre-B4c-1 omnibox pattern. The server already records its own
+  // privacy-minimal bill_scan telemetry row per attempt
+  // (memberBillScan.ts recordOutcome), so no funnel data is lost. WHEN the
+  // server enum accepts them: add them to SERVER_ACCEPTED_KINDS below.
+  "scan_started",
+  "scan_succeeded",
+  "scan_failed",
 ] as const;
 export type UxEventKind = (typeof UX_EVENT_KINDS)[number];
 
-// ── Server-accepted kinds (2026-10-25, W11-B4b CI fix) ────────────────────
+// ── Server-accepted kinds (2026-10-25, W11-B4c-2 update) ─────────────────
 // The tRPC mutation input type is inferred from the SERVER zod schema
-// (memberUxEvents.track), whose event enum is the source of truth. The 4
-// omnibox kinds (W11-B4b) are CLIENT-side vocabulary ahead of the server:
-// the B4c-1 batch extends UX_EVENT_KINDS server-side; until that lands in
-// the build this client typechecks against, the inferred ServerAcceptedKind
-// union below excludes them and isServerAcceptedKind() drops them at the
-// ENQUEUE boundary — explicitly, never queued, so the queue never grows
-// with undeliverable events and the requeue discipline for accepted kinds
-// is untouched. WHEN B4c-1 LANDS: add the 4 omnibox kinds to
-// SERVER_ACCEPTED_KINDS below — the _AllListedKindsAreServerAccepted
-// tripwire proves every listed kind is inside the server's enum.
+// (memberUxEvents.track), whose event enum is the source of truth. As of
+// the merged W11-B4c-1 batch (PR #304, 2026-10-25) the server enum ACCEPTS
+// the 4 omnibox kinds, so they are listed below and now flow through the
+// normal queue/flush path — the old "excludes them / dropped at the
+// enqueue boundary" behavior applied only pre-B4c-1. The _AllListedKinds-
+// AreServerAccepted tripwire below proves every listed kind is inside the
+// server's enum. The W11-B4c-2 scan_* kinds are NOT yet server-accepted
+// and stay unlisted (dropped fail-silently at enqueue) until a server
+// batch extends the enum.
 type TrackMutationInput = Parameters<
   ReturnType<typeof trpc.memberUxEvents.track.useMutation>["mutate"]
 >[0];
@@ -74,7 +83,8 @@ type TrackMutationInput = Parameters<
 export type ServerAcceptedKind =
   TrackMutationInput["events"][number]["event"];
 
-/** The kinds accepted on main today (pre-B4c-1): the original W11-B2 nine.
+/** The kinds the server accepts on main today (post-B4c-1, PR #304,
+ *  2026-10-25): the original W11-B2 nine PLUS the 4 omnibox kinds.
  *  Every entry is compile-time-checked against ServerAcceptedKind below. */
 const SERVER_ACCEPTED_KINDS = [
   "form_started",
@@ -86,6 +96,10 @@ const SERVER_ACCEPTED_KINDS = [
   "recommendation_accepted",
   "recommendation_dismissed",
   "recommendation_dismissed_forever",
+  "omnibox_opened",
+  "intent_parsed",
+  "prefill_applied",
+  "clarify_shown",
 ] as const;
 
 /** Compile-time tripwire: a listed kind the server rejects fails the build. */
@@ -192,11 +206,12 @@ export function trackEvent(
   opts: UxTrackOptions = {}
 ): void {
   try {
-    // 2026-10-25 (W11-B4b CI fix): explicit, typed drop at the ENQUEUE
-    // boundary for kinds the server's zod enum does not accept yet (the 4
-    // omnibox kinds, until B4c-1 extends UX_EVENT_KINDS). The event is
-    // never queued — an undeliverable event would otherwise be requeued
-    // forever and poison the batch for the accepted kinds it travels with.
+    // Explicit, typed drop at the ENQUEUE boundary for kinds the server's
+    // zod enum does not accept yet (today: only the W11-B4c-2 scan_*
+    // kinds — the omnibox kinds are accepted since B4c-1 / PR #304,
+    // 2026-10-25). A dropped event is never queued — an undeliverable
+    // event would otherwise be requeued forever and poison the batch for
+    // the accepted kinds it travels with.
     if (!isServerAcceptedKind(event)) {
       return;
     }

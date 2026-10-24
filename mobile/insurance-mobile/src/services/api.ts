@@ -1203,3 +1203,38 @@ export const intentApi = {
   resolvePayeeHint: (billerText: string) =>
     memberQuery<{ billerCode: string | null }>('memberIntent.resolvePayeeHint', { billerText }),
 };
+
+// ---------------------------------------------------------------------------
+// 2026-10-25 (W11-B4c-3): mobile OCR bill-scan intake over the W11-B4c-1
+// router (server/routers/memberBillScan.ts — memberBillScan.parse).
+// EXTRACT-ONLY server contract (router header): the image is processed
+// in-memory and discarded, NO funds row is written, NO payment mutation is
+// called. The response is a prefill PROPOSAL; the client feeds it through
+// the existing validated pay/vend flow only after explicit member review.
+// Honest fail-closed statuses: unavailable (provider unconfigured) /
+// low_confidence (< 0.6) / error (provider failure) → mode "manual_entry",
+// NO prefill. Shape below copies the server BillScanResponse type, never
+// assumed.
+// ---------------------------------------------------------------------------
+
+/** Client view of server BillScanResponse (memberBillScan.ts). */
+export interface BillScanResult {
+  status: 'ok' | 'unavailable' | 'low_confidence' | 'error';
+  mode: 'prefill' | 'manual_entry';
+  prefill?: {
+    billerCode?: string;
+    customerNumber?: string;
+    amountKobo?: number;
+  };
+  confidence?: number;
+  message: string;
+}
+
+export const scanApi = {
+  /** Scan one bill photo (base64) into a prefill PROPOSAL. zod-strict
+   *  server input: { imageBase64: 100..14M chars valid base64, rail:
+   *  "bill"|"airtime" } — nothing else. A mutation (extract-only; the only
+   *  server write is one privacy-minimal ux_events telemetry row). */
+  parseBill: (input: { imageBase64: string; rail: 'bill' | 'airtime' }) =>
+    memberMutation<BillScanResult>('memberBillScan.parse', input),
+};
