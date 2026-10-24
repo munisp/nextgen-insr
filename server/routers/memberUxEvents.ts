@@ -84,6 +84,14 @@ export const UX_EVENT_KINDS = [
   "intent_parsed",
   "prefill_applied",
   "clarify_shown",
+  // 2026-10-25 (W12-R1): bill-scan lifecycle kinds already emitted by
+  // merged client code (W11-B4c-2/-3) — previously fail-silent rejected by
+  // the zod enum; now ACCEPTED and stored. bill_scan flow rows already
+  // exist server-side from memberBillScan telemetry. Metadata scrub rules
+  // unchanged.
+  "scan_started",
+  "scan_succeeded",
+  "scan_failed",
 ] as const;
 
 /** Max events one member may persist per rolling hour (see header). */

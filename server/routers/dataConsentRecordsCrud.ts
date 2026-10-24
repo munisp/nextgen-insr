@@ -1,6 +1,6 @@
 // Sprint 87: GDPR/NDPR compliance, consent expiry, withdrawal workflow
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, lt } from "drizzle-orm";
+import { eq, desc, and, count, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { dataConsentRecords } from "../../drizzle/schema";
@@ -14,7 +14,43 @@ const CONSENT_TYPES = [
   "third_party_sharing",
   "biometric",
 ];
-const CONSENT_EXPIRY_DAYS = 365;
+// 2026-10-25 (W12-R1): expiry is now caller-supplied (optional expiresAt
+// input) instead of a hard-coded 365-day default, so no constant here.
+
+// ── 2026-10-25 (W12-R1, verifier F1): fail-closed caller-identity binding ──
+// The effective member identity ALWAYS comes from ctx.user (the
+// authenticated caller), never from free input. input.userId is retained
+// for ADMIN act-as only; a non-admin passing a foreign userId is FORBIDDEN.
+// Admin role pattern follows adminProcedure (ctx.user.role === "admin",
+// server/_core/trpc.ts requireAdmin). Row-id access (getById/withdraw/
+// delete) is non-enumerating: absent and foreign rows BOTH answer
+// NOT_FOUND (memberFunds transaction pattern, server/lib/memberFunds.ts).
+type ConsentCallerCtx = { user: { id: number; role: string } };
+
+function effectiveOwnerId(ctx: ConsentCallerCtx, requested?: number): number {
+  const callerId = ctx.user.id;
+  if (requested === undefined || requested === callerId) return callerId;
+  if (ctx.user.role === "admin") return requested;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Cannot act on another member's consent records",
+  });
+}
+
+function assertRowAccess(
+  ctx: ConsentCallerCtx,
+  row: { entityType: string; entityId: number } | undefined
+): asserts row is { entityType: string; entityId: number } {
+  const isOwner =
+    row != null && row.entityType === "customer" && row.entityId === ctx.user.id;
+  if (!row || (!isOwner && ctx.user.role !== "admin")) {
+    // Non-enumerating: do not distinguish "missing" from "someone else's".
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Consent record not found",
+    });
+  }
+}
 
 export const dataConsentRecordsRouter = router({
   list: protectedProcedure
@@ -26,14 +62,23 @@ export const dataConsentRecordsRouter = router({
         offset: z.number().default(0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const conditions: any[] = [];
-        if (input.userId)
-          conditions.push(
-            eq(dataConsentRecords.userAgent, input.userId as any)
-          );
+        // 2026-10-25 (W12-R1): was eq(userAgent, userId as any) → Postgres
+        // text=integer 500. Scope by the real consent-owner columns, same
+        // predicate shape gdprDashboard uses.
+        // 2026-10-25 (W12-R1, verifier F1): ALWAYS scoped to the caller
+        // (fail-closed — no more unauthenticated-shape unscoped listing);
+        // input.userId is admin act-as only.
+        const ownerId = effectiveOwnerId(ctx, input.userId);
+        conditions.push(
+          and(
+            eq(dataConsentRecords.entityType, "customer"),
+            eq(dataConsentRecords.entityId, ownerId)
+          )
+        );
         if (input.consentType)
           conditions.push(
             eq(dataConsentRecords.consentType, input.consentType)
@@ -66,7 +111,7 @@ export const dataConsentRecordsRouter = router({
     }),
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const [row] = await db
@@ -74,11 +119,9 @@ export const dataConsentRecordsRouter = router({
           .from(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id))
           .limit(100);
-        if (!row)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Consent record not found",
-          });
+        // 2026-10-25 (W12-R1, verifier F1): owner-or-admin gate,
+        // non-enumerating NOT_FOUND.
+        assertRowAccess(ctx, row);
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -101,24 +144,51 @@ export const dataConsentRecordsRouter = router({
           "biometric",
         ]),
         ipAddress: z.string().optional(),
+        expiresAt: z.coerce.date().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        const expiresAt = new Date(Date.now() + CONSENT_EXPIRY_DAYS * 86400000);
+        // 2026-10-25 (W12-R1): was `...input, status, expiresAt as any`
+        // inserting non-existent userId/status/expiresAt columns and
+        // omitting notNull granted/entityType/entityId → 23502 500.
+        // Now mirrors gdprDashboard's writer: supersede prior active rows
+        // for the same (entityType, entityId, consentType), then insert a
+        // fully-typed row.
+        // 2026-10-25 (W12-R1, verifier F1): owner identity from ctx;
+        // input.userId is admin act-as only.
+        const ownerId = effectiveOwnerId(ctx, input.userId);
+        const expiresAt = input.expiresAt ?? null;
+        await db
+          .update(dataConsentRecords)
+          .set({ revokedAt: new Date() })
+          .where(
+            and(
+              eq(dataConsentRecords.entityType, "customer"),
+              eq(dataConsentRecords.entityId, ownerId),
+              eq(dataConsentRecords.consentType, input.consentType),
+              eq(dataConsentRecords.granted, true),
+              isNull(dataConsentRecords.revokedAt)
+            )
+          );
         const [row] = await db
           .insert(dataConsentRecords)
           .values({
-            ...input,
-            status: "granted",
+            entityType: "customer",
+            entityId: ownerId,
+            consentType: input.consentType,
+            granted: true,
             grantedAt: new Date(),
+            ipAddress: input.ipAddress ?? null,
             expiresAt,
-          } as any)
+          })
           .returning();
         return {
           ...row,
-          message: `Consent granted for ${input.consentType}. Expires: ${expiresAt.toISOString()}`,
+          message: expiresAt
+            ? `Consent granted for ${input.consentType}. Expires: ${expiresAt.toISOString()}`
+            : `Consent granted for ${input.consentType}. No expiry.`,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -131,7 +201,7 @@ export const dataConsentRecordsRouter = router({
     }),
   withdrawConsent: protectedProcedure
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const [record] = await db
@@ -139,16 +209,21 @@ export const dataConsentRecordsRouter = router({
           .from(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id))
           .limit(100);
-        if (!record)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Consent record not found",
-          });
+        // 2026-10-25 (W12-R1, verifier F1): a member may withdraw ONLY
+        // their own consent; admins may act for anyone. Non-enumerating
+        // NOT_FOUND for absent/foreign rows.
+        assertRowAccess(ctx, record);
+        // 2026-10-25 (W12-R1): was `.set({ withdrawalReason } as any)` →
+        // UPDATE with SET referencing a non-existent column (500). Now sets
+        // the real revoke semantics (matches gdprDashboard active-consent
+        // predicate) plus the new audit column.
         await db
           .update(dataConsentRecords)
           .set({
-            withdrawalReason: input.reason,
-          } as any)
+            granted: false,
+            revokedAt: new Date(),
+            withdrawalReason: input.reason ?? null,
+          })
           .where(eq(dataConsentRecords.id, input.id));
         return {
           success: true,
@@ -165,24 +240,39 @@ export const dataConsentRecordsRouter = router({
     }),
   getComplianceStatus: protectedProcedure
     .input(z.object({ userId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
+        // 2026-10-25 (W12-R1): was eq(userAgent, userId as any) →
+        // text=integer 500. Real owner scoping.
+        // 2026-10-25 (W12-R1, verifier F1): owner identity from ctx;
+        // input.userId is admin act-as only.
+        const ownerId = effectiveOwnerId(ctx, input.userId);
         const records = await db
           .select()
           .from(dataConsentRecords)
-          .where(eq(dataConsentRecords.userAgent, input.userId as any))
+          .where(
+            and(
+              eq(dataConsentRecords.entityType, "customer"),
+              eq(dataConsentRecords.entityId, ownerId)
+            )
+          )
           .limit(100);
+        // Active = granted AND not revoked AND not expired (derived status;
+        // no status column exists). Rows written by gdprDashboard have
+        // expiresAt NULL → treated as non-expiring.
+        const now = new Date();
         const active = records.filter(
-          (r: any) =>
-            r.status === "granted" &&
-            (!r.expiresAt || new Date(r.expiresAt) > new Date())
+          r =>
+            r.granted === true &&
+            !r.revokedAt &&
+            (!r.expiresAt || new Date(r.expiresAt) > now)
         );
         const missing = CONSENT_TYPES.filter(
-          t => !active.find((r: any) => r.consentType === t)
+          t => !active.find(r => r.consentType === t)
         );
         return {
-          userId: input.userId,
+          userId: ownerId,
           activeConsents: active.length,
           missingConsents: missing,
           isCompliant:
@@ -200,9 +290,21 @@ export const dataConsentRecordsRouter = router({
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
+        // 2026-10-25 (W12-R1, verifier F1+F2): delete stays a HARD delete
+        // (GDPR/NDPR Art. 17 erasure-compatible — gdprDashboard's revoke
+        // path preserves an audit trail, this endpoint is the erasure
+        // path), but is now owner-or-admin gated and non-enumerating:
+        // absent and foreign rows both answer NOT_FOUND, and only an
+        // existing, accessible row is actually deleted.
+        const [record] = await db
+          .select()
+          .from(dataConsentRecords)
+          .where(eq(dataConsentRecords.id, input.id))
+          .limit(100);
+        assertRowAccess(ctx, record);
         await db
           .delete(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id));
