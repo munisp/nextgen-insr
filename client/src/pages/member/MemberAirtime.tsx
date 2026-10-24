@@ -52,6 +52,10 @@ import {
   RecentPayeePicker,
   type RecentPayee,
 } from "./RecentPayeePicker";
+// 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
+// (memberInsights). UX-ONLY signal, never a security gate — anomalous:false
+// or a check error proceeds normally (see insightsGuards.tsx header).
+import { useAmountAnomalyGate, useRecurringPrompt } from "./insightsGuards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -164,6 +168,10 @@ function BuyAirtimeSection() {
   // 2026-10-05 (W11-B1b): provenance label after a payee-directory prefill.
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
+  // 2026-10-24 (W11-B3b): Phase 3 insights guards (UX-only).
+  const anomalyGate = useAmountAnomalyGate("airtime");
+  const recurringPrompt = useRecurringPrompt("airtime");
+
   // 2026-10-24 (W11-B2c): form_started once per section mount; the
   // prefill-override probe fires at most once per prefilled draft.
   useEffect(() => {
@@ -180,6 +188,11 @@ function BuyAirtimeSection() {
         trackEvent(UX_FLOW, "completed", { step: "buy_airtime" });
       }
       if (isTerminalConfirmation(data)) retireIntentKey(VEND_IDEM_SCOPE);
+      // 2026-10-24 (W11-B3b): recurring-payment prompt at the completed
+      // moment (once per session; rail + average-amount join).
+      if (isTerminalConfirmation(data) && data.amount != null) {
+        recurringPrompt.maybePrompt(Number(data.amount));
+      }
     },
     onError: (err: { message: string }) => {
       setConfirmation(null);
@@ -265,20 +278,32 @@ function BuyAirtimeSection() {
     // The beneficiary phone defaults server-side to the member's own
     // registered number; an empty field sends NO phoneNumber.
     const beneficiary = trimmedPhone || null;
-    const intent = {
-      network: chosenNetwork,
-      phoneNumber: beneficiary,
-      amountNGN,
+    const doVend = () => {
+      const intent = {
+        network: chosenNetwork,
+        phoneNumber: beneficiary,
+        amountNGN,
+      };
+      vendMutation.mutate({
+        network: chosenNetwork as (typeof NETWORKS)[number],
+        ...(beneficiary ? { phoneNumber: beneficiary } : {}),
+        amountNGN,
+        idempotencyKey: intentIdempotencyKey(
+          VEND_IDEM_SCOPE,
+          JSON.stringify(intent)
+        ),
+      });
     };
-    vendMutation.mutate({
-      network: chosenNetwork as (typeof NETWORKS)[number],
-      ...(beneficiary ? { phoneNumber: beneficiary } : {}),
-      amountNGN,
-      idempotencyKey: intentIdempotencyKey(
-        VEND_IDEM_SCOPE,
-        JSON.stringify(intent)
-      ),
-    });
+    // 2026-10-24 (W11-B3b): anomaly soft-confirm AFTER the zod-exact client
+    // guards pass, BEFORE vend fires. UX-only — a non-anomalous verdict or a
+    // check error proceeds straight to doVend. An empty beneficiary phone
+    // yields an incomplete identifier tuple, which the server fails closed
+    // (anomalous:false) — never a false alarm.
+    anomalyGate.check(
+      { network: chosenNetwork, ...(beneficiary ? { phone: beneficiary } : {}) },
+      Math.round(amountNGN * 100),
+      doVend
+    );
   };
 
   return (
@@ -362,6 +387,10 @@ function BuyAirtimeSection() {
           Airtime purchase could not be initiated: {vendError}
         </p>
       ) : null}
+      {/* 2026-10-24 (W11-B3b): inline anomaly soft-confirm + recurring
+          prompt (UX-only, never block the purchase). */}
+      {anomalyGate.dialog}
+      {recurringPrompt.node}
       <Button
         onClick={onVend}
         disabled={!amountInBounds || vendMutation.isPending}

@@ -51,6 +51,11 @@ import {
   RecentPayeePicker,
   type RecentPayee,
 } from "./RecentPayeePicker";
+// 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
+// (memberInsights.amountAnomalyCheck / recurringCandidates). The anomaly
+// check is a UX-ONLY signal, never a security gate — anomalous:false or a
+// check error proceeds normally (see insightsGuards.tsx header).
+import { useAmountAnomalyGate, useRecurringPrompt } from "./insightsGuards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,6 +128,10 @@ export default function MemberBills() {
   // the payee directory (the amount is always cleared, never carried over).
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
+  // 2026-10-24 (W11-B3b): Phase 3 insights guards (UX-only).
+  const anomalyGate = useAmountAnomalyGate("bill");
+  const recurringPrompt = useRecurringPrompt("bill");
+
   const billersQuery = trpc.memberBillPayments.billers.useQuery(undefined, {
     retry: false,
   });
@@ -140,6 +149,12 @@ export default function MemberBills() {
       // Terminal outcome → retire the draft key (a fresh intent needs a new
       // key; a non-terminal outcome keeps it so retrying confirm is safe).
       if (isTerminalConfirmation(data)) retireIntentKey(IDEM_SCOPE);
+      // 2026-10-24 (W11-B3b): recurring-payment prompt at the completed
+      // moment (once per session; rail + average-amount join — the
+      // naturalKey is a server-side blind index, not client-computable).
+      if (isTerminalConfirmation(data) && data.amount != null) {
+        recurringPrompt.maybePrompt(Number(data.amount));
+      }
     },
     onError: (err: { message: string }) => {
       setConfirmation(null);
@@ -251,26 +266,37 @@ export default function MemberBills() {
     setPayError(null);
     setConfirmation(null);
     setConfirmError(null);
-    // Idempotency fingerprint = exactly the funds-relevant fields the server
-    // payload-hash binds (memberBillPayments.pay idemPayload).
-    const intent = {
-      biller: check.biller,
-      customerNumber: check.customerNumber,
-      meterType: isElectricity ? meterType : null,
-      amountNGN,
+    const doPay = () => {
+      // Idempotency fingerprint = exactly the funds-relevant fields the server
+      // payload-hash binds (memberBillPayments.pay idemPayload).
+      const intent = {
+        biller: check.biller,
+        customerNumber: check.customerNumber,
+        meterType: isElectricity ? meterType : null,
+        amountNGN,
+      };
+      payMutation.mutate({
+        // The biller came from the server catalog select, so it is always a
+        // registry member; the cast only satisfies the zod-enum input type.
+        biller: check.biller as Parameters<typeof payMutation.mutate>[0]["biller"],
+        customerNumber: check.customerNumber,
+        ...(isElectricity ? { meterType } : {}),
+        amountNGN,
+        idempotencyKey: intentIdempotencyKey(
+          IDEM_SCOPE,
+          JSON.stringify(intent)
+        ),
+      });
     };
-    payMutation.mutate({
-      // The biller came from the server catalog select, so it is always a
-      // registry member; the cast only satisfies the zod-enum input type.
-      biller: check.biller as Parameters<typeof payMutation.mutate>[0]["biller"],
-      customerNumber: check.customerNumber,
-      ...(isElectricity ? { meterType } : {}),
-      amountNGN,
-      idempotencyKey: intentIdempotencyKey(
-        IDEM_SCOPE,
-        JSON.stringify(intent)
-      ),
-    });
+    // 2026-10-24 (W11-B3b): anomaly soft-confirm AFTER validation passes,
+    // BEFORE pay fires. UX-only signal — a non-anomalous verdict or a check
+    // error proceeds straight to doPay; an anomalous verdict requires the
+    // explicit extra tap on the inline dialog.
+    anomalyGate.check(
+      { billerCode: check.biller, meterNumber: check.customerNumber },
+      Math.round(amountNGN * 100),
+      doPay
+    );
   };
 
   return (
@@ -453,6 +479,12 @@ export default function MemberBills() {
             >
               Payment could not be initiated: {payError}
             </p>
+          ) : null}
+          {/* 2026-10-24 (W11-B3b): inline anomaly soft-confirm + recurring
+              prompt (UX-only, never block the payment). */}
+          {anomalyGate.dialog ? <div className="mt-4">{anomalyGate.dialog}</div> : null}
+          {recurringPrompt.node ? (
+            <div className="mt-4">{recurringPrompt.node}</div>
           ) : null}
           {payState ? (
             <div className="mt-4">

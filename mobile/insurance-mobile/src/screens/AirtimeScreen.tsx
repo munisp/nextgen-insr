@@ -49,6 +49,16 @@ import {
 } from './memberFundsIntent';
 // 2026-10-24 (W11-B2c): UX instrumentation (fail-silent, field NAMES only).
 import { trackEvent } from '../services/uxTrack';
+// 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring-payment prompt
+// (memberInsights via insightsApi). UX-ONLY signals, never security gates.
+import {
+  checkAmountAnomaly,
+  findRecurringMatch,
+  markRecurringPromptShown,
+  recurringPromptAlreadyShown,
+} from '../services/insightsGuards';
+import { insightsApi } from '../services/api';
+import { AnomalySoftConfirm, RecurringPromptNote } from '../components/InsightsWidgets';
 
 const fmt = (n: number, currency = 'NGN') =>
   currency === 'NGN' ? `₦${Number(n).toLocaleString('en-NG')}` : `${Number(n).toLocaleString('en-NG')} ${currency}`;
@@ -115,6 +125,11 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
   // 2026-10-06 (W11-B1c): provenance label when the draft was prefilled from
   // the payee directory (the amount is always cleared, never carried over).
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
+  // 2026-10-24 (W11-B3b): anomaly soft-confirm + recurring prompt state.
+  const [softConfirm, setSoftConfirm] = useState<{ amountKobo: number; multiple: number | null } | null>(null);
+  const [recurringPrompt, setRecurringPrompt] = useState<{ cadenceDays: number } | null>(null);
+  // The armed proceed callback lives in a ref (never in render state).
+  const pendingVend = useRef<(() => Promise<void>) | null>(null);
 
   // 2026-10-24 (W11-B2c): form_started once per section mount; the
   // prefill-override probe fires at most once per prefilled draft.
@@ -181,29 +196,58 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
     // The beneficiary phone defaults server-side to the member's own
     // registered number; an empty field sends NO phoneNumber (zod-exact).
     const beneficiary = trimmedPhone || null;
-    const intent = { network: chosenNetwork, phoneNumber: beneficiary, amountNGN };
+    const doVend = async () => {
+      const intent = { network: chosenNetwork, phoneNumber: beneficiary, amountNGN };
+      setBusy(true);
+      try {
+        const idempotencyKey = await intentIdempotencyKey(VEND_IDEM_SCOPE, JSON.stringify(intent));
+        const data = await airtimeApi.vend({
+          network: chosenNetwork as (typeof NETWORKS)[number],
+          ...(beneficiary ? { phoneNumber: beneficiary } : {}),
+          amountNGN,
+          idempotencyKey,
+        });
+        setVendState({
+          reference: data.reference,
+          authorizationUrl: data.authorizationUrl,
+          amount: data.amount,
+          currency: data.currency,
+          idempotent: data.idempotent,
+        });
+      } catch (e: any) {
+        setVendState(null);
+        setVendError(e?.message || 'Airtime purchase could not be initiated.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    // 2026-10-24 (W11-B3b): anomaly soft-confirm AFTER the zod-exact guards
+    // pass, BEFORE vend fires. UX-only — null (error) or anomalous:false
+    // proceeds straight to doVend. An empty beneficiary phone is an
+    // incomplete identifier tuple → the server fails closed (never alarms).
+    setSoftConfirm(null);
     setBusy(true);
-    try {
-      const idempotencyKey = await intentIdempotencyKey(VEND_IDEM_SCOPE, JSON.stringify(intent));
-      const data = await airtimeApi.vend({
-        network: chosenNetwork as (typeof NETWORKS)[number],
-        ...(beneficiary ? { phoneNumber: beneficiary } : {}),
-        amountNGN,
-        idempotencyKey,
-      });
-      setVendState({
-        reference: data.reference,
-        authorizationUrl: data.authorizationUrl,
-        amount: data.amount,
-        currency: data.currency,
-        idempotent: data.idempotent,
-      });
-    } catch (e: any) {
-      setVendState(null);
-      setVendError(e?.message || 'Airtime purchase could not be initiated.');
-    } finally {
-      setBusy(false);
+    const verdict = await checkAmountAnomaly(
+      'airtime',
+      { network: chosenNetwork, ...(beneficiary ? { phone: beneficiary } : {}) },
+      Math.round(amountNGN * 100),
+    );
+    setBusy(false);
+    if (verdict?.anomalous) {
+      pendingVend.current = doVend;
+      setSoftConfirm({ amountKobo: Math.round(amountNGN * 100), multiple: verdict.multiple });
+      return;
     }
+    await doVend();
+  };
+
+  // 2026-10-24 (W11-B3b): explicit soft-confirm tap → the armed vend.
+  const onSoftConfirm = async () => {
+    const proceed = pendingVend.current;
+    setSoftConfirm(null);
+    pendingVend.current = null;
+    trackEvent(UX_FLOW, 'recommendation_accepted', { step: 'buy_airtime', metadata: { action: 'anomaly_soft_confirm' } });
+    if (proceed) await proceed();
   };
 
   const onConfirm = async () => {
@@ -216,6 +260,20 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
       // 2026-10-24 (W11-B2c): a terminal confirm outcome completes the flow.
       if (isTerminalConfirmation(data)) trackEvent(UX_FLOW, 'completed', { step: 'buy_airtime' });
       if (isTerminalConfirmation(data)) await retireIntentKey(VEND_IDEM_SCOPE);
+      // 2026-10-24 (W11-B3b): recurring-payment prompt at the completed
+      // moment — once per app session per rail; rail + average-amount join.
+      if (isTerminalConfirmation(data) && data.amount != null && !recurringPromptAlreadyShown('airtime')) {
+        try {
+          const res = await insightsApi.recurringCandidates();
+          const match = findRecurringMatch(res?.candidates, 'airtime', Number(data.amount));
+          if (match) {
+            markRecurringPromptShown('airtime');
+            setRecurringPrompt({ cadenceDays: match.cadenceDays });
+          }
+        } catch {
+          /* detections-only signal — a lookup failure never disturbs the confirm UX */
+        }
+      }
     } catch (e: any) {
       setConfirmation(null);
       setConfirmError(e?.message || 'Verification failed.');
@@ -277,6 +335,22 @@ function BuyAirtimeSection({ navigation }: { navigation: any }) {
         <View style={[styles.errorBox, { marginTop: 10 }]}>
           <Text style={styles.errorText}>Airtime purchase could not be initiated: {vendError}</Text>
         </View>
+      ) : null}
+      {/* 2026-10-24 (W11-B3b): inline anomaly soft-confirm + recurring
+          prompt (UX-only, never block the purchase). */}
+      {softConfirm ? (
+        <AnomalySoftConfirm
+          amountKobo={softConfirm.amountKobo}
+          multiple={softConfirm.multiple}
+          onConfirm={onSoftConfirm}
+          onCancel={() => { setSoftConfirm(null); pendingVend.current = null; }}
+        />
+      ) : null}
+      {recurringPrompt ? (
+        <RecurringPromptNote
+          cadenceDays={recurringPrompt.cadenceDays}
+          onDismiss={() => setRecurringPrompt(null)}
+        />
       ) : null}
       <TouchableOpacity
         style={[styles.submitBtn, (!amountInBounds || busy) && styles.submitDisabled]}
