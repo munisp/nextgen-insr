@@ -108,6 +108,26 @@ async function createTables() {
     "utf8"
   );
   await db.execute(sql.raw(migrationSql));
+  // audit_log — needed by the W13-A delete audit trail (writeAuditLog,
+  // server/db.ts). Columns match drizzle/schema.ts auditLog; status kept
+  // as varchar (the pgEnum accepts the same 'success' literal).
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "audit_log" (
+      "id" bigserial PRIMARY KEY NOT NULL,
+      "agentId" integer,
+      "action" varchar(128) NOT NULL,
+      "resource" varchar(64),
+      "resourceId" varchar(64),
+      "ipAddress" varchar(45),
+      "userAgent" varchar(256),
+      "status" varchar(32) DEFAULT 'success',
+      "metadata" json,
+      "tenantId" integer,
+      "prevHash" varchar(64),
+      "entryHash" varchar(64),
+      "redactedAt" timestamp,
+      "createdAt" timestamp DEFAULT now() NOT NULL
+    )`);
 }
 
 async function rawRows(entityId?: number) {
@@ -258,11 +278,23 @@ describe("W12-R1 dataConsentRecordsCrud repair", () => {
   });
 
   it("list isExpired flag is computed from the real expiresAt column", async () => {
-    const past = await caller.grantConsent({
-      userId: USER_B,
-      consentType: "analytics",
-      expiresAt: new Date(Date.now() - 86400000),
-    });
+    // 2026-10-25 (W13-A): grantConsent now REJECTS past expiresAt, so the
+    // expired row is written directly (raw SQL) — same shape a legacy or
+    // gdprDashboard writer would produce.
+    const { getDb } = await import("../../db");
+    const { dataConsentRecords } = await import("../../../drizzle/schema");
+    const db = (await getDb())!;
+    const [past] = await db
+      .insert(dataConsentRecords)
+      .values({
+        entityType: "customer",
+        entityId: USER_B,
+        consentType: "analytics",
+        granted: true,
+        grantedAt: new Date(Date.now() - 2 * 86400000),
+        expiresAt: new Date(Date.now() - 86400000),
+      })
+      .returning();
     const list = await caller.list({ userId: USER_B, consentType: "analytics" });
     const item = list.items.find(r => r.id === past.id)!;
     expect(item.isExpired).toBe(true);
@@ -274,10 +306,17 @@ describe("W12-R1 dataConsentRecordsCrud repair", () => {
     const USER_C = 9103;
     // active (no expiry)
     await caller.grantConsent({ userId: USER_C, consentType: "data_processing" });
-    // expired (expiresAt in the past)
-    await caller.grantConsent({
-      userId: USER_C,
+    // expired (expiresAt in the past) — 2026-10-25 (W13-A): grantConsent
+    // now rejects past expiresAt, so write the expired row directly.
+    const { getDb } = await import("../../db");
+    const { dataConsentRecords } = await import("../../../drizzle/schema");
+    const db = (await getDb())!;
+    await db.insert(dataConsentRecords).values({
+      entityType: "customer",
+      entityId: USER_C,
       consentType: "marketing",
+      granted: true,
+      grantedAt: new Date(Date.now() - 2 * 86400000),
       expiresAt: new Date(Date.now() - 86400000),
     });
     // revoked
@@ -476,5 +515,99 @@ describe("W12-R1 F1: fail-closed caller-identity authz", () => {
     expect(status.missingConsents).toContain("marketing");
     expect(status.missingConsents).toContain("analytics");
     expect(status.isCompliant).toBe(false);
+  });
+});
+
+describe("W13-A LOW polish (verify-w12r1 F4/F5 + delete audit trail)", () => {
+  it("F4: second withdraw is a no-op that PRESERVES the original reason/revokedAt", async () => {
+    const USER_G = 9107;
+    const g = await caller.grantConsent({
+      userId: USER_G,
+      consentType: "marketing",
+    });
+    const first = await caller.withdrawConsent({
+      id: g.id,
+      reason: "first reason",
+    });
+    expect(first.success).toBe(true);
+    const [afterFirst] = (await rawRows(USER_G)).filter(x => x.id === g.id);
+    const second = await caller.withdrawConsent({
+      id: g.id,
+      reason: "second reason",
+    });
+    expect(second.success).toBe(true);
+    expect((second as any).alreadyWithdrawn).toBe(true);
+    const [afterSecond] = (await rawRows(USER_G)).filter(x => x.id === g.id);
+    // Original reason and revokedAt untouched.
+    expect(afterSecond.withdrawal_reason).toBe("first reason");
+    expect(new Date(afterSecond.revoked_at).getTime()).toBe(
+      new Date(afterFirst.revoked_at).getTime()
+    );
+  });
+
+  it("F5: past expiresAt on grant is BAD_REQUEST and writes nothing", async () => {
+    const USER_H = 9108;
+    await expect(
+      caller.grantConsent({
+        userId: USER_H,
+        consentType: "marketing",
+        expiresAt: new Date(Date.now() - 1000),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await rawRows(USER_H)).toHaveLength(0);
+  });
+
+  it("F5 boundary: exactly-now expiresAt is rejected; future and null accepted", async () => {
+    const USER_I = 9109;
+    // Boundary decision (router comment): strictly-future only, so a
+    // timestamp captured BEFORE the call (≈ now) must be rejected.
+    await expect(
+      caller.grantConsent({
+        userId: USER_I,
+        consentType: "marketing",
+        expiresAt: new Date(), // captured pre-call → <= handler's Date.now()
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const future = await caller.grantConsent({
+      userId: USER_I,
+      consentType: "analytics",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect(future.expiresAt).toBeTruthy();
+    const noExpiry = await caller.grantConsent({
+      userId: USER_I,
+      consentType: "biometric",
+    });
+    expect(noExpiry.expiresAt).toBeNull();
+  });
+
+  it("delete writes a chained audit_log entry (actor/action/entity, ids only)", async () => {
+    const USER_J = 9110;
+    const g = await caller.grantConsent({
+      userId: USER_J,
+      consentType: "data_processing",
+    });
+    const del = await caller.delete({ id: g.id });
+    expect(del.success).toBe(true);
+    const { getDb } = await import("../../db");
+    const { sql } = await import("drizzle-orm");
+    const db = (await getDb())!;
+    const res = await db.execute(
+      sql`SELECT * FROM audit_log WHERE action = 'CONSENT_RECORD_DELETE' AND "resourceId" = ${String(g.id)} ORDER BY id`
+    );
+    const rows = ((res as any).rows ?? (res as any)) as Array<Record<string, any>>;
+    expect(rows).toHaveLength(1);
+    const entry = rows[0];
+    expect(entry.agentId).toBe(1); // the admin caller's ctx.user.id
+    expect(entry.resource).toBe("data_consent_record");
+    expect(entry.status).toBe("success");
+    expect(entry.createdAt).toBeTruthy();
+    expect(entry.metadata).toMatchObject({
+      entityType: "customer",
+      entityId: USER_J,
+      consentType: "data_processing",
+    });
+    // Hash-chain columns populated by writeAuditLog (genesis → prevHash NULL).
+    expect(entry.entryHash).toMatch(/^[0-9a-f]{64}$/);
   });
 });
