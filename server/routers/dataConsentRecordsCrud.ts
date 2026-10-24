@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { dataConsentRecords } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 
 const CONSENT_TYPES = [
   "data_processing",
@@ -160,6 +160,19 @@ export const dataConsentRecordsRouter = router({
         // input.userId is admin act-as only.
         const ownerId = effectiveOwnerId(ctx, input.userId);
         const expiresAt = input.expiresAt ?? null;
+        // 2026-10-25 (W13-A, verifier F5): reject a past/now expiresAt —
+        // a consent born already-expired is never a meaningful grant.
+        // Boundary decision: STRICTLY future only, i.e. expiresAt exactly
+        // equal to "now" is rejected too (an instant-expiry consent has no
+        // active lifetime). null stays allowed (= non-expiring, matching
+        // gdprDashboard-written rows).
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "expiresAt must be in the future; omit it for a non-expiring consent",
+          });
+        }
         await db
           .update(dataConsentRecords)
           .set({ revokedAt: new Date() })
@@ -213,6 +226,22 @@ export const dataConsentRecordsRouter = router({
         // their own consent; admins may act for anyone. Non-enumerating
         // NOT_FOUND for absent/foreign rows.
         assertRowAccess(ctx, record);
+        // 2026-10-25 (W13-A, verifier F4): idempotent withdraw — a second
+        // withdraw on an already-withdrawn record is an honest no-op
+        // success that PRESERVES the original revokedAt and
+        // withdrawalReason (first-withdrawal audit trail). Previously the
+        // unconditional UPDATE below silently overwrote withdrawal_reason,
+        // losing the original reason. Idempotent success (rather than
+        // CONFLICT) matches the NDPR Article 2.3 response contract and
+        // keeps retries safe; the returned message states the no-op.
+        if (record.revokedAt) {
+          return {
+            success: true,
+            alreadyWithdrawn: true,
+            message:
+              "Consent already withdrawn — original withdrawal reason and timestamp preserved",
+          };
+        }
         // 2026-10-25 (W12-R1): was `.set({ withdrawalReason } as any)` →
         // UPDATE with SET referencing a non-existent column (500). Now sets
         // the real revoke semantics (matches gdprDashboard active-consent
@@ -308,6 +337,26 @@ export const dataConsentRecordsRouter = router({
         await db
           .delete(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id));
+        // 2026-10-25 (W13-A, verifier R2.5 residual): audit-log the hard
+        // delete via the established tamper-evident chain writer
+        // (writeAuditLog, server/db.ts — same pattern as
+        // actuarialRatesAdmin). Ids only, no PII: the row payload is gone
+        // by design (Art. 17 erasure), this entry preserves WHO erased
+        // WHICH consent record and WHEN. writeAuditLog is fail-soft
+        // (logs on error) so an audit write failure never rolls back the
+        // erasure itself.
+        await writeAuditLog({
+          agentId: ctx.user.id,
+          action: "CONSENT_RECORD_DELETE",
+          resource: "data_consent_record",
+          resourceId: String(input.id),
+          status: "success",
+          metadata: {
+            entityType: record.entityType,
+            entityId: record.entityId,
+            consentType: record.consentType,
+          },
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
