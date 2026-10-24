@@ -76,6 +76,14 @@ export const UX_EVENT_KINDS = [
   "recommendation_accepted",
   "recommendation_dismissed",
   "recommendation_dismissed_forever",
+  // 2026-10-25 (W11-B4b fix-forward): omnibox/intent-flow kinds already
+  // emitted by merged client code — previously fail-silent rejected by the
+  // zod enum; now ACCEPTED and stored. Metadata scrub rules unchanged
+  // (these carry intent type / rail only — short strings, no PII).
+  "omnibox_opened",
+  "intent_parsed",
+  "prefill_applied",
+  "clarify_shown",
 ] as const;
 
 /** Max events one member may persist per rolling hour (see header). */

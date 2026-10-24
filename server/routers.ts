@@ -381,6 +381,9 @@ import { memberInsightsRouter } from "./routers/memberInsights";
 // W11-B4a (2026-10-24): deterministic NL intent parser (parse-only,
 // never executes funds) + caller-scoped payee enrichment.
 import { memberIntentRouter } from "./routers/memberIntent";
+// W11-B4c-1 (2026-10-25): OCR bill-scan intake (extract-only prefill
+// proposal; never persists images, never moves funds).
+import { memberBillScanRouter } from "./routers/memberBillScan";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
@@ -1275,6 +1278,11 @@ export const appRouter = router({
   // mutations) + resolvePayeeHint. Router count 497 -> 498 (sprint95 gate
   // updated with measured value).
   memberIntent: memberIntentRouter,
+  // W11-B4c-1 (2026-10-25): OCR bill-scan parse — honest fail-closed
+  // (unavailable/error/low_confidence → manual_entry; no fabrication),
+  // 30/hour PG-count rate limit, no image persistence, no funds writes.
+  // Router count 498 -> 499 (sprint95 gate updated with measured value).
+  memberBillScan: memberBillScanRouter,
   memberFxRates: memberFxRatesRouter,
   // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
   // endorsements/quote-cart. insuranceWorkflows requestRenewal/
