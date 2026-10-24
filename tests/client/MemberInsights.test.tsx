@@ -229,6 +229,55 @@ describe("NextActionsPanel (W11-B3b)", () => {
     expect(screen.queryByTestId("next-actions")).not.toBeInTheDocument();
   });
 
+  it("a scrambled server array still renders in documented priority order (W13-B defensive sort)", () => {
+    // verify-w11b3b Finding 2: the panel must not trust server array order.
+    setQuery("memberInsights.nextBestActions", {
+      data: { actions: [ACTIONS[3], ACTIONS[2], ACTIONS[1], ACTIONS[0]] },
+    });
+    render(<MemberBills />);
+
+    const order = screen
+      .getAllByRole("listitem")
+      .map(li => li.getAttribute("data-testid"));
+    expect(order).toEqual([
+      "nba-policy_renewal_due",
+      "nba-failed_refund_pending",
+      "nba-recurring_bill_due",
+    ]);
+    // Top-3 cap applies AFTER the sort: kyc (40) stays hidden.
+    expect(screen.queryByTestId("nba-kyc_incomplete")).not.toBeInTheDocument();
+  });
+
+  it("an UNKNOWN future action type is hidden fail-closed — no crash, the routable actions still render (W13-B)", () => {
+    setQuery("memberInsights.nextBestActions", {
+      data: {
+        actions: [
+          {
+            type: "some_future_action_type", // not in the known union
+            priority: 500, // even outranking everything
+            explain: "A suggestion this client cannot route.",
+            payload: {},
+          },
+          ACTIONS[0], // policy_renewal_due
+        ],
+      },
+    });
+    render(<MemberBills />);
+
+    const panel = screen.getByTestId("next-actions");
+    expect(panel).toBeInTheDocument();
+    // The unroutable suggestion is hidden — not dead-clickable.
+    expect(
+      screen.queryByText("A suggestion this client cannot route.")
+    ).not.toBeInTheDocument();
+    // The known action renders normally.
+    expect(screen.getByTestId("nba-policy_renewal_due")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review renewal" })).toHaveAttribute(
+      "href",
+      "/member/renewals?policyId=77"
+    );
+  });
+
   it("empty actions hide the panel entirely; an error degrades silently", () => {
     setQuery("memberInsights.nextBestActions", { data: { actions: [] } });
     const { unmount } = render(<MemberBills />);
@@ -285,6 +334,21 @@ describe("Anomaly soft-confirm gate — MemberBills (W11-B3b)", () => {
     fireEvent.click(screen.getByTestId("anomaly-confirm"));
     expect(getMutationCalls("memberBillPayments.pay")).toHaveLength(1);
     expect(screen.queryByTestId("anomaly-soft-confirm")).not.toBeInTheDocument();
+  });
+
+  it("Pay is disabled with a visible Checking… state while the anomaly check is in flight (no multi-tap dispatch)", () => {
+    // verify-w11b3b Finding 1 / W13-B: rapid Pay taps must not multi-dispatch.
+    setQuery("memberInsights.amountAnomalyCheck", { isLoading: true });
+    render(<MemberBills />);
+    preparePayable();
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+
+    // Honest busy state: disabled + labeled; further taps are no-ops.
+    const busy = screen.getByRole("button", { name: "Checking…" });
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    fireEvent.click(busy);
+    expect(getMutationCalls("memberBillPayments.pay")).toHaveLength(0);
   });
 
   it("Go back closes the dialog without paying", () => {
@@ -386,6 +450,64 @@ describe("Anomaly soft-confirm gate — MemberBills (W11-B3b)", () => {
     expect(screen.queryByTestId("recurring-prompt")).not.toBeInTheDocument();
   });
 
+  it("once per session per rail: a SECOND terminal confirm must NOT re-prompt (regression for the once-guard, verify-w11b3b Finding 3)", () => {
+    setQuery("memberInsights.recurringCandidates", {
+      data: {
+        candidates: [
+          {
+            naturalKey: "nk1",
+            rail: "bill",
+            occurrences: 3,
+            cadenceDays: 30,
+            averageAmountKobo: 500000, // ₦5,000 — matches the paid amount
+            dueSoon: true,
+          },
+        ],
+        state: "detections_only",
+      },
+    });
+    setMutation("memberBillPayments.pay", {
+      data: {
+        reference: "BP-14-mno",
+        authorizationUrl: "https://checkout.paystack.test/bp14",
+        amount: "5000.00",
+        currency: "NGN",
+        idempotent: false,
+      },
+    });
+    setMutation("memberBillPayments.confirmPay", {
+      data: {
+        reference: "BP-14-mno",
+        status: "success",
+        providerStatus: "success",
+        amount: "5000.00",
+        currency: "NGN",
+      },
+    });
+    render(<MemberBills />);
+
+    // First terminal confirm → prompt shows once; dismiss it.
+    preparePayable();
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "I've paid — verify" })
+    );
+    expect(screen.getByTestId("recurring-prompt")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByTestId("recurring-prompt")).not.toBeInTheDocument();
+
+    // Second full payment in the SAME session → terminal confirm must NOT
+    // re-show the prompt (the rail is already marked shown in
+    // sessionStorage). Removing the once-guard in insightsGuards.tsx turns
+    // this RED.
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "I've paid — verify" })
+    );
+    expect(getMutationCalls("memberBillPayments.confirmPay")).toHaveLength(2);
+    expect(screen.queryByTestId("recurring-prompt")).not.toBeInTheDocument();
+  });
+
   it("no prompt when the paid amount does not match any candidate", () => {
     setQuery("memberInsights.recurringCandidates", {
       data: {
@@ -472,6 +594,19 @@ describe("Anomaly soft-confirm gate — MemberAirtime (W11-B3b)", () => {
     expect(getMutationCalls("memberAirtime.vend")).toHaveLength(0);
     fireEvent.click(screen.getByTestId("anomaly-confirm"));
     expect(getMutationCalls("memberAirtime.vend")).toHaveLength(1);
+  });
+
+  it("Buy airtime is disabled with a visible Checking… state while the anomaly check is in flight (no multi-tap dispatch)", () => {
+    // verify-w11b3b Finding 1 / W13-B.
+    setQuery("memberInsights.amountAnomalyCheck", { isLoading: true });
+    render(<MemberAirtime />);
+    prepareVendable();
+    fireEvent.click(screen.getByRole("button", { name: "Buy airtime" }));
+
+    const busy = screen.getByRole("button", { name: "Checking…" });
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    expect(getMutationCalls("memberAirtime.vend")).toHaveLength(0);
   });
 
   it("anomalous:false proceeds straight to vend (no dialog)", () => {
