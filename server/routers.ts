@@ -378,6 +378,9 @@ import { memberPayeesRouter } from "./routers/memberPayees";
 import { memberUxEventsRouter } from "./routers/memberUxEvents";
 // W11-B3a (2026-10-24): heuristic intelligence (read-only suggestions).
 import { memberInsightsRouter } from "./routers/memberInsights";
+// W11-B4a (2026-10-24): deterministic NL intent parser (parse-only,
+// never executes funds) + caller-scoped payee enrichment.
+import { memberIntentRouter } from "./routers/memberIntent";
 import { memberFxRatesRouter } from "./routers/memberFxRates";
 import { memberBeneficiariesRouter } from "./routers/memberBeneficiaries";
 import { memberRenewalsRouter } from "./routers/memberRenewals";
@@ -1267,6 +1270,11 @@ export const appRouter = router({
   // suggestions computed from real data; no writes, no new tables.
   // Router count +1.
   memberInsights: memberInsightsRouter,
+  // W11-B4a (2026-10-24): deterministic NL omnibox parser — parseIntent
+  // (parse-only proposal, NO execute; client drives the validated funds
+  // mutations) + resolvePayeeHint. Router count 497 -> 498 (sprint95 gate
+  // updated with measured value).
+  memberIntent: memberIntentRouter,
   memberFxRates: memberFxRatesRouter,
   // R3 batch 5 (2026-10-01, R3-b5): member beneficiaries/renewals/
   // endorsements/quote-cart. insuranceWorkflows requestRenewal/
