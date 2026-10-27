@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/alicebob/miniredis/v2 v2.34.0
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.22.0
 	go.uber.org/zap v1.28.0
