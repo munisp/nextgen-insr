@@ -162,15 +162,22 @@ export const dataConsentRecordsRouter = router({
         const expiresAt = input.expiresAt ?? null;
         // 2026-10-25 (W13-A, verifier F5): reject a past/now expiresAt —
         // a consent born already-expired is never a meaningful grant.
-        // Boundary decision: STRICTLY future only, i.e. expiresAt exactly
-        // equal to "now" is rejected too (an instant-expiry consent has no
-        // active lifetime). null stays allowed (= non-expiring, matching
-        // gdprDashboard-written rows).
-        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+        // 2026-11-25 (W14-A, LOW residual): added a 1000ms minimum future
+        // skew margin. Previously `expiresAt <= Date.now()` let a value
+        // ~1ms in the future pass validation and be already-expired by
+        // the time the INSERT commits (validation→commit latency). 1000ms
+        // comfortably covers request/validation/insert latency on this
+        // stack while staying far below any operationally meaningful
+        // consent lifetime; callers wanting instant revocation use
+        // withdrawConsent, not a near-zero expiresAt.
+        // Boundary decision: expiresAt must be STRICTLY more than 1000ms
+        // in the future (exactly now+1000ms is rejected too). null stays
+        // allowed (= non-expiring, matching gdprDashboard-written rows).
+        if (expiresAt && expiresAt.getTime() <= Date.now() + 1000) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              "expiresAt must be in the future; omit it for a non-expiring consent",
+              "expiresAt must be more than 1 second in the future; omit it for a non-expiring consent",
           });
         }
         await db
@@ -229,31 +236,54 @@ export const dataConsentRecordsRouter = router({
         // 2026-10-25 (W13-A, verifier F4): idempotent withdraw — a second
         // withdraw on an already-withdrawn record is an honest no-op
         // success that PRESERVES the original revokedAt and
-        // withdrawalReason (first-withdrawal audit trail). Previously the
-        // unconditional UPDATE below silently overwrote withdrawal_reason,
-        // losing the original reason. Idempotent success (rather than
-        // CONFLICT) matches the NDPR Article 2.3 response contract and
-        // keeps retries safe; the returned message states the no-op.
-        if (record.revokedAt) {
-          return {
-            success: true,
-            alreadyWithdrawn: true,
-            message:
-              "Consent already withdrawn — original withdrawal reason and timestamp preserved",
-          };
-        }
-        // 2026-10-25 (W12-R1): was `.set({ withdrawalReason } as any)` →
-        // UPDATE with SET referencing a non-existent column (500). Now sets
-        // the real revoke semantics (matches gdprDashboard active-consent
-        // predicate) plus the new audit column.
-        await db
+        // withdrawalReason (first-withdrawal audit trail). Idempotent
+        // success (rather than CONFLICT) matches the NDPR Article 2.3
+        // response contract and keeps retries safe.
+        // 2026-11-25 (W14-A, LOW residual): the check-then-act above
+        // (read revokedAt, then UPDATE) was a TOCTOU race — two concurrent
+        // withdrawals could both observe revokedAt NULL and the second
+        // UPDATE would overwrite the first's reason/revokedAt. The
+        // withdrawal is now a single atomic
+        //   UPDATE ... SET ... WHERE id = ? AND revokedAt IS NULL
+        // whose .returning() result is the arbiter: a non-empty array
+        // means THIS request performed the withdrawal; an empty array
+        // means a concurrent (or earlier) request already withdrew it.
+        // Only on the empty path do we re-read the row — solely to build
+        // the idempotent already-withdrawn response with the ORIGINAL
+        // reason/revokedAt; the re-read performs no state transition.
+        // Authz (assertRowAccess above) is unchanged and still runs
+        // before any write.
+        const updated = await db
           .update(dataConsentRecords)
           .set({
             granted: false,
             revokedAt: new Date(),
             withdrawalReason: input.reason ?? null,
           })
-          .where(eq(dataConsentRecords.id, input.id));
+          .where(
+            and(
+              eq(dataConsentRecords.id, input.id),
+              isNull(dataConsentRecords.revokedAt)
+            )
+          )
+          .returning();
+        if (updated.length === 0) {
+          // Already withdrawn (by an earlier or concurrent request).
+          // Re-read ONLY for the idempotent response payload.
+          const [fresh] = await db
+            .select()
+            .from(dataConsentRecords)
+            .where(eq(dataConsentRecords.id, input.id))
+            .limit(100);
+          return {
+            success: true,
+            alreadyWithdrawn: true,
+            revokedAt: fresh?.revokedAt ?? null,
+            withdrawalReason: fresh?.withdrawalReason ?? null,
+            message:
+              "Consent already withdrawn — original withdrawal reason and timestamp preserved",
+          };
+        }
         return {
           success: true,
           message: "Consent withdrawn per NDPR Article 2.3",
