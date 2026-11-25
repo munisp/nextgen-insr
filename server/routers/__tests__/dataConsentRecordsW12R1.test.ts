@@ -611,3 +611,103 @@ describe("W13-A LOW polish (verify-w12r1 F4/F5 + delete audit trail)", () => {
     expect(entry.entryHash).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+// 2026-11-25 (W14-A): closure of the two documented LOW residuals —
+// (1) withdraw TOCTOU: the withdrawal is now a single atomic
+//     UPDATE ... WHERE id = ? AND revokedAt IS NULL whose .returning()
+//     arbitrates winner vs already-withdrawn;
+// (2) grant expiresAt boundary flake: expiresAt <= now+1000ms is
+//     rejected so a near-now value cannot expire before the INSERT
+//     commits.
+describe("W14-A LOW residuals: atomic withdraw + expiresAt skew margin", () => {
+  it("double-withdraw is idempotent and the 2nd response carries the ORIGINAL reason/revokedAt", async () => {
+    const USER_K = 9111;
+    const g = await caller.grantConsent({
+      userId: USER_K,
+      consentType: "marketing",
+    });
+    const first = await caller.withdrawConsent({
+      id: g.id,
+      reason: "original reason",
+    });
+    expect(first.success).toBe(true);
+    expect((first as any).alreadyWithdrawn).toBeUndefined();
+    const [afterFirst] = (await rawRows(USER_K)).filter(x => x.id === g.id);
+    const second = await caller.withdrawConsent({
+      id: g.id,
+      reason: "overwriting reason",
+    });
+    expect(second.success).toBe(true);
+    expect((second as any).alreadyWithdrawn).toBe(true);
+    // Idempotent response surfaces the ORIGINAL audit trail, not the
+    // second request's reason.
+    expect((second as any).withdrawalReason).toBe("original reason");
+    expect(new Date((second as any).revokedAt).getTime()).toBe(
+      new Date(afterFirst.revoked_at).getTime()
+    );
+    const [afterSecond] = (await rawRows(USER_K)).filter(x => x.id === g.id);
+    expect(afterSecond.withdrawal_reason).toBe("original reason");
+    expect(new Date(afterSecond.revoked_at).getTime()).toBe(
+      new Date(afterFirst.revoked_at).getTime()
+    );
+  });
+
+  it("concurrent-withdraw simulation: exactly one winner, row keeps the winner's reason", async () => {
+    // 2026-11-25 (W14-A): PGlite is single-connection, so a true
+    // two-client race cannot be produced here — concurrent callers are
+    // serialized on the one connection. This Promise.all still exercises
+    // the atomic UPDATE's arbiter path: the serialized second withdrawal
+    // hits `WHERE revokedAt IS NULL` with zero rows matched and takes the
+    // already-withdrawn branch. On multi-client Postgres the same
+    // statement-level predicate is what makes the race safe.
+    const USER_L = 9112;
+    const g = await caller.grantConsent({
+      userId: USER_L,
+      consentType: "analytics",
+    });
+    const [r1, r2] = await Promise.all([
+      caller.withdrawConsent({ id: g.id, reason: "racer A" }),
+      caller.withdrawConsent({ id: g.id, reason: "racer B" }),
+    ]);
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(true);
+    const flags = [r1, r2].map(r => Boolean((r as any).alreadyWithdrawn));
+    expect(flags.sort()).toEqual([false, true]); // exactly one winner
+    const winner = (r1 as any).alreadyWithdrawn ? r2 : r1;
+    const loser = (r1 as any).alreadyWithdrawn ? r1 : r2;
+    const [row] = (await rawRows(USER_L)).filter(x => x.id === g.id);
+    expect(["racer A", "racer B"]).toContain(row.withdrawal_reason);
+    // The loser's idempotent response echoes the winner's reason.
+    expect((loser as any).withdrawalReason).toBe(row.withdrawal_reason);
+    expect(new Date((loser as any).revokedAt).getTime()).toBe(
+      new Date(row.revoked_at).getTime()
+    );
+    expect((winner as any).alreadyWithdrawn).toBeUndefined();
+  });
+
+  it("expiresAt now+999ms is rejected (inside the 1000ms skew margin)", async () => {
+    const USER_M = 9113;
+    await expect(
+      caller.grantConsent({
+        userId: USER_M,
+        consentType: "marketing",
+        expiresAt: new Date(Date.now() + 999),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await rawRows(USER_M)).toHaveLength(0);
+  });
+
+  it("expiresAt now+5s is accepted (outside the skew margin)", async () => {
+    const USER_N = 9114;
+    const r = await caller.grantConsent({
+      userId: USER_N,
+      consentType: "marketing",
+      expiresAt: new Date(Date.now() + 5000),
+    });
+    expect(r.granted).toBe(true);
+    expect(r.expiresAt).toBeTruthy();
+    const rows = await rawRows(USER_N);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].revoked_at).toBeNull();
+  });
+});
