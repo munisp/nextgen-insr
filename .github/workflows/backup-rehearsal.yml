@@ -13,7 +13,14 @@ on:
 jobs:
   rehearsal:
     name: pg_dump / pg_restore round-trip rehearsal
-    runs-on: ubuntu-latest
+    # 2026-11-25 (W15): pinned to ubuntu-24.04. ubuntu-latest rolled to
+    # ubuntu-26.04 ("resolute") on/after 2026-10-31, whose apt repos no longer
+    # carry postgresql-client-16 (26.04 ships PostgreSQL 18), so the
+    # "Install PostgreSQL 16 client tools" step failed with
+    # "E: Unable to locate package postgresql-client-16" (exit 100).
+    # 24.04 (noble) ships postgresql-client-16, matching the postgres:16
+    # service image pinned below. Revisit when bumping the service image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:
