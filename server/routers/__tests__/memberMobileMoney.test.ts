@@ -125,20 +125,30 @@ async function createTablesAndSeed() {
   // (Airtel Money, pending_provider disclosed). Plus a caller-phone row
   // WITHOUT a provider key (not mobile-money — must be excluded), and
   // foreign-phone mobile-money rows (must never appear).
+  // 2026-11-25 (W14): time-bomb fixture repair — hardcoded 2026-09-25..28
+  // createdAt dates aged out of mySummary's default 30-day rolling window,
+  // so the summary tests went to zero rows. Converted to now-relative
+  // timestamps; relative ordering (MM001OK newest … NOTMM01 oldest; foreign
+  // row newest) and all assertion counts are preserved exactly.
+  const D2 = new Date(Date.now() - 2 * 864e5).toISOString();
+  const D3 = new Date(Date.now() - 3 * 864e5).toISOString();
+  const D4 = new Date(Date.now() - 4 * 864e5).toISOString();
+  const D5 = new Date(Date.now() - 5 * 864e5).toISOString();
+  const D2_LATER = new Date(Date.now() - 2 * 864e5 + 3600e3).toISOString();
   await db.execute(sql`
     INSERT INTO transactions
       (ref, "agentId", type, amount, fee, "customerPhone", status, metadata, "createdAt")
     VALUES
       ('MM001OK', 10, 'Cash In', '5000.00', '0.00', ${CALLER_PHONE}, 'success',
-       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, '2026-09-28T10:00:00Z'),
+       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, ${D2}),
       ('MM002OK', 10, 'Cash Out', '2000.00', '0.00', ${CALLER_PHONE}, 'success',
-       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, '2026-09-27T10:00:00Z'),
+       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, ${D3}),
       ('MM003PD', 10, 'Cash In', '1500.00', '0.00', ${CALLER_PHONE}, 'pending',
-       '{"provider":"Airtel Money","providerStatus":"pending_provider"}'::json, '2026-09-26T10:00:00Z'),
+       '{"provider":"Airtel Money","providerStatus":"pending_provider"}'::json, ${D4}),
       ('NOTMM01', 10, 'Bill Payment', '999.00', '0.00', ${CALLER_PHONE}, 'success',
-       '{"biller":"IKEDC"}'::json, '2026-09-25T10:00:00Z'),
+       '{"biller":"IKEDC"}'::json, ${D5}),
       ('MMFORGN1', 11, 'Cash In', '7777.00', '0.00', ${FOREIGN_PHONE}, 'success',
-       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, '2026-09-28T11:00:00Z')`);
+       '{"provider":"MTN MoMo","providerStatus":"settled"}'::json, ${D2_LATER})`);
 }
 
 beforeAll(async () => {

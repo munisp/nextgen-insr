@@ -117,25 +117,36 @@ async function createTablesAndSeed() {
   // pending_provider disclosed), 1 failed (failureReason verbatim). Plus a
   // caller-phone NON-airtime row (must be excluded) and a foreign-phone
   // airtime row (must never appear).
+  // 2026-11-25 (W14): time-bomb fixture repair — hardcoded 2026-09-25..28
+  // createdAt dates aged out of mySummary's default 30-day rolling window
+  // (server/routers/memberAirtime.ts:180), so the summary tests went to
+  // zero rows. Converted to now-relative timestamps; relative ordering
+  // (AT001OK newest, then AT002PD, AT003FL, NOTAT01; foreign row newest)
+  // and all assertion counts are preserved exactly.
+  const D2 = new Date(Date.now() - 2 * 864e5).toISOString();
+  const D3 = new Date(Date.now() - 3 * 864e5).toISOString();
+  const D4 = new Date(Date.now() - 4 * 864e5).toISOString();
+  const D5 = new Date(Date.now() - 5 * 864e5).toISOString();
+  const D2_LATER = new Date(Date.now() - 2 * 864e5 + 3600e3).toISOString();
   await db.execute(sql`
     INSERT INTO transactions
       (ref, "agentId", type, amount, "customerPhone", status, "failureReason", metadata, "createdAt")
     VALUES
       ('AT001OK', 10, 'Airtime', '1000.00', ${CALLER_PHONE}, 'success', NULL,
        '{"network":"MTN","phoneNumber":"09000000001","providerStatus":"fulfilled"}'::json,
-       '2026-09-28T10:00:00Z'),
+       ${D2}),
       ('AT002PD', 10, 'Airtime', '500.00', ${CALLER_PHONE}, 'pending', NULL,
        '{"network":"Glo","phoneNumber":"09000000001","providerStatus":"pending_provider"}'::json,
-       '2026-09-27T10:00:00Z'),
+       ${D3}),
       ('AT003FL', 10, 'Airtime', '200.00', ${CALLER_PHONE}, 'failed', 'provider rejected vend',
        '{"network":"Airtel","phoneNumber":"09000000001","providerStatus":"rejected"}'::json,
-       '2026-09-26T10:00:00Z'),
+       ${D4}),
       ('NOTAT01', 10, 'Cash In', '999.00', ${CALLER_PHONE}, 'success', NULL,
        '{"provider":"MTN MoMo","providerStatus":"settled"}'::json,
-       '2026-09-25T10:00:00Z'),
+       ${D5}),
       ('ATFORGN1', 11, 'Airtime', '5000.00', ${FOREIGN_PHONE}, 'success', NULL,
        '{"network":"MTN","phoneNumber":"09000000002","providerStatus":"fulfilled"}'::json,
-       '2026-09-28T11:00:00Z')`);
+       ${D2_LATER})`);
 }
 
 beforeAll(async () => {
