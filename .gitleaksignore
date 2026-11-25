@@ -1,0 +1,32 @@
+# gitleaks fingerprint allowlist — historical findings only.
+# 2026-11-25 (W15): Scheduled "Security" workflow (gitleaks-action@v3, which
+# installs latest gitleaks, 8.24.3 since mid-Oct 2026) scans --full-history
+# --all and fails on 9 historical generic-api-key findings that PR/push runs
+# never see (the action limits PR/push scans to the pushed commit range via
+# --log-opts). History rewrite of main is forbidden, so the reviewed findings
+# are suppressed by exact fingerprint. Verified against scheduled run
+# 45104547606 (2026-11-23) job 137462705582 logs.
+#
+# Entries 1-2: k8s/charts/apisix/values.yaml — edd1c9f034335f136f87ad84b625c8f1
+# is the PUBLICLY DOCUMENTED Apache APISIX default admin key (dev default, was
+# labelled "default dev key" in-file). Removed from the chart at HEAD (now read
+# from a Kubernetes Secret via secretKeyRef). False positive (known default).
+c8dd9c303ecbb9092f1950320ba77840d3857d4a:k8s/charts/apisix/values.yaml:generic-api-key:20
+c8dd9c303ecbb9092f1950320ba77840d3857d4a:k8s/charts/apisix/values.yaml:generic-api-key:26
+# Entries 3-4: server/lib/envValidation.ts — same published APISIX default key,
+# intentionally listed in KNOWN_DEFAULT_SECRETS as a denylist value ("published
+# APISIX default admin key"). Intentional non-secret; false positive.
+30d01148fab27e38a3534b3e1c20aa78d584a343:server/lib/envValidation.ts:generic-api-key:300
+fe74816ac2f48ae5f3327110699076e1a923f53f:server/lib/envValidation.ts:generic-api-key:300
+# Entries 5-7: customer-portal-full/server/seed-comprehensive.mjs — synthetic
+# broker seed rows (brk_live_* strings in seed data); the file no longer exists
+# at HEAD (deleted). Seed/demo data, not deployed credentials. Flag for periodic
+# review; rotate only if any of these were ever used against a live broker.
+68a1ae3ce9909bfb110c1efa13f4b220f10a1da4:customer-portal-full/server/seed-comprehensive.mjs:generic-api-key:1072
+68a1ae3ce9909bfb110c1efa13f4b220f10a1da4:customer-portal-full/server/seed-comprehensive.mjs:generic-api-key:1074
+68a1ae3ce9909bfb110c1efa13f4b220f10a1da4:customer-portal-full/server/seed-comprehensive.mjs:generic-api-key:1075
+# Entries 8-9: kyc-kyb-system/.../gateway/apisix.go — same published APISIX
+# default admin key used as the dev X-API-KEY default. False positive (known
+# default); follow-up recommended to source it from env at HEAD.
+5360d0bd2cf07c9762e1e172d0dd84dc944933a0:kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:194
+5360d0bd2cf07c9762e1e172d0dd84dc944933a0:kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:265
