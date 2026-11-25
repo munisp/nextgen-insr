@@ -69,3 +69,6 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 2026-11-25 (W16): pin gitleaks binary — floating latest (8.24.x) introduced
+          # rule drift that flagged 9 historical false positives on full-history scans.
+          GITLEAKS_VERSION: 8.24.3
