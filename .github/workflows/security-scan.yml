@@ -17,7 +17,7 @@ jobs:
   # ── Go Static Analysis: vet + gosec ─────────────────────────────────
   go-static-analysis:
     name: Go Static Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 20
     strategy:
       matrix:
@@ -65,7 +65,9 @@ jobs:
         run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8  # v1: workflow config uses v1-only linters (go, deadcode, varcheck...) removed/renamed in v2
 
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+        # 2026-11-26 (W22): pinned — latest release v2.30.0, published 2026-10-23
+        # (github.com/securego/gosec/releases/tag/v2.30.0)
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
 
       - name: go vet
         working-directory: ${{ matrix.module }}
@@ -93,7 +95,7 @@ jobs:
   # ── Dependency Vulnerability Scanning ─────────────────────────────────
   dependency-audit:
     name: Dependency Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +106,9 @@ jobs:
           cache: true
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # 2026-11-26 (W22): pinned — proxy.golang.org/golang.org/x/vuln/@latest =
+        # v1.10.0 (tag refs/tags/v1.10.0, 2026-11-17)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
       - name: govulncheck (Go services)
         run: |
@@ -130,7 +134,8 @@ jobs:
 
       - name: pip safety check (Python services)
         run: |
-          pip install safety
+          # 2026-11-26 (W22): safety pinned — PyPI info.version = 3.8.1
+          pip install safety==3.8.1
           for svc in ifrs17-engine mlops-governance; do
             if [ -f "$svc/requirements.txt" ]; then
               echo "=== safety check: $svc ==="
@@ -141,13 +146,14 @@ jobs:
   # ── SAST: Semgrep ────────────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Semgrep
-        run: pip install semgrep
+        # 2026-11-26 (W22): pinned — PyPI info.version = 1.187.0
+        run: pip install semgrep==1.187.0
 
       - name: Run Semgrep SAST
         run: |
@@ -173,7 +179,7 @@ jobs:
   # ── Secret Scanning: gitleaks ────────────────────────────────────────
   secret-scan:
     name: Secret Scanning
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -219,14 +225,15 @@ jobs:
   # ── License Compliance ───────────────────────────────────────────────
   license-check:
     name: License Compliance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: License checker (frontend)
         run: |
-          npx --yes license-checker --production --summary --failOn "AGPL-3.0|GPL-3.0|SSPL-1.0" 2>&1 || echo "::warning::license-checker found issues"
+          # 2026-11-26 (W22): license-checker pinned — npm registry /license-checker/latest = 25.0.1
+          npx --yes license-checker@25.0.1 --production --summary --failOn "AGPL-3.0|GPL-3.0|SSPL-1.0" 2>&1 || echo "::warning::license-checker found issues"
 
       - name: npm audit (known-vulnerable packages)
         run: |
@@ -235,7 +242,12 @@ jobs:
 
       - name: Check Go licenses
         run: |
-          go install github.com/google/go-licenses@latest
+          # 2026-11-26 (W22): pinned to v1.6.0 — what @latest resolves to today
+          # (proxy.golang.org/github.com/google/go-licenses/@latest = v1.6.0,
+          # 2023-01-16). Root module is the v1 line; the v2 module
+          # (github.com/google/go-licenses/v2, latest v2.0.1 2025-09-08) is a
+          # different CLI — upgrading it is out of scope for a pure pin.
+          go install github.com/google/go-licenses@v1.6.0
           FOUND_PROHIBITIVE=0
           for dir in $(find . -maxdepth 1 -name "go.mod" -exec dirname {} \; | head -10); do
             echo "=== $dir ==="
@@ -252,7 +264,9 @@ jobs:
 
       - name: pip license check (Python services)
         run: |
-          pip install license-expression pip-licenses
+          # 2026-11-26 (W22): pinned — PyPI info.version: license-expression 30.4.4,
+          # pip-licenses 5.5.5
+          pip install license-expression==30.4.4 pip-licenses==5.5.5
           for svc in ifrs17-engine mlops-governance; do
             if [ -f "$svc/requirements.txt" ]; then
               echo "=== pip-licenses: $svc ==="
@@ -263,7 +277,7 @@ jobs:
   # ── Trivy: container & filesystem scan ───────────────────────────────
   trivy-scan:
     name: Trivy Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

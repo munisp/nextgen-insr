@@ -13,7 +13,7 @@ on:
 
 jobs:
   go-services:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         service:
@@ -45,7 +45,7 @@ jobs:
     # Root-layout Go services (main.go at service root): build, vet, and run
     # their real unit tests. W5b: pbac-engine, dapr-sidecar. W5d (F-11/A1):
     # connectivity + platform services (sprint73/sprint86 contract layout).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         service:
@@ -78,7 +78,7 @@ jobs:
           go test ./...
 
   python-services:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         service:
@@ -96,14 +96,15 @@ jobs:
           pip install -r requirements.txt
       - name: Lint
         run: |
-          pip install ruff
+          # 2026-11-26 (W22): ruff pinned — PyPI info.version = 0.17.6
+          pip install ruff==0.17.6
           cd services/python/${{ matrix.service }}
           ruff check app/ --ignore E501
 
   python-root-services:
     # Root-layout Python services (main.py / *_service.py at service root):
     # install real deps, compile-check, and run their real unit tests.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         include:
@@ -161,10 +162,18 @@ jobs:
           python -m unittest $(basename ${{ matrix.test }} .py) -v
 
   rust-services:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        # 2026-11-26 (W22): was floating @stable branch. Action has no release
+        # tags (branch-based; sole tag v1 is stale) — pinned to stable-branch HEAD
+        # commit 39008827e6b4319a349e9a42dfc90579dd25f1ca (dtolnay, 2026-11-15).
+        # toolchain pinned explicitly so the Rust version is deterministic too:
+        # 1.100.0 = current stable per static.rust-lang.org channel-rust-stable.toml
+        # (channel date 2026-11-12, pkg.rust version "1.100.0 (0ef1bc386 2026-11-09)").
+        with:
+          toolchain: '1.100.0'
       - name: Build realtime-events
         run: |
           cd services/rust/realtime-events
@@ -187,7 +196,7 @@ jobs:
 
   mojaloop-connector:
     # Stdlib-only Python service: compile-check plus its real unittest suite.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -204,7 +213,7 @@ jobs:
 
   # W5d (F-11/A1): connectivity + resilience Rust services
   rust-services-w5d:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         service:
@@ -215,7 +224,12 @@ jobs:
           - ransomware-guard
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        # 2026-11-26 (W22): was floating @stable branch — pinned to stable-branch
+        # HEAD 39008827e6b4319a349e9a42dfc90579dd25f1ca (2026-11-15); toolchain
+        # pinned to Rust 1.100.0 (channel-rust-stable.toml, 2026-11-12).
+        with:
+          toolchain: '1.100.0'
       - name: Check ${{ matrix.service }}
         run: |
           cd services/rust/${{ matrix.service }}
@@ -226,7 +240,7 @@ jobs:
           cargo test
 
   typescript-services:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v7
@@ -241,7 +255,7 @@ jobs:
   # W5d (F-11/A1): python connectivity/cache/security services use
   # root-layout main.py (sprint73/sprint86 contract), not app/
   python-services-w5d:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     strategy:
       matrix:
         service:
@@ -261,12 +275,13 @@ jobs:
           pip install -r requirements.txt
       - name: Lint
         run: |
-          pip install ruff
+          # 2026-11-26 (W22): ruff pinned — PyPI info.version = 0.17.6
+          pip install ruff==0.17.6
           cd services/python/${{ matrix.service }}
           ruff check . --ignore E501
 
   docker-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     needs: [go-services, go-root-services, python-services, python-services-w5d]
     strategy:
       matrix:
