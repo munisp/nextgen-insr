@@ -104,6 +104,33 @@ async function flush(turns = 10) {
   for (let i = 0; i < turns; i++) await new Promise(r => setImmediate(r));
 }
 
+// 2026-11-26 (W21): initRedisPubSub is fire-and-forget at module load and its
+// `await import("redis")` resolves through the vitest module runner on a
+// machine-speed-dependent schedule (cold transform on shared CI runners), so
+// a fixed flush() RACED it — PR #325 CI (REDIS_URL set ambiently, slower
+// workers) saw boot/re-arm client pairs land one assertion or even one TEST
+// late (line 183 got 2-not-4; line 201 got 2-not-0 from the previous test's
+// straggler; line 240 read instances[0] before it existed). Poll on REAL
+// setTimeout + process.hrtime (only Date is faked via toFake:["Date"], so
+// both are real clocks) until the init's observable end-state, then run the
+// UNCHANGED contract assertions. Deterministic at any runner speed; if the
+// condition never materializes the original expect below still fails with
+// the same contract evidence. Absence assertions (0 clients when disabled,
+// throttled re-arm) stay on bounded flush(): with every prior init provably
+// settled before the test ends, no straggler can add clients later.
+async function waitUntil(cond: () => boolean, timeoutMs = 5000) {
+  const deadlineNs = process.hrtime.bigint() + BigInt(timeoutMs) * 1_000_000n;
+  while (!cond()) {
+    if (process.hrtime.bigint() > deadlineNs) return; // let the expect below report
+    await new Promise(r => setTimeout(r, 5)); // real timer — Date-only fake
+  }
+}
+
+// 2026-11-26 (W21): fully-settled end-state of a boot/re-arm init whose
+// connects were forced to fail — both clients created AND both disposed.
+const bootFailureSettled = () =>
+  h.instances.length === 2 && h.instances.every(c => c.disconnectCount === 1);
+
 async function freshModule() {
   vi.resetModules();
   const mod = await import("./lib/realtimeNotifications");
@@ -146,6 +173,7 @@ describe("realtimeNotifications W21 — failed initial connect does not poison s
     process.env.REDIS_URL = "redis://fake:6379";
     h.connectError = new Error("connect ECONNREFUSED");
     const mod = await freshModule();
+    await waitUntil(bootFailureSettled); // 2026-11-26 (W21): see helper note
 
     // Boot init failed: 2 clients created, BOTH disposed, none half-open.
     expect(h.instances).toHaveLength(2);
@@ -166,6 +194,7 @@ describe("realtimeNotifications W21 — failed initial connect does not poison s
     process.env.REDIS_URL = "redis://fake:6379";
     h.connectError = new Error("boot-time blip");
     const mod = await freshModule();
+    await waitUntil(bootFailureSettled); // 2026-11-26 (W21): no stragglers
     expect(h.instances).toHaveLength(2); // failed boot pair
 
     // Inside the retry window: publish re-arm is throttled, no new clients.
@@ -177,7 +206,14 @@ describe("realtimeNotifications W21 — failed initial connect does not poison s
     h.connectError = null;
     vi.setSystemTime(T0.getTime() + RETRY_INTERVAL_MS + 1);
     await mod.publishNotification(makeNotification() as any); // still in-memory…
-    await flush(); // …but the re-armed init has now connected
+    // 2026-11-26 (W21): wait for the re-armed init to fully connect instead
+    // of racing it with a fixed flush() (the PR #325 CI failure mode).
+    await waitUntil(
+      () =>
+        h.instances.length === 4 &&
+        h.instances[2]?.isReady === true &&
+        h.instances[3]?.isReady === true
+    );
 
     // Fresh clients (2 more), previous pair was disposed, new pair is ready.
     expect(h.instances).toHaveLength(4);
@@ -207,6 +243,13 @@ describe("realtimeNotifications W21 — 'error' events are logged, not fatal", (
   it("publisher and subscriber have 'error' listeners; emitting 'error' does not throw and does not break publishing", async () => {
     process.env.REDIS_URL = "redis://fake:6379";
     const mod = await freshModule(); // healthy boot
+    // 2026-11-26 (W21): settle the healthy boot pair before asserting.
+    await waitUntil(
+      () =>
+        h.instances.length === 2 &&
+        h.instances[0]?.isReady === true &&
+        h.instances[1]?.isReady === true
+    );
     expect(h.instances).toHaveLength(2);
     const [publisher, subscriber] = h.instances;
     expect(publisher.isReady).toBe(true);
@@ -236,6 +279,7 @@ describe("realtimeNotifications W21 — 'error' events are logged, not fatal", (
     process.env.REDIS_URL = "redis://fake:6379";
     h.connectError = new Error("connect ECONNREFUSED");
     await freshModule();
+    await waitUntil(bootFailureSettled); // 2026-11-26 (W21): no stragglers
     // Both disposed clients had listeners attached before connect was attempted.
     expect(h.instances[0].listenerCount("error")).toBeGreaterThan(0);
     expect(h.instances[1].listenerCount("error") > 0).toBe(true);
