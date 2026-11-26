@@ -35,21 +35,35 @@ let _directClient: RedisType | null = null;
 async function getDirectClient(): Promise<RedisType | null> {
   if (!REDIS_URL) return null;
   if (_directClient) return _directClient;
+  let pending: RedisType | null = null;
   try {
     const { default: Redis } = await import("ioredis");
-    _directClient = new Redis(REDIS_URL, {
+    pending = new Redis(REDIS_URL, {
       lazyConnect: true,
       maxRetriesPerRequest: 2,
       connectTimeout: 3000,
       enableOfflineQueue: false,
     }) as RedisType;
-    _directClient.on("error", (err: Error) => {
+    pending.on("error", (err: Error) => {
       logger.error("[Redis] Connection error:: " + err.message);
     });
-    await _directClient.connect();
+    await pending.connect();
+    // 2026-11-26 (W19): cache the singleton only AFTER connect() succeeds.
+    // Previously _directClient was assigned before `await connect()`; a failed
+    // connect left a permanently dead client (status "reconnecting"/"end")
+    // that every later call reused, turning one transient connect failure
+    // into persistent command rejections on every cache operation.
+    _directClient = pending;
     logger.info("[Redis] Direct connection established →: " + REDIS_URL);
-    return _directClient;
+    return pending;
   } catch (err) {
+    // 2026-11-26 (W19): dispose the half-open client so the next call retries
+    // with a fresh socket instead of leaking one stuck in "reconnecting".
+    try {
+      pending?.disconnect();
+    } catch {
+      // best-effort cleanup — a failed disconnect must not mask the cause
+    }
     logger.warn("[Redis] Could not connect directly:: " + (err as Error).message);
     return null;
   }
@@ -91,7 +105,15 @@ async function proxyPost(path: string, body: unknown): Promise<unknown> {
 export async function cacheGet(key: string): Promise<string | null> {
   try {
     const client = await getDirectClient();
-    if (client) return client.get(key);
+    // 2026-11-26 (W19): `await` here is load-bearing — do NOT "simplify" to
+    // `return client.get(key)`. ioredis rejects the command promise
+    // ASYNCHRONOUSLY (Redis.js sendCommand → command.reject, e.g. "Stream
+    // isn't writeable and enableOfflineQueue options is false") rather than
+    // throwing synchronously, and a bare `return <promise>` lets that
+    // rejection escape this try/catch to the caller (CI job 139493405438,
+    // proven against ioredis@5.11.1). Awaiting keeps the fail-open contract:
+    // cache errors degrade to null so callers fall back to the DB.
+    if (client) return await client.get(key);
     const data = (await proxyGet(`/v1/cache/${encodeURIComponent(key)}`)) as {
       value: string | null;
     };
