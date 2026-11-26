@@ -45,7 +45,7 @@ jobs:
   # ── Quality gates (mirrors ci.yml: eslint ratchet, typecheck, build) ───────
   quality:
     name: Lint, Typecheck & Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
   # ── Tests against real middleware ──────────────────────────────────────────
   test:
     name: Vitest (postgres + redis)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 25
     needs: quality
     services:
@@ -143,7 +143,7 @@ jobs:
   # PUSH is gated on the operator opt-in vars.DEPLOY_ENABLED == 'true'.
   image:
     name: Build & Push Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 30
     needs: test
     steps:
@@ -192,7 +192,7 @@ jobs:
   # Gated on the same operator opt-in; skips loudly when disabled.
   deploy:
     name: Deploy (k8s rolling update)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     needs: image
     if: vars.DEPLOY_ENABLED == 'true'
@@ -232,7 +232,7 @@ jobs:
   # ── Loud skip notice — deploy never fails or skips silently ───────────────
   deploy-disabled-notice:
     name: NOTICE — deploy disabled
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     needs: image
     if: vars.DEPLOY_ENABLED != 'true'
     steps:

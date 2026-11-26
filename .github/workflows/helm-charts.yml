@@ -21,7 +21,7 @@ env:
 jobs:
   lint-and-render:
     name: helm lint + helm template (all 14 charts)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

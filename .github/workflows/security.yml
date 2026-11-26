@@ -13,7 +13,7 @@ on:
 jobs:
   audit:
     name: Dependency audit (prod deps, fail on High+)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +47,8 @@ jobs:
           "
 
       - name: Generate SBOM (CycloneDX)
-        run: pnpm dlx @cyclonedx/cdxgen -t js -o sbom.ci.json
+        # 2026-11-26 (W22): cdxgen pinned — npm registry /@cyclonedx/cdxgen/latest = 12.9.3
+        run: pnpm dlx @cyclonedx/cdxgen@12.9.3 -t js -o sbom.ci.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
@@ -58,7 +59,7 @@ jobs:
 
   secrets:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     steps:
       - name: Checkout
         uses: actions/checkout@v4

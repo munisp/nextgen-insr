@@ -19,7 +19,7 @@ jobs:
   # ── Go Services: build + test ────────────────────────────────────────
   go-services:
     name: Go Services
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -112,7 +112,7 @@ jobs:
   # ── Python Services: test + lint ─────────────────────────────────────
   python-services:
     name: Python / ML Services
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -131,7 +131,9 @@ jobs:
         working-directory: ${{ matrix.service }}
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx ruff
+          # 2026-11-26 (W22): pinned — PyPI info.version: pytest 9.2.0,
+          # pytest-asyncio 1.5.0, httpx 0.28.1, ruff 0.17.6
+          pip install pytest==9.2.0 pytest-asyncio==1.5.0 httpx==0.28.1 ruff==0.17.6
 
       - name: ruff lint
         working-directory: ${{ matrix.service }}
@@ -153,7 +155,7 @@ jobs:
   # ── TypeScript: type-check + build ────────────────────────────────────
   typescript:
     name: TypeScript (Type Check + Build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -191,7 +193,7 @@ jobs:
   # ── Frontend: npm test ────────────────────────────────────────────────
   frontend-tests:
     name: Frontend Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 15
     needs: typescript
     steps:
@@ -213,7 +215,7 @@ jobs:
   # ── Shared Go Packages: build ─────────────────────────────────────────
   shared-packages:
     name: Shared Go Packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -234,7 +236,7 @@ jobs:
   # ── Security Scan ────────────────────────────────────────────────────
   security:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 2026-11-26 (W22): pinned from ubuntu-latest (rolling to ubuntu-26.04 — W15 failure class); no apt-installed packages in this job, safe on noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
