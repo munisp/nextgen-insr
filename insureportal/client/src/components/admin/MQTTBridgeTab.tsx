@@ -83,12 +83,23 @@ export function MQTTBridgeTab() {
   });
   const publishTestMutation = trpc.mqttBridge.publishTest.useMutation({
     onSuccess: r => {
+      // 2026-11-27 (W26): the wire type marks every result field optional;
+      // narrow with defaults into the required state shape. The server
+      // (server/routers/mqttBridge.ts publishTest) always returns all four
+      // fields on both success and failure paths, so the defaults never fire
+      // and rendered output is unchanged.
+      const result = {
+        success: r.success ?? false,
+        latencyMs: r.latencyMs ?? 0,
+        topic: r.topic ?? "",
+        message: r.message ?? "",
+      };
       if (r.success) {
         toast.success(`Published to '${r.topic}' in ${r.latencyMs}ms`);
-        setLastPublishResult(r);
+        setLastPublishResult(result);
       } else {
         toast.error(`Publish failed: ${r.message}`);
-        setLastPublishResult(r);
+        setLastPublishResult(result);
       }
     },
     onError: e => toast.error(`Publish failed: ${e.message}`),

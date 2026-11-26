@@ -907,7 +907,19 @@ function SettlementPanel() {
     onMutate: () => setRunning(true),
     onSuccess: data => {
       setRunning(false);
-      setLastResult(data);
+      // 2026-11-27 (W26): the wire type marks every field optional (untyped
+      // JSON over the wire, transformer not negotiated) and runAt crosses as
+      // a string; narrow with defaults into the required state shape. The
+      // server (server/routers/settlement.ts runNow -> SettlementResult)
+      // always returns all fields, so the defaults never fire, and the
+      // render path already wraps runAt in new Date(...), so reconstructing
+      // the Date here leaves rendered output unchanged.
+      setLastResult({
+        agentCount: data.agentCount ?? 0,
+        smsSent: data.smsSent ?? 0,
+        errors: data.errors ?? [],
+        runAt: data.runAt ? new Date(data.runAt) : new Date(),
+      });
       toast.success(
         `Settlement complete — ${data.agentCount} agents processed, ${data.smsSent} SMS sent${
           data.errors.length > 0 ? ` (${data.errors.length} errors)` : ""
