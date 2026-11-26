@@ -63,6 +63,17 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=3072
 
+      # 2026-11-27 (W25): hard build gate. Before the W25 T1 port, the
+      # client build could not succeed at all — 309 files imported
+      # @/components/ui/* but client/src/components/ui/ did not exist in
+      # the tree. With the 41 components + hooks/useMobile.tsx ported and
+      # the missing deps added, `npm run build` (vite build + esbuild
+      # server bundle, exactly the production build) was verified to exit
+      # 0 on the regenerated lockfile; this step keeps it that way.
+      - name: Build (vite client + esbuild server bundle)
+        working-directory: insureportal
+        run: npm run build
+
   # 2026-11-27 (W24): hard test gate. `npm test` (vitest run) in
   # insureportal/ was RED on main and ungated: the W23 fail-closed Permify
   # hardening broke procedure-level tests that assumed a reachable

@@ -1,19 +1,18 @@
 {
-  "generated": "2026-11-26",
+  "generated": "2026-11-27",
   "command": "tsc --noEmit --pretty false (cwd: insureportal/, typescript 5.9.3 from insureportal/package-lock.json)",
   "tsconfig": "insureportal/tsconfig.json",
-  "errorCount": 1345,
+  "errorCount": 464,
   "byCode": {
-    "TS2307": 883,
-    "TS2339": 436,
+    "TS2339": 438,
     "TS2551": 9,
     "TS1117": 5,
-    "TS2503": 3,
     "TS2304": 3,
+    "TS2503": 3,
     "TS2724": 2,
     "TS2305": 2,
     "TS2688": 1,
     "TS2322": 1
   },
-  "note": "InsurePortal typecheck ratchet (2026-11-26, W23). Measured on a faithful `npm ci --no-audit --no-fund` install of insureportal/package-lock.json (lockfileVersion 3, 937 packages, typescript 5.9.3) run twice: `node --max-old-space-size=3072 node_modules/typescript/bin/tsc --noEmit --pretty false` exits 1 with exactly 1345 'error TS' lines both times. This is REAL pre-existing source debt, not a husked-node_modules artifact: 880 of 883 TS2307s are client imports of '@/components/ui/*' (client/src/components/ui/ does not exist in the tree — never committed); server TS2307s include '@temporalio/client'/'@temporalio/worker' (imported by server/temporal*.ts, not declared in insureportal/package.json); TS2339s are dominated by tRPC client property accesses. The debt is intentionally NOT fixed in W23 — the ratchet only prevents regressions while scripts/check-insureportal-parse.mjs hard-fails on SyntaxError-class defects (the W22-B gap). The baseline may only DECREASE; lowering requires a dated comment in the same change. Regenerate by running `node scripts/check-insureportal-tsc-baseline.mjs` and updating errorCount/byCode to the printed values."
+  "note": "InsurePortal typecheck ratchet. 2026-11-27 (W25): RATCHETED DOWN 1345 -> 464 (measured, -881) after tranches T1+T2 of the W24-C burn-down plan (w24c-tsc-scoping.md): T1 ported the 41 missing client/src/components/ui/* components + client/src/hooks/useMobile.tsx byte-exact from the main-repo client and added 4 missing @radix-ui deps; T2 added @temporalio/client+worker (the only @temporalio/* packages imported by insureportal/server), @mediapipe/tasks-vision, jsqr, streamdown, and ported client/src/contexts/ThemeContext.tsx and client/src/_core/hooks/useAuth.ts (+ getLogoutUrl in client/src/const.ts; the route is served by server/_core/keycloakAuth.ts). TS2307 is fully eliminated (883 -> 0). Measured on a faithful regenerated lockfile: `npm install --no-audit --no-fund` then `rm -rf node_modules && npm ci --no-audit --no-fund` (exit 0), then `node --max-old-space-size=3072 node_modules/typescript/bin/tsc --noEmit --pretty false` -> exactly 464 'error TS' lines. The 2 TS2339 above the pre-existing 436 live in the newly ported _core/hooks/useAuth.ts and are the same AnyRouter collision-union class as the rest (trpc.useUtils/trpc.auth); they clear with tranche T3 (AnyRouter -> AppRouter), same as the other 436. Remaining debt is unchanged pre-existing debt (tRPC AnyRouter collision union, mock-data duplicate keys, google.maps types, NotificationContext exports) — see w24c-tsc-scoping.md sections 4-6. The baseline may only DECREASE; lowering requires a dated comment in the same change. Regenerate by running `node scripts/check-insureportal-tsc-baseline.mjs` and updating errorCount/byCode to the printed values."
 }
