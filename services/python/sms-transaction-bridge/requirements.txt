@@ -1,4 +1,8 @@
-fastapi>=0.104.0
-uvicorn>=0.24.0
-pydantic>=2.5.0
-httpx>=0.25.0
+# 2026-11-26 (W23): >= ranges pinned to == at current-latest (PyPI
+# info.version, verified 2026-11-26). CI installs this file and the runtime
+# Dockerfile installs the same file - floating >= ranges made both build
+# from whatever PyPI served that day (unpinned supply-chain input).
+fastapi==0.165.0
+uvicorn==0.54.0
+pydantic==2.14.4
+httpx==0.28.1

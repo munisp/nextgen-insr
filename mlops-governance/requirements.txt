@@ -5,4 +5,9 @@ scikit-learn==1.4.0
 numpy==1.26.4
 pandas==2.2.0
 shap==0.44.0
-psycopg2-binary>=2.9.0
+# 2026-11-26 (W23): psycopg2-binary >= range pinned to ==2.9.13 (PyPI
+# info.version, verified 2026-11-26) - the floating range was an unpinned
+# supply-chain input for CI (platform-ci.yml, Python 3.11) and the runtime
+# Dockerfile (python:3.12-slim), which installs this same file; 2.9.13 has
+# wheels for both. Existing == pins left as-is.
+psycopg2-binary==2.9.13
