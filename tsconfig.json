@@ -3,9 +3,6 @@
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
     "incremental": true,
-    // 2026-11-25 (W18): keep the incremental cache OUT of node_modules so a
-    // stale/husked install can never poison typecheck results; tsc is the
-    // sole reader/writer of this file, so the relocation has no side effects.
     "tsBuildInfoFile": "./.tsbuildinfo",
     "noEmit": true,
     "module": "ESNext",
