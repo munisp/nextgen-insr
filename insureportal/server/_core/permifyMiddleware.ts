@@ -1,0 +1,427 @@
+/**
+ * permifyMiddleware.ts
+ *
+ * tRPC middleware that enforces Permify RBAC on financial mutations.
+ *
+ * This middleware is injected into the `financialProcedure` builder which
+ * wraps all financial tRPC mutations (fund transfers, premium collection,
+ * claim settlement, commission payouts, float operations, etc.).
+ *
+ * Architecture:
+ *   protectedProcedure (Keycloak JWT auth)
+ *     └── financialProcedure (Permify RBAC + Redis idempotency)
+ *           └── adminFinancialProcedure (admin-only financial ops)
+ *
+ * Permission Matrix:
+ *   Role          | Transactions | Claims | Commissions | Float | Billing
+ *   --------------|--------------|--------|-------------|-------|--------
+ *   admin         | ✅ all       | ✅ all | ✅ all      | ✅    | ✅ all
+ *   supervisor    | ✅ read      | ✅ approve | ✅ view  | ✅ approve | ✅ view
+ *   agent         | ✅ own       | ✅ submit | ✅ view  | ✅ own | ❌
+ *   underwriter   | ❌           | ✅ view | ❌         | ❌    | ❌
+ *   compliance    | ✅ read      | ✅ view | ✅ view    | ✅ view | ✅ view
+ *   regulator     | ✅ read      | ✅ view | ❌         | ❌    | ✅ view
+ *
+ * Fail-closed: if Permify is unavailable, financial mutations are DENIED.
+ * Fail-open: if Permify is unavailable, read-only queries are ALLOWED.
+ *
+ * 2026-11-27 (W25-B): ported byte-exact from the main repo
+ * (server/_core/permifyMiddleware.ts) to close the authz divergence on the
+ * reversal-approval flow — insureportal's transactions.approveReversal /
+ * rejectReversal ran on bare protectedProcedure while the main repo gates
+ * them with financialProcedure (role matrix + Permify financial check).
+ * SINGLE deliberate delta: the main repo calls `permifyCheckCached`
+ * (Redis decision cache). That cache lives inside the main repo's
+ * permify.ts (576 lines: circuit breaker, detailed verdicts, key tracking)
+ * — porting it would mean replacing this repo's own fail-closed Permify
+ * client (W23), a subsystem port explicitly out of scope. The main repo
+ * documents the cache as "behaviorally identical to permifyCheck for every
+ * caller-observable outcome; the only difference is latency", so this port
+ * calls the portal's fail-closed `permifyCheck` directly. Authorization
+ * semantics are unchanged; repeat checks cost one extra HTTP POST.
+ */
+
+import { TRPCError } from "@trpc/server";
+
+import logger from "./logger";
+import { permifyCheck } from "./permify"; // W25-B: see header note (was permifyCheckCached in main)
+import { adminProcedure, protectedProcedure } from "./trpc";
+import { acquireLock, releaseLock } from "../lib/redisClient";
+
+// ── Role-Permission Matrix ─────────────────────────────────────────────────────
+
+type FinancialOperation =
+  | "transfer"
+  | "premium_collect"
+  | "claim_settle"
+  | "commission_pay"
+  | "float_topup"
+  | "float_debit"
+  | "billing_record"
+  | "billing_reconcile"
+  | "reversal"
+  | "refund"
+  | "read";
+
+const ROLE_PERMISSIONS: Record<string, Set<FinancialOperation>> = {
+  admin: new Set([
+    "transfer", "premium_collect", "claim_settle", "commission_pay",
+    "float_topup", "float_debit", "billing_record", "billing_reconcile",
+    "reversal", "refund", "read",
+  ]),
+  super_admin: new Set([
+    "transfer", "premium_collect", "claim_settle", "commission_pay",
+    "float_topup", "float_debit", "billing_record", "billing_reconcile",
+    "reversal", "refund", "read",
+  ]),
+  // L-wave (L-S-5, 2026-09-19): the documented matrix (header comment, lines
+  // above) states supervisors approve claims, but claim_settle was missing —
+  // supervisors can now approve/settle claims as documented. Professional
+  // roles beyond admin/supervisor still require the Keycloak role-mapping
+  // work (users.role cannot carry them) — disclosed, not faked.
+  // 2026-09-19 (L-wave, L-S-4): supervisors hold "refund" so the documented
+  // refund-approval tier (supervisor, ₦5,001–₦100,000 — see disputeRefund.ts
+  // REFUND_TIERS) is actually reachable. Processing still requires SoD vs the
+  // initiating user, enforced inside disputeRefund.processRefund.
+  supervisor: new Set(["float_topup", "commission_pay", "read", "reversal", "claim_settle", "refund"]),
+  agent: new Set(["transfer", "premium_collect", "float_debit", "read"]),
+  underwriter: new Set(["read"]),
+  compliance_officer: new Set(["read"]),
+  regulator: new Set(["read"]),
+  actuary: new Set(["read"]),
+  broker: new Set(["premium_collect", "read"]),
+  claims_adjuster: new Set(["claim_settle", "read"]),
+  billing_admin: new Set(["billing_record", "billing_reconcile", "read"]),
+};
+
+// ── Router-to-Operation Mapping ────────────────────────────────────────────────
+// Maps tRPC procedure paths to the financial operation they perform
+
+export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
+  // Transactions
+  "transactions.create": "transfer",
+  "transactions.initiateTransfer": "transfer",
+  "transactions.processPayment": "transfer",
+  "transactions.reverseTransaction": "reversal",
+  "transactions.reverse": "reversal",
+  "transactions.approveReversal": "reversal",
+  "transactions.rejectReversal": "reversal",
+  // Float
+  "floatManagement.topUp": "float_topup",
+  "floatManagement.debit": "float_debit",
+  "floatManagement.transfer": "transfer",
+  "agentFloatTransfer.initiate": "float_debit",
+  "agentFloatTransfer.approve": "float_topup",
+  "agentBanking.processTransaction": "transfer",
+  "agentBanking.topUpFloat": "float_topup",
+  "agentBanking.requestTopUp": "float_topup",
+  // Premiums
+  "insuranceWorkflows.collectPremium": "premium_collect",
+  "insuranceWorkflows.bindPolicy": "premium_collect",
+  "insuranceWorkflows.payPremium": "premium_collect",
+  "insurancePolicyQuoteManager.purchase": "premium_collect",
+  "premiumTopUp.process": "premium_collect",
+  "premiumTopUp.topUp": "premium_collect",
+  // Claims
+  "insuranceWorkflows.settleClaimPayment": "claim_settle",
+  "insuranceWorkflows.approveClaim": "claim_settle",
+  "insuranceWorkflows.adjudicateClaim": "claim_settle",
+  "insuranceWorkflows.cancelPolicy": "refund",
+  // 2026-09-19 (L-wave, L-S-4): these mappings were previously DEAD —
+  // disputeRefund.processRefund was built on protectedProcedure, so the
+  // "refund" op was never enforced on the real payout path. Both procedures
+  // now run on financialProcedure, which makes these mappings live.
+  "disputeRefund.processRefund": "refund",
+  "disputeRefund.initiateRefund": "refund",
+  "disputeRefund.approveRefund": "refund",
+  // 2026-09-25 (Q-wave Q3): P2P pool surplus distribution is a funds
+  // movement OUT of the pool to members — gated on "refund" (admin/
+  // supervisor), with maker-checker SoD enforced inside the router.
+  "p2pPools.proposeSurplusDistribution": "refund",
+  "p2pPools.approveSurplusDistribution": "refund",
+  "p2pPools.executeSurplusDistribution": "refund",
+  "p2pPools.closePoolPeriod": "claim_settle",
+  // Commissions
+  "commissionPayouts.process": "commission_pay",
+  "commissionPayouts.approve": "commission_pay",
+  "commissionPayouts.reject": "commission_pay",
+  "commissionEngine.payout": "commission_pay",
+  "commissionEngine.approvePayout": "commission_pay",
+  "commissionEngine.triggerBatchPayout": "commission_pay",
+  "commissionEngine.initiateIlpTransfer": "transfer",
+  "commissionEngine.updateTier": "billing_record",
+  "commissionEngine.createTier": "billing_record",
+  "commissionEngine.deleteTier": "billing_record",
+  "commissionEngine.updateSplit": "billing_record",
+  "commissionEngine.createSplit": "billing_record",
+  "commissionEngine.triggerSnapshot": "billing_record",
+  // Merchant payout settlement (DD-AUTH: wired onto financialProcedure)
+  // CRIT-5 (G1 fix-wave, 2026-06): initiatePayout was mapped to "transfer",
+  // which the PLAIN AGENT role holds — any agent-tier user could initiate
+  // merchant payouts. Merchant payouts are staff disbursements and now
+  // require "commission_pay" (admin/supervisor only), matching the rest of
+  // the payout lifecycle below.
+  "merchantPayoutSettlement.initiatePayout": "commission_pay",
+  "merchantPayoutSettlement.approvePayout": "commission_pay",
+  "merchantPayoutSettlement.processPayout": "commission_pay",
+  "merchantPayoutSettlement.completePayout": "commission_pay",
+  // Wallet / savings transfers
+  "agentFloatTransfer.transfer": "float_debit",
+  "savingsProducts.deposit": "transfer",
+  "savingsProducts.withdraw": "transfer",
+  // Billing
+  "billingLedger.record": "billing_record",
+  "billingLedger.reconcile": "billing_reconcile",
+  "billingLedger.recordSplit": "billing_record",
+  // Airtime/Bills
+  "airtimeVending.vend": "transfer",
+  "billPayments.pay": "transfer",
+  // Remittance
+  "remittance.initiate": "transfer",
+  "crossBorderRemittanceHub.send": "transfer",
+  "crossBorderRemittanceHub.initiateTransfer": "transfer",
+  // Merchant
+  "merchantPayments.process": "transfer",
+  "merchantPayments.pay": "transfer",
+  "splitPayments.process": "transfer",
+  "splitPayments.createSplit": "transfer",
+  // Mobile Money
+  "mobileMoney.cashIn": "transfer",
+  "mobileMoney.cashOut": "transfer",
+  // Reversals
+  "transactionReversalWorkflow.initiateReversal": "reversal",
+  "transactionReversalWorkflow.executeReversal": "reversal",
+  "transactionReversalWorkflow.create": "reversal",
+  "transactionReversalWorkflow.review": "reversal",
+  "transactionReversalWorkflow.execute": "reversal",
+  // Reinsurance
+  "reinsuranceTreaty.transferPremium": "billing_record",
+  "insuranceWorkflows.cedePolicyToTreaty": "billing_record",
+  // Loan
+  "agentLoanFacility.disburse": "transfer",
+  "agentLoanFacility.repay": "transfer",
+  "agentLoanFacility.applyLoan": "transfer",
+};
+
+// ── Permify Check Helper ───────────────────────────────────────────────────────
+
+async function checkFinancialPermission(
+  userId: string,
+  userRole: string,
+  operation: FinancialOperation,
+  tenantId: string
+): Promise<{ allowed: boolean; reason: string }> {
+  // 1. Role-based check (fast, no network call)
+  const rolePerms = ROLE_PERMISSIONS[userRole];
+  if (!rolePerms || !rolePerms.has(operation)) {
+    return {
+      allowed: false,
+      reason: `Role '${userRole}' does not have permission for operation '${operation}'`,
+    };
+  }
+
+  // 2. Permify check (fine-grained, tenant-scoped)
+  const entityTypeMap: Record<FinancialOperation, string> = {
+    transfer: "billing_ledger",
+    premium_collect: "policy",
+    claim_settle: "claim",
+    commission_pay: "billing_ledger",
+    float_topup: "billing_ledger",
+    float_debit: "billing_ledger",
+    billing_record: "billing_ledger",
+    billing_reconcile: "billing_ledger",
+    reversal: "billing_ledger",
+    refund: "claim",
+    read: "audit_log",
+  };
+
+  const permissionMap: Record<FinancialOperation, string> = {
+    transfer: "record",
+    premium_collect: "create",
+    claim_settle: "approve",
+    commission_pay: "record",
+    float_topup: "record",
+    float_debit: "record",
+    billing_record: "record",
+    billing_reconcile: "reconcile",
+    reversal: "record",
+    refund: "approve",
+    read: "view",
+  };
+
+  const entityType = entityTypeMap[operation];
+  const permission = permissionMap[operation];
+
+  // 2026-09-19 (P-wave, perf #1): Redis decision cache (45s allow / 10s deny
+  // TTL, invalidated on role writes). Fail-closed preserved: a cache miss or
+  // Redis outage performs the real Permify check; outage/fail-open answers
+  // are never cached.
+  const allowed = await permifyCheck({
+    subjectType: "user",
+    subjectId: userId,
+    entityType,
+    entityId: tenantId,
+    permission,
+  });
+
+  return {
+    allowed,
+    reason: allowed
+      ? "permify_allowed"
+      : `Permify denied: user ${userId} lacks '${permission}' on '${entityType}' in tenant ${tenantId}`,
+  };
+}
+
+// ── Financial Procedure Builder ────────────────────────────────────────────────
+
+/**
+ * financialProcedure — wraps financial mutations with the FULL base chain
+ * (observability → requireUser → requirePermify) plus:
+ *   1. Role-based financial permission check (fast, local, fail-closed)
+ *   2. Permify RBAC check (fail-closed for mutations)
+ *   3. Audit log entry
+ * Revoked-session detection happens upstream in session validation
+ * (server/_core/keycloakAuth.verifySessionJwt checks the token blacklist and
+ * per-user revocation on every request — F6-1), so a session that reaches
+ * this middleware is already revocation-clean.
+ */
+export const financialProcedure = protectedProcedure.use(
+  async ({ ctx, next, path, type }) => {
+    const user = ctx.user;
+    if (!user) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
+
+    // 1. Determine the operation for this procedure path.
+    // AUTH-17: unmapped paths previously defaulted to the weakest op "read".
+    // Mutations on a financialProcedure with no operation mapping are now
+    // DENIED (fail-closed); unmapped read queries keep the "read" op.
+    let operation = ROUTER_OPERATION_MAP[path];
+    if (!operation) {
+      if (type === "mutation") {
+        logger.error({
+          userId: user.id,
+          role: user.role,
+          path,
+        }, "[FinancialProcedure] Unmapped financial mutation — denied (fail-closed)");
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Access denied: no financial operation mapping for '${path}'`,
+        });
+      }
+      operation = "read";
+    }
+    const tenantId =
+      user.tenantId != null
+        ? String(user.tenantId)
+        : (process.env.PERMIFY_TENANT_ID ?? "insureportal");
+
+    // 2. Check financial permission (role + Permify, both fail-closed)
+    const { allowed, reason } = await checkFinancialPermission(
+      String(user.id),
+      user.role ?? "user",
+      operation,
+      tenantId
+    );
+
+    if (!allowed) {
+      logger.warn({
+        userId: user.id,
+        role: user.role,
+        path,
+        operation,
+        tenantId,
+        reason,
+      }, "[FinancialProcedure] Access denied");
+
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Access denied: ${reason}`,
+      });
+    }
+
+    logger.debug({
+      userId: user.id,
+      role: user.role,
+      path,
+      operation,
+    }, "[FinancialProcedure] Access granted");
+
+    return next();
+  }
+);
+
+/**
+ * adminFinancialProcedure — admin-only financial operations
+ * (billing reconciliation, bulk reversals, commission overrides)
+ */
+export const adminFinancialProcedure = adminProcedure.use(
+  async ({ ctx, next, path }) => {
+    const user = ctx.user;
+    if (!user) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
+
+    // Permify check for admin operations (fail-closed)
+    // 2026-09-19 (P-wave, perf #1): cached decision, same fail-closed semantics.
+    const tenantId =
+      user.tenantId != null
+        ? String(user.tenantId)
+        : (process.env.PERMIFY_TENANT_ID ?? "insureportal");
+    const allowed = await permifyCheck({
+      subjectType: "user",
+      subjectId: String(user.id),
+      entityType: "billing_ledger",
+      entityId: tenantId,
+      permission: "reconcile",
+    });
+
+    if (!allowed) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Permify denied admin financial access for user ${user.id} in tenant ${tenantId}`,
+      });
+    }
+
+    return next();
+  }
+);
+
+/**
+ * idempotentFinancialProcedure — financial procedure with Redis idempotency lock
+ * Use for operations that must not be executed twice (transfers, payouts)
+ */
+export const idempotentFinancialProcedure = financialProcedure.use(
+  async (opts) => {
+    const { ctx, next } = opts;
+    const rawInput = "getRawInput" in opts ? await opts.getRawInput() : undefined;
+    const input = rawInput as Record<string, unknown>;
+    const idempotencyKey = (input?.idempotencyKey as string) ?? null;
+
+    if (!idempotencyKey) {
+      return next(); // no idempotency key — proceed without lock
+    }
+
+    const lockKey = `financial:idem:${idempotencyKey}`;
+    const acquired = await acquireLock(lockKey, 30_000); // 30s TTL
+
+    if (!acquired) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `Duplicate request detected: idempotency key '${idempotencyKey}' is already being processed`,
+      });
+    }
+
+    try {
+      return await next();
+    } finally {
+      await releaseLock(lockKey);
+    }
+  }
+);
