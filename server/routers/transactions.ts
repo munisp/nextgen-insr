@@ -1244,6 +1244,10 @@ export const transactionsRouter = router({
           type: transactions.type,
           amount: transactions.amount,
           customerName: transactions.customerName,
+          // 2026-11-27 (W24-B): customerPhone was read by the UI
+          // (client/src/components/admin/SecurityTab.tsx) but never selected,
+          // so the Customer column fell back to "—" for nameless customers.
+          customerPhone: transactions.customerPhone,
           failureReason: transactions.failureReason,
           createdAt: transactions.createdAt,
           agentId: agents.agentId,
