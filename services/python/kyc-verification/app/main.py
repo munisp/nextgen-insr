@@ -19,7 +19,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Annotated
 
@@ -287,7 +287,7 @@ class EventPublisher:
         return self._producer
 
     def publish(self, topic: str, event: dict):
-        event["timestamp"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()  # naive-UTC wire format preserved (DTZ003)
+        event["timestamp"] = datetime.now(UTC).replace(tzinfo=None).isoformat()  # naive-UTC wire format preserved (DTZ003)
         event["service"] = "kyc-verification"
         future = self._get_producer().send(topic, event)
         future.get(timeout=5)  # raises if the broker did not accept the record
@@ -383,7 +383,7 @@ async def verify_bvn(req: BVNVerificationRequest):
         checks_failed=checks_failed,
         risk_flags=risk_flags,
         next_steps=["submit_id_document", "complete_liveness"] if tier == VerificationTier.TIER2 else ["submit_bvn"],
-        expires_at=(datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365)).isoformat() if status == VerificationStatus.VERIFIED else None,  # naive-UTC wire format preserved
+        expires_at=(datetime.now(UTC).replace(tzinfo=None) + timedelta(days=365)).isoformat() if status == VerificationStatus.VERIFIED else None,  # naive-UTC wire format preserved
         metadata={"method": result["method"], "event_published": published, "event_error": pub_err},
     )
 
@@ -421,7 +421,7 @@ async def verify_nin(req: NINVerificationRequest):
         checks_failed=checks_failed,
         risk_flags=[],
         next_steps=["complete_liveness"] if status == VerificationStatus.VERIFIED else ["retry_nin"],
-        expires_at=(datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365)).isoformat() if status == VerificationStatus.VERIFIED else None,  # naive-UTC wire format preserved
+        expires_at=(datetime.now(UTC).replace(tzinfo=None) + timedelta(days=365)).isoformat() if status == VerificationStatus.VERIFIED else None,  # naive-UTC wire format preserved
         metadata={"method": result["method"], "event_published": published, "event_error": pub_err},
     )
 
