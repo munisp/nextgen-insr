@@ -10,6 +10,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "NODE_OPTIONS=--max-old-space-size=3072 tsc --noEmit",
     "check:fast": "NODE_OPTIONS=--max-old-space-size=3072 tsc --noEmit --incremental",
+    "typecheck:ratchet": "node scripts/check-tsc-baseline.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

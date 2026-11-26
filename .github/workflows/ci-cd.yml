@@ -63,8 +63,12 @@ jobs:
       - name: Run ESLint (ratchet gate)
         run: node scripts/check-eslint-baseline.mjs
 
-      - name: TypeScript type check
-        run: pnpm exec tsc --noEmit
+      # 2026-11-25 (W18): replaced bare `pnpm exec tsc --noEmit` with the
+      # error-count ratchet, which runs the same compiler invocation itself
+      # and fails if the count rises above scripts/tsc-baseline.json
+      # (baseline may only shrink; a crashed tsc exits 2, never "0 errors").
+      - name: TypeScript type check (error-count ratchet)
+        run: node scripts/check-tsc-baseline.mjs
         env:
           NODE_OPTIONS: --max-old-space-size=3072
 

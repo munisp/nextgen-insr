@@ -34,8 +34,14 @@ jobs:
         # fails only if any rule's violations INCREASE. See LINT_DEBT.md.
         run: node scripts/check-eslint-baseline.mjs
 
-      - name: Run TypeScript type check
-        run: pnpm check
+      # 2026-11-25 (W18): `pnpm check` was `tsc --noEmit`; route through the
+      # error-count ratchet (which runs the same tsc invocation) so every
+      # full-project typecheck path in CI shares one gate vs
+      # scripts/tsc-baseline.json.
+      - name: Run TypeScript type check (error-count ratchet)
+        run: node scripts/check-tsc-baseline.mjs
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
 
       - name: Build frontend with Vite
         run: pnpm build
@@ -103,8 +109,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm exec tsc --noEmit
+      # 2026-11-25 (W18): replaced bare `pnpm exec tsc --noEmit` with the
+      # error-count ratchet, which runs the same compiler invocation itself
+      # and fails if the count rises above scripts/tsc-baseline.json
+      # (baseline may only shrink; a crashed tsc exits 2, never "0 errors").
+      - name: Typecheck (error-count ratchet)
+        run: node scripts/check-tsc-baseline.mjs
         env:
           NODE_OPTIONS: --max-old-space-size=3072
 
