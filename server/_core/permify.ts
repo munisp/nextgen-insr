@@ -99,13 +99,23 @@ export function __setPermifyFailOpenForTests(value: boolean): void {
 // with PERMIFY_FAIL_OPEN=true unless an explicit incident acknowledgement
 // token is also set. Merchant financial endpoints must never degrade to an
 // unauthenticated-role bypass by accident of an env var.
+// 2026-11-26 (W22, audit F7): boot-refusal extended from exact "production"
+// to "staging" as well — k8s/overlays/staging sets NODE_ENV=staging, which
+// previously bypassed this guard entirely (a staging deploy could enable
+// fail-open authorization with only a log line as the tell).
+// "development"/"test"/unset NODE_ENV remain exempt so local dev and the
+// integration suite (which boots with PERMIFY_FAIL_OPEN=true deliberately,
+// see the test-hook comment above) keep booting. Production behavior is
+// identical to before (Dockerfile ENV NODE_ENV=production still refuses).
 if (
   PERMIFY_FAIL_OPEN &&
-  process.env.NODE_ENV === "production" &&
+  (process.env.NODE_ENV === "production" ||
+    process.env.NODE_ENV === "staging") &&
   process.env.PERMIFY_FAIL_OPEN_INCIDENT_ACK !== "true"
 ) {
   throw new Error(
-    "[Permify] PERMIFY_FAIL_OPEN=true is forbidden in production without " +
+    "[Permify] PERMIFY_FAIL_OPEN=true is forbidden when NODE_ENV is " +
+      "production or staging without " +
       "PERMIFY_FAIL_OPEN_INCIDENT_ACK=true (declared-incident acknowledgement). Refusing to start."
   );
 }

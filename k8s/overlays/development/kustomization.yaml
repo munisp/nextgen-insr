@@ -36,6 +36,15 @@ configMapGenerator:
       - GO_ENV=development
       - PYTHON_ENV=development
       - LOG_LEVEL=debug
+      # 2026-11-26 (W22, audit F6): EXPLICIT fail-open for the shared dev
+      # cluster. The dev overlay intentionally runs WITHOUT the
+      # DDoS-shield/PBAC/fraud-ML sidecars, so fail-open is the deliberate
+      # posture here (NODE_ENV=development would already default fail-open
+      # via the documented local-dev escape in
+      # server/middleware/securityOrchestrator.ts; this literal makes the
+      # intent auditable rather than implicit). Never copy this value to the
+      # staging or production overlays.
+      - SECURITY_FAIL_OPEN=true
 
 secretGenerator:
   - name: db-credentials
