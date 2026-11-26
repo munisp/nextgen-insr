@@ -24,10 +24,45 @@ const FRAUD_ML_URL = process.env.FRAUD_ML_URL || "http://localhost:8092";
 const SERVICE_TIMEOUT_MS = parseInt(
   process.env.SECURITY_SERVICE_TIMEOUT || "3000"
 );
+
+// 2026-11-26 (W22, audit F6): fail-open now requires EXPLICIT opt-in in
+// every deployed environment. Previously any NODE_ENV !== "production"
+// (including NODE_ENV=staging from k8s/overlays/staging) silently defaulted
+// to fail-open, disabling DDoS/PBAC/fraud-ML enforcement whenever a sidecar
+// was unreachable. New contract:
+//   - SECURITY_FAIL_OPEN === "true"            → fail-open (explicit opt-in,
+//     loudly warned below) in ANY environment.
+//   - NODE_ENV exactly "development" or unset  → documented local-dev escape:
+//     fail-open by default unless SECURITY_FAIL_OPEN === "false" (dev laptops
+//     normally do not run the Rust/Go/Python sidecars).
+//   - Any other NODE_ENV (production, staging, test, …) → fail-CLOSED unless
+//     SECURITY_FAIL_OPEN === "true" is set explicitly. Fail-open can no
+//     longer happen by accident of a NODE_ENV value.
+const SECURITY_ORCH_NODE_ENV = process.env.NODE_ENV;
+const IS_LOCAL_DEV =
+  SECURITY_ORCH_NODE_ENV === undefined ||
+  SECURITY_ORCH_NODE_ENV === "" ||
+  SECURITY_ORCH_NODE_ENV === "development";
 const FAIL_OPEN =
-  process.env.NODE_ENV === "production"
-    ? process.env.SECURITY_FAIL_OPEN === "true" // Production: fail-closed by default (must explicitly opt in to fail-open)
-    : process.env.SECURITY_FAIL_OPEN !== "false"; // Dev: fail-open by default (sidecars may not be deployed)
+  process.env.SECURITY_FAIL_OPEN === "true" ||
+  (IS_LOCAL_DEV && process.env.SECURITY_FAIL_OPEN !== "false");
+
+// 2026-11-26 (W22): fail-open disables security-sidecar enforcement — make
+// it loud. Error-level outside local dev (staging/production must page on
+// this), warn-level for the documented local-dev escape.
+if (FAIL_OPEN) {
+  const failOpenMsg =
+    "[SecurityOrchestrator] ⚠️ SECURITY_FAIL_OPEN ACTIVE — requests will be ALLOWED " +
+    "while DDoS-shield/PBAC/fraud-ML sidecars are unreachable " +
+    `(NODE_ENV=${SECURITY_ORCH_NODE_ENV ?? "<unset>"}). This disables security ` +
+    "enforcement during sidecar outages; never intentional outside local dev " +
+    "or a declared incident.";
+  if (IS_LOCAL_DEV) {
+    logger.warn(failOpenMsg);
+  } else {
+    logger.error(failOpenMsg);
+  }
+}
 
 // ── HTTP Client with Timeout ─────────────────────────────────────────
 

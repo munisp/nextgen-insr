@@ -276,16 +276,29 @@ describe("S94: service orchestrator", () => {
 
 // ── 11. Security Hardening (DDoS) ──
 describe("S94: DDoS shield configuration", () => {
-  it("should have FAIL_OPEN set to true in securityOrchestrator", async () => {
+  // 2026-11-26 (W22, audit F6): CONTRACT DELIBERATELY TIGHTENED. The old
+  // assertion required the silent dev-default `SECURITY_FAIL_OPEN !== "false"`,
+  // which made every non-"production" NODE_ENV (including staging) fail-open
+  // by accident. Fail-open now requires the explicit literal
+  // `SECURITY_FAIL_OPEN === "true"` (local-dev escape: NODE_ENV=development/
+  // unset still defaults open). This is a deliberate contract rewrite, not a
+  // test weakening: the fail-CLOSED posture got strictly stronger.
+  it("should gate FAIL_OPEN behind explicit SECURITY_FAIL_OPEN opt-in in securityOrchestrator", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync(
       "server/middleware/securityOrchestrator.ts",
       "utf-8"
     );
-    // FAIL_OPEN must remain true so sidecar unavailability doesn't block requests
     expect(content).toContain("FAIL_OPEN");
-    // Default should be fail-open (not false)
-    expect(content).toContain('SECURITY_FAIL_OPEN !== "false"');
+    // Explicit opt-in literal must be the primary gate…
+    expect(content).toContain('SECURITY_FAIL_OPEN === "true"');
+    // …and the old silent "anything but production defaults open" leg must
+    // survive ONLY scoped to the local-dev escape (guarded by IS_LOCAL_DEV),
+    // never as an unqualified `NODE_ENV === "production" ? … : …` default.
+    expect(content).toContain("IS_LOCAL_DEV");
+    expect(content).not.toMatch(
+      /NODE_ENV\s*===\s*"production"\s*\?\s*process\.env\.SECURITY_FAIL_OPEN/
+    );
   });
 });
 

@@ -36,6 +36,22 @@ configMapGenerator:
       - GO_ENV=staging
       - PYTHON_ENV=staging
       - LOG_LEVEL=info
+      # 2026-11-26 (W22, audit F6/F7): EXPLICIT fail-closed for the security
+      # sidecar orchestrator (DDoS-shield/PBAC/fraud-ML). Since 2026-11-26
+      # SECURITY_FAIL_OPEN no longer defaults to true outside production —
+      # NODE_ENV=staging previously inherited a SILENT fail-open. Staging
+      # posture decision: fail-CLOSED, mirroring production, so staging
+      # actually exercises the enforced path. NOTE: the base manifests do
+      # NOT currently deploy the sidecars or set DDOS_SHIELD_URL /
+      # PBAC_ENGINE_URL / FRAUD_ML_URL — with this flag "false" and no
+      # sidecars reachable, protected /api/* requests will be denied
+      # (429/403/503) LOUDLY instead of silently bypassing security. To run
+      # staging without sidecars, flip this to "true" deliberately (a loud
+      # error-level banner is logged at boot) — never leave it accidental.
+      # The same applies to PERMIFY_FAIL_OPEN: NODE_ENV=staging now
+      # boot-refuses PERMIFY_FAIL_OPEN=true without
+      # PERMIFY_FAIL_OPEN_INCIDENT_ACK=true (server/_core/permify.ts).
+      - SECURITY_FAIL_OPEN=false
 
 images:
   - name: registry.yourdomain.com/insurance/customer-portal
