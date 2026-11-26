@@ -14,9 +14,14 @@ import {
 } from "lucide-react";
 
 // Mock agent performance data (in production, fetched from trpc.sprint23.agentPerformance.calculate)
+// 2026-11-27 (W26): each object literal carried duplicate `agentId` keys
+// (TS1117 x5): a dead `"aN"` first key and the effective `"AG-00N"` second
+// key. JS semantics keep the LAST duplicate key, and the UI renders
+// `agent.agentId` (see the selector list and detail lookup below), so the
+// surviving `AG-00x` values are what actually ran. The dead first keys were
+// deleted; rendered output is unchanged.
 const mockAgents = [
   {
-    agentId: "a1",
     agentId: "AG-001",
     name: "Adebayo Ogundimu",
     overallScore: 92.5,
@@ -32,7 +37,6 @@ const mockAgents = [
     },
   },
   {
-    agentId: "a2",
     agentId: "AG-002",
     name: "Chioma Nwosu",
     overallScore: 87.3,
@@ -48,7 +52,6 @@ const mockAgents = [
     },
   },
   {
-    agentId: "a3",
     agentId: "AG-003",
     name: "Emeka Okafor",
     overallScore: 78.1,
@@ -64,7 +67,6 @@ const mockAgents = [
     },
   },
   {
-    agentId: "a4",
     agentId: "AG-004",
     name: "Fatima Ibrahim",
     overallScore: 65.8,
@@ -80,7 +82,6 @@ const mockAgents = [
     },
   },
   {
-    agentId: "a5",
     agentId: "AG-005",
     name: "Oluwaseun Bakare",
     overallScore: 55.2,
