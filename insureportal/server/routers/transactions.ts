@@ -118,11 +118,17 @@ async function getPlatformSetting(
 }
 
 // ─── Velocity limit check ─────────────────────────────────────────────────────
+// 2026-11-26 (W22): 4th param was a duplicate `agentId?: string` binding — a
+// hard SyntaxError (esbuild/tsc both reject redeclared parameters), so the
+// whole InsurePortal server failed to bundle. Renamed to `agentCode` to match
+// the main-repo mirror (server/routers/transactions.ts) and the sole call
+// site, which passes `agent.agentId` (the string agent code used for the
+// `agent:<code>` socket room), NOT the numeric DB id.
 async function checkVelocityLimits(
   agentId: number,
   tier: string,
   amount: number,
-  agentId?: string
+  agentCode?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   try {
     const enabled = await getPlatformSetting("velocity_limits_enabled", "true");
@@ -163,12 +169,13 @@ async function checkVelocityLimits(
     const hourlyCount = Number(hourlyRows[0]?.count ?? 0);
 
     // Emit 80% warning before hard block
-    if (agentId && maxHourly > 0) {
+    // 2026-11-26 (W22): was `agentId` — the socket room needs the string code.
+    if (agentCode && maxHourly > 0) {
       const hourlyPct = (hourlyCount + 1) / maxHourly;
       if (hourlyPct >= 0.8 && hourlyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentId}`)
+          .to(`agent:${agentCode}`)
           .emit("terminal:velocity_warning", {
             type: "hourly_count",
             used: hourlyCount + 1,
@@ -201,12 +208,13 @@ async function checkVelocityLimits(
     const dailyVolume = Number(dailyRows[0]?.total ?? 0);
 
     // Emit 80% daily volume warning
-    if (agentId && maxDaily > 0) {
+    // 2026-11-26 (W22): was `agentId` — the socket room needs the string code.
+    if (agentCode && maxDaily > 0) {
       const dailyPct = (dailyVolume + amount) / maxDaily;
       if (dailyPct >= 0.8 && dailyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentId}`)
+          .to(`agent:${agentCode}`)
           .emit("terminal:velocity_warning", {
             type: "daily_volume",
             used: dailyVolume + amount,
