@@ -1,0 +1,64 @@
+name: InsurePortal CI
+
+# 2026-11-26 (W23): Closes the coverage gap found by W22-B — a hard
+# SyntaxError in insureportal/server/routers/transactions.ts survived on
+# main because NO workflow built or typechecked insureportal/ (the root
+# tsconfig excludes it; the root build targets the main server/; every
+# prior workflow "insureportal" mention was an image/helm/k8s name).
+#
+# Trigger policy: EVERY push to main (no path filter — main must always
+# be gated), and PRs that touch insureportal/** or the gate's own
+# scripts/config (so changes to the gate itself are exercised).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'insureportal/**'
+      - 'scripts/check-insureportal-parse.mjs'
+      - 'scripts/check-insureportal-tsc-baseline.mjs'
+      - 'scripts/insureportal-tsc-baseline.json'
+      - '.github/workflows/insureportal-ci.yml'
+
+env:
+  NODE_VERSION: '22'  # mirrors ci.yml NODE_VERSION
+
+jobs:
+  insureportal-gates:
+    name: InsurePortal Parse & Typecheck Gates
+    runs-on: ubuntu-24.04  # 2026-11-26 (W23): pinned, mirroring the W22 runner pinning in ci.yml; no apt-installed packages in this job, safe on noble
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: insureportal/package-lock.json
+
+      # insureportal/ is an npm project (package-lock.json, lockfileVersion 3),
+      # NOT part of the root pnpm install — so it installs with `npm ci`
+      # against its own lockfile. This is the insureportal mirror of ci.yml's
+      # `pnpm install --frozen-lockfile` step.
+      - name: Install insureportal dependencies
+        working-directory: insureportal
+        run: npm ci --no-audit --no-fund
+
+      # HARD gate, no ratchet: esbuild parses every .ts/.tsx under
+      # insureportal/{server,client/src,shared,drizzle,tests,e2e} and bundles
+      # the server entry exactly like `npm run build`. Any parse error fails.
+      # This is the gate that would have caught the W22-B SyntaxError.
+      - name: Parse/bundle gate (hard fail on any parse error)
+        run: node scripts/check-insureportal-parse.mjs
+
+      # Ratchet gate: `tsc --noEmit` error count must not exceed the
+      # MEASURED baseline in scripts/insureportal-tsc-baseline.json
+      # (1345 on 2026-11-26 (W23) — real pre-existing debt, deliberately
+      # not fixed here). The baseline may only shrink.
+      - name: Typecheck (error-count ratchet)
+        run: node scripts/check-insureportal-tsc-baseline.mjs
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
