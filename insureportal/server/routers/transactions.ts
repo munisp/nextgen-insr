@@ -29,6 +29,11 @@ import {
   getDb,
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
+// 2026-11-27 (W25-B): reversal approval/rejection are funds-movement
+// mutations; they now run on financialProcedure (role matrix + Permify
+// financial check, fail-closed), closing the authz divergence vs the main
+// repo (server/routers/transactions.ts). See _core/permifyMiddleware.ts.
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { ENV } from "../_core/env";
 import {
@@ -1218,7 +1223,12 @@ export const transactionsRouter = router({
   }),
 
   // ── Approve reversal (admin only) ─────────────────────────────────────────
-  approveReversal: protectedProcedure
+  // 2026-11-27 (W25-B): was protectedProcedure — any authenticated user with
+  // base Permify access reached the handler, bypassing the financial role
+  // matrix + Permify 'reversal' check the main repo enforces via
+  // financialProcedure. Realigned (fail-closed); the in-handler admin gate
+  // below is retained as defense-in-depth, matching the main repo.
+  approveReversal: financialProcedure
     .input(
       z.object({
         transactionId: z.number().int().positive(),
@@ -1307,7 +1317,9 @@ export const transactionsRouter = router({
     }),
 
   // ── Reject reversal (admin only) ──────────────────────────────────────────
-  rejectReversal: protectedProcedure
+  // 2026-11-27 (W25-B): was protectedProcedure — realigned to
+  // financialProcedure with approveReversal (mirrors main repo).
+  rejectReversal: financialProcedure
     .input(
       z.object({
         transactionId: z.number().int().positive(),
