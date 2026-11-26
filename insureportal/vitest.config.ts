@@ -13,7 +13,13 @@ export default defineConfig({
     },
   },
   test: {
-    setupFiles: ["./vitest.setup.ts"],
+    // 2026-11-27 (W24, verifier-found): a RELATIVE setupFiles entry is
+    // resolved by vitest 3.x via mlly URL resolution against the PARENT of
+    // this root — so in the full repo layout the repo-ROOT vitest.setup.ts
+    // (TZ-only) silently shadows insureportal/vitest.setup.ts, which then
+    // never loads (no Permify wire double, no test env). Pin the absolute
+    // path so the portal setup is always the one loaded.
+    setupFiles: [path.resolve(templateRoot, "vitest.setup.ts")],
     environment: "node",
     env: {
       KEYCLOAK_URL: "https://auth.test.insureportal.ng",

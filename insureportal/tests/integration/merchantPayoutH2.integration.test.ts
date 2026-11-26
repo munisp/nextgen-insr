@@ -17,18 +17,39 @@
  */
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
 import { spawn, type ChildProcess } from "child_process";
+import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import type { TrpcContext } from "../../server/_core/context";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const PGLITE_PORT = 54331;
+
+// 2026-11-27 (W24): the port was hardcoded (54331) and collided in practice
+// (EADDRINUSE) with concurrent test runs sharing a host — vitest runs the
+// integration files in parallel workers and CI/shared runners may host
+// several suites at once. Allocate a free ephemeral port per run instead.
+// The close→reuse race is inherent to port probing; the spawn's waitReady
+// still fail-loudly rejects on EADDRINUSE, so this can never pass silently
+// against the wrong server.
+async function allocFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      const port = addr && typeof addr === "object" ? addr.port : 0;
+      srv.close(() => (port ? resolve(port) : reject(new Error("no port"))));
+    });
+  });
+}
+const PGLITE_PORT = await allocFreePort();
 const DB_URL = `postgres://postgres:postgres@127.0.0.1:${PGLITE_PORT}/postgres`;
 
 let child: ChildProcess;
 let merchantPayoutSettlementRouter: typeof import("../../server/routers/merchantPayoutSettlement").merchantPayoutSettlementRouter;
 let getDb: typeof import("../../server/db").getDb;
+let getPool: typeof import("../../server/db").getPool;
 
 function waitReady(proc: ChildProcess, timeoutMs = 60_000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -218,6 +239,7 @@ describe("H2-wave: payout binding + atomic debit (real PGlite DB)", () => {
     // Import AFTER the URL is set — getDb() reads env lazily on first use.
     const dbMod = await import("../../server/db");
     getDb = dbMod.getDb;
+    getPool = dbMod.getPool;
     ({ merchantPayoutSettlementRouter } = await import(
       "../../server/routers/merchantPayoutSettlement"
     ));
@@ -240,6 +262,16 @@ describe("H2-wave: payout binding + atomic debit (real PGlite DB)", () => {
   }, 120_000);
 
   afterAll(async () => {
+    // 2026-11-27 (W24): drain the pg pool BEFORE killing the PGlite child.
+    // Killing the child first strands pool sockets, whose async
+    // "Connection terminated unexpectedly" errors vitest counts as unhandled
+    // errors and fails the run even when every test passed.
+    try {
+      const pool = await getPool?.();
+      await pool?.end();
+    } catch {
+      // best-effort cleanup; teardown must not mask a test failure
+    }
     child?.kill("SIGTERM");
   });
 
