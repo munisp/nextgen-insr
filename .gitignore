@@ -24,6 +24,8 @@ dist/
 
 # Node
 node_modules/
+# 2026-11-25 (W18): root tsc incremental cache, relocated out of node_modules
+.tsbuildinfo
 
 # IDE
 .idea/

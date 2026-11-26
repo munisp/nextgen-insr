@@ -1,0 +1,8 @@
+{
+  "generated": "2026-11-25",
+  "command": "tsc --noEmit",
+  "tsconfig": "tsconfig.json",
+  "errorCount": 0,
+  "byCode": {},
+  "note": "Full-project typecheck ratchet (2026-11-25, W18). errorCount=0 is measured twice: (1) CI ground truth — GitHub check run 'TypeScript Typecheck' (job 139482943736) on PR #319 head merged as main@33dc8d53, plus main-branch 'CI Pipeline' success and 'CI/CD Pipeline' Lint/Typecheck/Build success at 33dc8d53, all running `pnpm exec tsc --noEmit`; (2) local measurement on a faithful `pnpm install --frozen-lockfile` reinstall (lockfile-exact @trpc/server 11.18.0, @temporalio/client 1.20.2, maplibre-gl 6.9.0) → `node node_modules/typescript/bin/tsc --noEmit` exits 0 with 0 'error TS' lines. An earlier local count of 3,753 was a stale/husked node_modules artifact, NOT source debt (see w18-census.md). 2026-11-25 (W18) caveat: CI remains the source of truth for this baseline — a later verification pass found this workspace's node_modules husked again (77/104 top-level package dirs empty, incl. typescript and react), so the ratchet currently exits 2 (fail-closed infrastructure failure) in THIS local copy; run it in CI or on any faithful `pnpm install --frozen-lockfile` checkout. The baseline may only DECREASE; lowering requires a dated comment in the same change. Regenerate by running `node scripts/check-tsc-baseline.mjs` and updating errorCount to the printed count."
+}
