@@ -79,8 +79,24 @@ class InMemoryPubSub {
 
 // Try to use Redis if available, fallback to in-memory
 let pubSubInstance: InMemoryPubSub | null = null;
-let redisPublisher: any = null;
-let redisSubscriber: any = null;
+// 2026-11-26 (W21): honest structural type for the node-redis v4 client
+// surface this module actually uses (a subset of redis@4 `RedisClientType`).
+// `redis` is an OPTIONAL runtime dependency loaded through a non-literal
+// dynamic import (see initRedisPubSub) precisely so the compiler does not
+// hard-require it — which also hides its types here. Previously both
+// singletons were `any`, so every use (.on/.connect/.disconnect/.publish/
+// .subscribe) was an @typescript-eslint/no-unsafe-call violation; the W21-C
+// 'error'-listener/disconnect additions raised that count above baseline.
+interface RedisPubSubClient {
+  readonly isReady: boolean;
+  on(event: "error", listener: (err: Error) => void): void;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  publish(channel: string, message: string): Promise<number>;
+  subscribe(channel: string, listener: (message: string) => void): void;
+}
+let redisPublisher: RedisPubSubClient | null = null;
+let redisSubscriber: RedisPubSubClient | null = null;
 
 // 2026-11-26 (W21): init retry state. Previously initRedisPubSub ran ONCE at
 // module load (fire-and-forget), so a boot-time Redis blip pinned the process
@@ -102,10 +118,15 @@ async function initRedisPubSub(): Promise<boolean> {
   // server/redisClient.ts). Previously the singletons were assigned BEFORE
   // `await connect()`, so a failed connect left half-open non-null clients
   // behind and a retry could never happen cleanly.
-  let publisher: any = null;
-  let subscriber: any = null;
+  let publisher: RedisPubSubClient | null = null;
+  let subscriber: RedisPubSubClient | null = null;
   try {
-    const { createClient } = await import("redis" as string);
+    // 2026-11-26 (W21): the non-literal specifier keeps the optional `redis`
+    // dependency out of the compile-time module graph; assert the honest
+    // structural shape of the module namespace so createClient is typed.
+    const { createClient } = (await import("redis" as string)) as {
+      createClient: (options: { url: string }) => RedisPubSubClient;
+    };
     publisher = createClient({ url: redisUrl });
     subscriber = createClient({ url: redisUrl });
     // 2026-11-26 (W21): 'error' listeners are load-bearing — node-redis emits
@@ -381,13 +402,17 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
   };
 
   // Subscribe to all notification channels
-  if (redisSubscriber?.isReady) {
+  // 2026-11-26 (W21): const alias of the module singleton so the non-null
+  // narrowing survives method calls inside the loop (the singleton is
+  // reassigned by initRedisPubSub, which resets flow narrowing after calls).
+  const subscriber = redisSubscriber;
+  if (subscriber?.isReady) {
     for (const ch of allChannels) {
-      redisSubscriber.subscribe(`notifications:${ch}`, (message: string) => {
+      subscriber.subscribe(`notifications:${ch}`, (message: string) => {
         handleMessage(`notifications:${ch}`, message);
       });
     }
-    redisSubscriber.subscribe("notifications:all", (message: string) => {
+    subscriber.subscribe("notifications:all", (message: string) => {
       // Already handled per-channel, but useful for inbox aggregation
     });
   } else {

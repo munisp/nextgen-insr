@@ -1,7 +1,8 @@
 {
   "_comment": "ESLint ratchet baseline \u2014 see LINT_DEBT.md. Regenerate ONLY with assurance-lead approval: node scripts/check-eslint-baseline.mjs --write-baseline",
-  "generatedAt": "2026-08-16T17:10:00Z",
-  "totalErrors": 8365,
+  "_ratchet-note-2026-11-26": "2026-11-26 (W21): standard ratchet-DOWN of @typescript-eslint/no-unsafe-call 375 -> 366 and totalErrors 8365 -> 7768, MEASURED with a local reproduction of the exact ratchet command (pnpm exec eslint server/ --ext .ts,.tsx,.js,.jsx -f json, full pnpm install --frozen-lockfile, eslint 8.57.1 + typescript 5.9.3) whose pre-fix run matched CI job 139725182614 exactly (7802 errors / 378 no-unsafe-call and every per-rule burn-down line). The decrease is real type-debt removal: server/lib/realtimeNotifications.ts redis singletons/locals gained an honest structural RedisPubSubClient type instead of `any`. No rule count was increased; _comment unchanged (assurance-lead-gated field).",
+  "generatedAt": "2026-11-26T00:00:00Z",
+  "totalErrors": 7768,
   "totalWarnings": 69,
   "rules": {
     "@typescript-eslint/no-unused-vars": 1774,
@@ -11,7 +12,7 @@
     "@typescript-eslint/require-await": 802,
     "import/order": 507,
     "@typescript-eslint/no-unsafe-argument": 473,
-    "@typescript-eslint/no-unsafe-call": 375,
+    "@typescript-eslint/no-unsafe-call": 366,
     "@typescript-eslint/no-unsafe-return": 190,
     "radix": 75,
     "import/no-named-as-default": 41,
