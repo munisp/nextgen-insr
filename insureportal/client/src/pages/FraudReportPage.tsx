@@ -18,8 +18,15 @@ import {
 } from "lucide-react";
 
 export default function FraudReportPage() {
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(4);
+  // 2026-11-26 (W21): time-bomb repair — hardcoded year 2026 / month 4 and
+  // the fixed [2024, 2025, 2026] list aged out. fraudReport exposes no
+  // available-years API, so derive from the current date: default-select
+  // the current year and month, and list the last 3 years. Ordering keeps
+  // the original UI contract (oldest-first, exactly as [2024, 2025, 2026]
+  // rendered).
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [tab, setTab] = useState("generate");
 
@@ -81,11 +88,13 @@ export default function FraudReportPage() {
                       value={year}
                       onChange={e => setYear(Number(e.target.value))}
                     >
-                      {[2024, 2025, 2026].map(y => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      ))}
+                      {[currentYear - 2, currentYear - 1, currentYear].map(
+                        y => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        )
+                      )}
                     </select>
                   </div>
                   <div>
