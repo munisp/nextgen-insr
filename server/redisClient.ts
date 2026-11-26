@@ -32,9 +32,26 @@ import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 let _directClient: RedisType | null = null;
 
+// 2026-11-26 (W20): bounded backoff on direct-connect failures. After W19,
+// a black-holed Redis host still made EVERY cache call pay connectTimeout
+// (~3s) before proxy fallback — a slow-death latency storm. Now, after
+// BACKOFF_THRESHOLD consecutive connect failures we cool down for
+// BACKOFF_COOLDOWN_MS; during cooldown getDirectClient returns null
+// immediately so callers take the designed proxy-degradation path. After
+// the cooldown one probe is allowed: success resets the counter, failure
+// re-enters cooldown. Timestamp comparison only (no setInterval → no
+// leaked timers). Values: 2 failures tolerates one transient blip without
+// cooldown; 30s matches the platform proxy's own budget scale and keeps
+// recovery probes frequent enough for short Redis restarts.
+const BACKOFF_THRESHOLD = 2;
+const BACKOFF_COOLDOWN_MS = 30_000;
+let consecutiveConnectFailures = 0;
+let cooldownUntil = 0;
+
 async function getDirectClient(): Promise<RedisType | null> {
   if (!REDIS_URL) return null;
   if (_directClient) return _directClient;
+  if (Date.now() < cooldownUntil) return null; // 2026-11-26 (W20): cooldown → proxy fallback
   let pending: RedisType | null = null;
   try {
     const { default: Redis } = await import("ioredis");
@@ -54,6 +71,8 @@ async function getDirectClient(): Promise<RedisType | null> {
     // that every later call reused, turning one transient connect failure
     // into persistent command rejections on every cache operation.
     _directClient = pending;
+    consecutiveConnectFailures = 0; // 2026-11-26 (W20): probe success resets backoff
+    cooldownUntil = 0;
     logger.info("[Redis] Direct connection established →: " + REDIS_URL);
     return pending;
   } catch (err) {
@@ -65,6 +84,12 @@ async function getDirectClient(): Promise<RedisType | null> {
       // best-effort cleanup — a failed disconnect must not mask the cause
     }
     logger.warn("[Redis] Could not connect directly:: " + (err as Error).message);
+    // 2026-11-26 (W20): count the failure; on reaching the threshold start
+    // the cooldown window so later calls skip the ~3s connect attempt.
+    consecutiveConnectFailures++;
+    if (consecutiveConnectFailures >= BACKOFF_THRESHOLD) {
+      cooldownUntil = Date.now() + BACKOFF_COOLDOWN_MS;
+    }
     return null;
   }
 }
