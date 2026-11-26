@@ -175,18 +175,47 @@ describe("redisClient W19 — cacheGet rejection escape (CI job 139493405438)", 
 });
 
 describe("redisClient W19 — proxy fallback when no direct client exists", () => {
+  // 2026-11-26 (W21): de-race the proxy-only setup. The previous
+  // implementation wrapped the dynamic import in vi.doMock("./_core/env") +
+  // vi.doUnmock("./_core/env"). Both calls only push onto VitestMocker's
+  // static pendingIds queue; the co-pending pair [unmock(previous test),
+  // mock(this test)] is flushed by the next import through a SINGLE
+  // ungrouped Promise.all over async resolveId round-trips (vitest 3.2.4
+  // resolveMocks — no ordering guarantee between entries, cf. upstream
+  // vitest-dev/vitest#10706). Under CI main-thread load the unmock leg can
+  // land AFTER the mock leg, silently deleting the fresh env-mock
+  // registration; the import then evaluates against the REAL env (the CI
+  // job sets REDIS_URL=redis://localhost:6379) and the "proxy-only" test
+  // takes the DIRECT path — CI @3708685d failed exactly so: cacheSet
+  // resolved true with fetchMock at 0 calls (forced-inversion proof in
+  // w21c-w19race-report.md reproduces that signature deterministically).
+  //
+  // Control process.env instead: vi.resetModules() forces ./_core/env to
+  // re-evaluate from process.env on the next import, so REDIS_URL="" is
+  // deterministic. NOTE: it must be "" (empty string), NOT `delete` —
+  // env.ts uses optEnv("REDIS_URL", "redis://redis:6379") and ?? only
+  // falls through on null/undefined; "" stays "" and is falsy, so
+  // getDirectClient returns null before any client is constructed.
+  // h.instances therefore PROVABLY stays empty (asserted in each test).
+  const PROXY_ENV_KEYS = ["REDIS_URL", "PLATFORM_BASE_URL"] as const;
+  let savedProxyEnv: Array<readonly [string, string | undefined]>;
+
+  beforeEach(() => {
+    savedProxyEnv = PROXY_ENV_KEYS.map((k) => [k, process.env[k]] as const);
+    process.env.REDIS_URL = ""; // falsy → no direct client (see note above)
+    process.env.PLATFORM_BASE_URL = "http://proxy.test";
+  });
+
+  afterEach(() => {
+    for (const [k, v] of savedProxyEnv) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
   async function freshProxyOnlyModule() {
     vi.resetModules();
-    vi.doMock("./_core/env", () => ({
-      ENV: {
-        redisUrl: undefined,
-        platformBaseUrl: "http://proxy.test",
-        platformApiKey: "k",
-      },
-    }));
-    const mod = await import("./redisClient");
-    vi.doUnmock("./_core/env");
-    return mod;
+    return import("./redisClient");
   }
 
   it("cacheGet serves the proxy value when REDIS_URL is absent", async () => {
@@ -195,6 +224,8 @@ describe("redisClient W19 — proxy fallback when no direct client exists", () =
     await expect(mod.cacheGet("embed:pp:9")).resolves.toBe("proxied");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("http://proxy.test/v1/cache/embed%3App%3A9");
+    // 2026-11-26 (W21): prove no direct client was ever constructed.
+    expect(h.instances).toHaveLength(0);
   });
 
   it("cacheGet returns null (never throws) when the proxy errors", async () => {
@@ -204,6 +235,7 @@ describe("redisClient W19 — proxy fallback when no direct client exists", () =
     );
     const mod = await freshProxyOnlyModule();
     await expect(mod.cacheGet("embed:pp:9")).resolves.toBeNull();
+    expect(h.instances).toHaveLength(0); // 2026-11-26 (W21): proxy-only proven
   });
 
   it("cacheSet posts through the proxy and returns true", async () => {
@@ -214,6 +246,7 @@ describe("redisClient W19 — proxy fallback when no direct client exists", () =
       "http://proxy.test/v1/cache",
       expect.objectContaining({ method: "POST" })
     );
+    expect(h.instances).toHaveLength(0); // 2026-11-26 (W21): proxy-only proven
   });
 });
 

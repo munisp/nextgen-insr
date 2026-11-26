@@ -1463,7 +1463,9 @@ export const transactionsRouter = router({
       }
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
-      return db.select().from(platformSettings).limit(100);
+      // 2026-11-26 (W21): `await` so an async rejection is observed by this
+      // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+      return await db.select().from(platformSettings).limit(100);
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

@@ -46,7 +46,9 @@ export const j20SchedulerRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
-        return createJ20Schedule(input.scheduleKey, ctx.user.id);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await createJ20Schedule(input.scheduleKey, ctx.user.id);
       } catch (err: unknown) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -76,7 +78,9 @@ export const j20SchedulerRouter = router({
     }))
     .mutation(async ({ input }) => {
       try {
-        return toggleJ20Schedule(input.scheduleId, input.enabled);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await toggleJ20Schedule(input.scheduleId, input.enabled);
       } catch (err: unknown) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -117,7 +121,9 @@ export const j20SchedulerRouter = router({
     .input(z.object({ workflowId: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        return generateJ20PdfReport(input.workflowId);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await generateJ20PdfReport(input.workflowId);
       } catch (err: unknown) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

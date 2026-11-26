@@ -235,7 +235,9 @@ export const billingRbacRouter = router({
     .input(z.object({ tenantId: z.number() }))
     .query(async ({ ctx, input }) => {
       try {
-        return getUserBillingPermissions(ctx.user.id, input.tenantId);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await getUserBillingPermissions(ctx.user.id, input.tenantId);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

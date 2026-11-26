@@ -372,7 +372,10 @@ async function startServer() {
         const { handleStripeWebhook } = await import(
           "../stripe/webhookHandler"
         );
-        return handleStripeWebhook(req, res);
+        // 2026-11-26 (W21): `await` so a rejected webhook handler is observed
+        // by this catch (logs + 500) instead of escaping as an unhandled
+        // rejection (W19 class).
+        return await handleStripeWebhook(req, res);
       } catch (err: any) {
         console.error("[Stripe Webhook] Handler load error:", err.message);
         return res.status(500).json({ error: "Webhook handler unavailable" });

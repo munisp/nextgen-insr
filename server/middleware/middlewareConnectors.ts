@@ -186,7 +186,13 @@ export class DaprConnector {
         { signal: AbortSignal.timeout(5000) }
       );
       recordSuccess("dapr");
-      return res.ok ? res.json() : null;
+      // 2026-11-26 (W21): `await` so a malformed-body rejection is observed
+      // here (circuit records the failure) instead of escaping the try/catch.
+      // NOTE: recordSuccess above runs on HTTP-ok before parsing — a
+      // malformed-200 resets then increments the counter (never accumulates).
+      // Tolerated here (getState is a read path); the keycloak/mojaloop write
+      // paths moved recordSuccess after the parse so the breaker can trip.
+      return res.ok ? await res.json() : null;
     } catch {
       recordFailure("dapr");
       return null;
@@ -363,8 +369,16 @@ export class KeycloakConnector {
         }
       );
       if (res.ok) {
+        // 2026-11-26 (W21): `await` is load-bearing — a bare
+        // `return res.json()` lets a JSON parse rejection escape this
+        // try/catch, skipping the catch's recordFailure("keycloak") and the
+        // graceful `null` degradation. recordSuccess runs only AFTER a
+        // well-formed body is parsed: an HTTP-200 with malformed JSON is an
+        // upstream FAILURE (it must accumulate toward opening the circuit),
+        // not a success-then-escape (W19 class).
+        const data = await res.json();
         recordSuccess("keycloak");
-        return res.json();
+        return data;
       }
       recordFailure("keycloak");
       return null;
@@ -386,8 +400,11 @@ export class KeycloakConnector {
         }
       );
       if (res.ok) {
+        // 2026-11-26 (W21): `await` + recordSuccess only after a well-formed
+        // body is parsed — see verifyToken above.
+        const data = await res.json();
         recordSuccess("keycloak");
-        return res.json();
+        return data;
       }
       return null;
     } catch {
@@ -552,8 +569,15 @@ export class MojalloopConnector {
         signal: AbortSignal.timeout(30000),
       });
       if (res.ok || res.status === 202) {
+        // 2026-11-26 (W21): `await` is load-bearing — a bare
+        // `return res.json()` lets a JSON parse rejection escape this
+        // try/catch, skipping recordFailure("mojaloop") on a money-transfer
+        // path. recordSuccess runs only AFTER a well-formed body is parsed,
+        // so a consistently-malformed hub accumulates failures and trips the
+        // circuit breaker (W19 class).
+        const data = await res.json();
         recordSuccess("mojaloop");
-        return res.json();
+        return data;
       }
       recordFailure("mojaloop");
       return null;
@@ -574,8 +598,11 @@ export class MojalloopConnector {
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
+        // 2026-11-26 (W21): `await` + recordSuccess only after a well-formed
+        // body is parsed — see initiateTransfer above.
+        const data = await res.json();
         recordSuccess("mojaloop");
-        return res.json();
+        return data;
       }
       return null;
     } catch {

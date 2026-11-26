@@ -31,7 +31,10 @@ async function callCbnService(
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`CBN service error: ${res.status}`);
-    return res.json();
+    // 2026-11-26 (W21): `await` is load-bearing — a bare
+    // `return res.json()` lets a JSON parse rejection escape this try/catch,
+    // bypassing the graceful `return null` degradation below (W19 class).
+    return await res.json();
   } catch {
     return null;
   }

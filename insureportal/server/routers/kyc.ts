@@ -63,7 +63,9 @@ export const kycRouter = router({
   checkCooldown: protectedProcedure.query(async ({ ctx }) => {
     try {
       const agent = await requireAgent(ctx.req);
-      return isLockedOut(`agent-${agent.id}`);
+      // 2026-11-26 (W21): `await` so an async rejection is observed by this
+      // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+      return await isLockedOut(`agent-${agent.id}`);
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

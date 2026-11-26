@@ -159,7 +159,9 @@ export const platformHealthRouter = router({
           return {
             error: `Service '${input.serviceName}' not found in registry`,
           };
-        return checkService(svc);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await checkService(svc);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
