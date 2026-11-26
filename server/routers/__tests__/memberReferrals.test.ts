@@ -78,9 +78,20 @@ let anonCaller: Caller;
 const CUSTOMER_ID = 4242;
 const OTHER_CUSTOMER_ID = 9999; // foreign agent + foreign referral seeded
 
-// Fixed future expiry for the caller's valid pending code (myCode happy
-// path). Far enough ahead to be unambiguous under test TZ=UTC.
-const VALID_CODE_EXPIRY = new Date("2027-01-01T00:00:00Z");
+// Expiry for the caller's valid pending code (myCode happy path).
+// 2026-11-26 (W21): time-bomb fixture repair — the hardcoded
+// "2027-01-01T00:00:00Z" aged into the past of myCode's still-valid
+// predicate gt(referrals.expiresAt, new Date()) (memberReferrals.ts:184),
+// so the happy path would have started returning null on 2027-01-01.
+// Converted to now-relative (+365d), same repair pattern as
+// 2026-11-25 (W14) in memberAirtime.test.ts:120-125. All assertions and
+// row counts preserved exactly.
+const VALID_CODE_EXPIRY = new Date(Date.now() + 365 * 864e5);
+// 2026-11-26 (W21): the expired-code and foreign-code fixtures interact
+// with the same now-relative predicate (must be expired / meant to be a
+// valid foreign pending row, respectively), so they are now-relative too.
+const EXPIRED_CODE_EXPIRY = new Date(Date.now() - 365 * 864e5);
+const FOREIGN_CODE_EXPIRY = new Date(Date.now() + 180 * 864e5);
 const SEEDED_REFERRAL_ROWS = 4; // rewarded + pending + expired + foreign
 
 async function startPglite(): Promise<void> {
@@ -212,9 +223,9 @@ async function createTablesAndSeed() {
       (${CUSTOMER_ID}, 'AGT4242', 'REFEXIST1', NULL, 'pending',
        0, '0.00', NULL, NULL, ${VALID_CODE_EXPIRY}, '2026-09-25'),
       (6666, 'AGT6666', 'REFOLD99', NULL, 'pending',
-       0, '0.00', NULL, NULL, '2026-01-01', '2025-12-01'),
+       0, '0.00', NULL, NULL, ${EXPIRED_CODE_EXPIRY}, '2025-12-01'),
       (${OTHER_CUSTOMER_ID}, 'AGT9999', 'REF9999X', NULL, 'pending',
-       0, '0.00', NULL, NULL, '2027-06-01', '2026-09-01')`);
+       0, '0.00', NULL, NULL, ${FOREIGN_CODE_EXPIRY}, '2026-09-01')`);
 }
 
 async function referralRowCount(): Promise<number> {
