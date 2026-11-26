@@ -21,7 +21,10 @@ async function mlFetch(path: string): Promise<unknown> {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
-    return res.json();
+    // 2026-11-26 (W21): `await` is load-bearing — a bare
+    // `return res.json()` lets a JSON parse rejection escape this try/catch,
+    // bypassing the graceful `return null` degradation below (W19 class).
+    return await res.json();
   } catch { return null; }
 }
 

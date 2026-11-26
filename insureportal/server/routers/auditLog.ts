@@ -20,7 +20,9 @@ export const auditLogRouter = router({
             code: "UNAUTHORIZED",
             message: "Agent session required",
           });
-        return getAuditLog(session.id, input.limit, input.offset);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await getAuditLog(session.id, input.limit, input.offset);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -41,7 +43,9 @@ export const auditLogRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        return getAuditLog(undefined, input.limit, input.offset);
+        // 2026-11-26 (W21): `await` so an async rejection is observed by this
+        // try/catch (TRPCError normalization) instead of escaping it raw (W19 class).
+        return await getAuditLog(undefined, input.limit, input.offset);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

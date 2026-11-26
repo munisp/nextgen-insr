@@ -82,24 +82,74 @@ let pubSubInstance: InMemoryPubSub | null = null;
 let redisPublisher: any = null;
 let redisSubscriber: any = null;
 
+// 2026-11-26 (W21): init retry state. Previously initRedisPubSub ran ONCE at
+// module load (fire-and-forget), so a boot-time Redis blip pinned the process
+// to in-memory pub/sub forever and notifications silently stopped propagating
+// across instances. Now a failed init cleans up and a later publish re-arms
+// init at most once per RETRY_INTERVAL_MS (30s matches the W20 backoff scale
+// in server/redisClient.ts). Retries are non-blocking: publishNotification
+// never waits on init, it uses the in-memory fallback for that call.
+const INIT_RETRY_INTERVAL_MS = 30_000;
+let initInFlight: Promise<boolean> | null = null;
+let nextInitAttemptAt = 0;
+
 async function initRedisPubSub(): Promise<boolean> {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) return false;
 
+  // 2026-11-26 (W21): connect LOCAL clients first and assign the module
+  // singletons only AFTER both connects succeed (the W19 pattern from
+  // server/redisClient.ts). Previously the singletons were assigned BEFORE
+  // `await connect()`, so a failed connect left half-open non-null clients
+  // behind and a retry could never happen cleanly.
+  let publisher: any = null;
+  let subscriber: any = null;
   try {
     const { createClient } = await import("redis" as string);
-    redisPublisher = createClient({ url: redisUrl });
-    redisSubscriber = createClient({ url: redisUrl });
-    await redisPublisher.connect();
-    await redisSubscriber.connect();
+    publisher = createClient({ url: redisUrl });
+    subscriber = createClient({ url: redisUrl });
+    // 2026-11-26 (W21): 'error' listeners are load-bearing — node-redis emits
+    // 'error' on socket failures and an unhandled 'error' EventEmitter event
+    // THROWS, which can crash the process. Log only: publishes/subscriptions
+    // degrade to the in-memory pub/sub via the isReady gates below.
+    publisher.on("error", (err: Error) => {
+      logger.error("[RealtimeNotifications] Redis publisher error:: " + err.message);
+    });
+    subscriber.on("error", (err: Error) => {
+      logger.error("[RealtimeNotifications] Redis subscriber error:: " + err.message);
+    });
+    await publisher.connect();
+    await subscriber.connect();
+    redisPublisher = publisher;
+    redisSubscriber = subscriber;
     logger.info("[RealtimeNotifications] Redis pub/sub connected");
     return true;
   } catch (e) {
+    // 2026-11-26 (W21): dispose the half-open clients so a later init retries
+    // with fresh sockets instead of leaking stuck connections.
+    try { await publisher?.disconnect(); } catch { /* best-effort cleanup */ }
+    try { await subscriber?.disconnect(); } catch { /* best-effort cleanup */ }
+    redisPublisher = null;
+    redisSubscriber = null;
     logger.info(
       "[RealtimeNotifications] Redis unavailable, using in-memory pub/sub"
     );
     return false;
   }
+}
+
+function maybeRetryRedisInit(): void {
+  // Already connected (node-redis reconnects internally after socket errors)
+  // or Redis not configured — nothing to do.
+  if (redisPublisher || !process.env.REDIS_URL) return;
+  const now = Date.now();
+  if (initInFlight || now < nextInitAttemptAt) return; // one attempt per window
+  nextInitAttemptAt = now + INIT_RETRY_INTERVAL_MS;
+  initInFlight = initRedisPubSub()
+    .catch(() => false)
+    .finally(() => {
+      initInFlight = null;
+    });
 }
 
 function getPubSub(): InMemoryPubSub {
@@ -117,6 +167,10 @@ export async function publishNotification(
 ): Promise<void> {
   const channel = `notifications:${notification.channel}`;
   const message = JSON.stringify(notification);
+
+  // 2026-11-26 (W21): non-blocking re-arm of Redis init after a failed
+  // boot-time connect; this call still falls back to in-memory for now.
+  maybeRetryRedisInit();
 
   if (redisPublisher?.isReady) {
     await redisPublisher.publish(channel, message);
@@ -384,5 +438,8 @@ function extractCookieToken(cookieStr: string): string | null {
   return match ? match[1] : null;
 }
 
-// Initialize Redis on module load (non-blocking)
-initRedisPubSub().catch(() => {});
+// Initialize Redis on module load (non-blocking). 2026-11-26 (W21): goes
+// through maybeRetryRedisInit so a failed boot connect is cleaned up and a
+// later publishNotification re-arms init instead of pinning the process to
+// in-memory pub/sub forever.
+maybeRetryRedisInit();
