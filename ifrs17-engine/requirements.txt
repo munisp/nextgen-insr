@@ -3,4 +3,8 @@ uvicorn==0.27.1
 pydantic==2.6.1
 numpy==1.26.4
 pandas==2.2.0
-psycopg2-binary>=2.9.0
+# 2026-11-26 (W23): psycopg2-binary >= range pinned to ==2.9.13 (PyPI
+# info.version, verified 2026-11-26) - the floating range was an unpinned
+# supply-chain input for CI (platform-ci.yml) and the runtime Dockerfile,
+# which installs this same file. Existing == pins left as-is.
+psycopg2-binary==2.9.13

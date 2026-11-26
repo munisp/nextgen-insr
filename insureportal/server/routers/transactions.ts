@@ -1186,7 +1186,10 @@ export const transactionsRouter = router({
         .select({
           id: transactions.id,
           ref: transactions.ref,
-          agentId: transactions.agentId,
+          // 2026-11-26 (W23): renamed duplicate key agentId -> agentNumericId
+          // (mirrors main-repo server/routers/transactions.ts); previously the
+          // later `agentId: agents.agentId` silently shadowed transactions.agentId.
+          agentNumericId: transactions.agentId,
           type: transactions.type,
           amount: transactions.amount,
           customerName: transactions.customerName,

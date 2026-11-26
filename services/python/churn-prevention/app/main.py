@@ -21,7 +21,7 @@ Integrations:
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import ClassVar
 
@@ -311,7 +311,7 @@ async def predict_churn(features: CustomerFeatures):
 
     lapse_date = None
     if probability > 0.5 and features.renewal_date_days < 60:
-        lapse_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=features.renewal_date_days)).isoformat()  # naive-UTC wire format preserved (DTZ003)
+        lapse_date = (datetime.now(UTC).replace(tzinfo=None) + timedelta(days=features.renewal_date_days)).isoformat()  # naive-UTC wire format preserved (DTZ003)
 
     return ChurnPrediction(
         customer_id=features.customer_id,

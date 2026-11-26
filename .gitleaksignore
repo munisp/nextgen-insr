@@ -30,3 +30,14 @@ fe74816ac2f48ae5f3327110699076e1a923f53f:server/lib/envValidation.ts:generic-api
 # default); follow-up recommended to source it from env at HEAD.
 5360d0bd2cf07c9762e1e172d0dd84dc944933a0:kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:194
 5360d0bd2cf07c9762e1e172d0dd84dc944933a0:kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:265
+# 2026-11-26 (W23-C): security-scan.yml secret-scan job runs
+# `gitleaks detect --no-git`; no-git fingerprints carry no commit prefix, so
+# the commit-scoped entries above never match in that job. gitleaks 8.24.3
+# (harmonized from 8.21.2 in this wave) detects these in whole-tree no-git
+# scans; 8.21.2 did not. Same three already-reviewed false positives as
+# entries 3-4 and 8-9 above: published APISIX default admin key (apisix.go,
+# both sites) and the KNOWN_DEFAULT_SECRETS denylist literal
+# (envValidation.ts). Fingerprints copied from CI run 45856373644 job log.
+kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:194
+kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:265
+server/lib/envValidation.ts:generic-api-key:300
