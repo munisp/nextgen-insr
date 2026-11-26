@@ -62,3 +62,62 @@ jobs:
         run: node scripts/check-insureportal-tsc-baseline.mjs
         env:
           NODE_OPTIONS: --max-old-space-size=3072
+
+  # 2026-11-27 (W24): hard test gate. `npm test` (vitest run) in
+  # insureportal/ was RED on main and ungated: the W23 fail-closed Permify
+  # hardening broke procedure-level tests that assumed a reachable
+  # authorizer, the global server/db mock shadowed the real module the
+  # integration suites need, and the hardcoded PGlite ports collided under
+  # parallel runs. W24 fixed the harness (Permify wire-protocol double in
+  # vitest.setup.ts, real db module restored, dynamic ports) and a real
+  # getDb() pool-leak race; this job keeps it green.
+  insureportal-tests:
+    name: InsurePortal Test Suite (vitest + real PGlite)
+    runs-on: ubuntu-24.04  # pinned, mirroring the gates job above
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: insureportal/package-lock.json
+
+      - name: Install insureportal dependencies
+        working-directory: insureportal
+        run: npm ci --no-audit --no-fund
+
+      # The real-DB integration suites
+      # (insureportal/tests/integration/*.integration.test.ts) spawn the
+      # PLATFORM's PGlite wire-protocol server at
+      # tests/integration/setup/pgliteServer.mjs (repo root, outside
+      # insureportal/), which imports @electric-sql/pglite and
+      # @electric-sql/pglite-socket via the node_modules ancestor chain.
+      # insureportal's own lockfile deliberately does NOT carry PGlite, and
+      # the root is pnpm-managed (installing it here would be heavy and
+      # fragile), so this step installs the exact lockfile-proven versions
+      # (pglite 0.5.4, pglite-socket 0.2.11 — the combination the green
+      # runs were verified against) into a scratch package placed inside
+      # the spawned script's module-resolution chain.
+      # --legacy-peer-deps: pglite-socket@0.2.11 declares
+      # peer @electric-sql/pglite@0.5.8, but the root pnpm-lock resolves
+      # and runs it against 0.5.4 (the proven pair); npm would otherwise
+      # hard-fail with ERESOLVE.
+      # PGlite bundles its wasm/postgres payload inside the npm tarball —
+      # no runtime download — so this works in a clean CI environment
+      # (verified 2026-11-27 in a fresh tree: npm ci + this install step +
+      # npm test → 18 files / 224 tests green).
+      - name: Install PGlite runtime for the spawned test server
+        working-directory: tests/integration/setup
+        run: |
+          npm init -y >/dev/null
+          npm install --no-save --no-audit --no-fund --legacy-peer-deps \
+            @electric-sql/pglite@0.5.4 @electric-sql/pglite-socket@0.2.11
+
+      # HARD gate: the full suite must pass. `vitest run` exits non-zero on
+      # any failed test OR any unhandled error, which fails this step and
+      # the job. No retries, no allowed-failures.
+      - name: Run insureportal test suite
+        working-directory: insureportal
+        run: npm test

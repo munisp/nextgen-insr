@@ -86,49 +86,63 @@ const _noopChain: any = new Proxy(
   }
 );
 
-export async function getDb() {
-  if (_db && _dbVerified) return _db;
-  if (!_db) {
-    const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? "";
-    if (!url) {
-      console.warn("[DB] No POSTGRES_URL or DATABASE_URL set");
-      return _noopChain;
-    }
-    // P3-2: Connection pool right-sizing formula from 1B Payments article
-    const cpuCores =
-      typeof require !== "undefined" ? (await import("os")).cpus().length : 4;
-    const effectiveSpindleCount = 1;
-    const formulaPoolSize = cpuCores * 2 + effectiveSpindleCount;
-    const poolSize = Math.max(5, Math.min(50, formulaPoolSize));
-    console.log(
-      `[DB] Connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
-    );
-    _pool = new Pool({
-      connectionString: url,
-      ssl: false,
-      max: poolSize,
-      min: Math.max(2, Math.floor(poolSize / 4)),
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
-      maxUses: 7500,
-      statement_timeout: 30_000,
-    } as any);
-    _db = drizzle(_pool);
+// 2026-11-27 (W24): getDb() was NOT concurrency-safe — two concurrent
+// first-callers (e.g. a module-load ensureDefaults() racing a request
+// handler) both passed the `if (!_db)` check and EACH created a Pool; the
+// loser's pool was overwritten while still holding live connections and
+// could never be closed (leaked sockets; observed in tests as orphaned
+// pg clients erroring when the DB went away). Initialization is now
+// memoized behind a single shared promise; on any failure the memo is
+// cleared so a later call retries (preserving the previous lazy-retry
+// and env-set-later semantics).
+let _initPromise: Promise<any> | null = null;
+
+async function _initDb(): Promise<any> {
+  const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? "";
+  if (!url) {
+    console.warn("[DB] No POSTGRES_URL or DATABASE_URL set");
+    _initPromise = null; // retry allowed once a URL is configured
+    return _noopChain;
   }
+  // P3-2: Connection pool right-sizing formula from 1B Payments article
+  const cpuCores =
+    typeof require !== "undefined" ? (await import("os")).cpus().length : 4;
+  const effectiveSpindleCount = 1;
+  const formulaPoolSize = cpuCores * 2 + effectiveSpindleCount;
+  const poolSize = Math.max(5, Math.min(50, formulaPoolSize));
+  console.log(
+    `[DB] Connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
+  );
+  _pool = new Pool({
+    connectionString: url,
+    ssl: false,
+    max: poolSize,
+    min: Math.max(2, Math.floor(poolSize / 4)),
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    maxUses: 7500,
+    statement_timeout: 30_000,
+  } as any);
+  _db = drizzle(_pool);
   // Verify connectivity on first use
-  if (!_dbVerified) {
-    try {
-      const client = await _pool!.connect();
-      client.release();
-      _dbVerified = true;
-    } catch (e: any) {
-      console.warn(`[DB] Connection failed: ${e.message}`);
-      _db = null;
-      _pool = null;
-      return _noopChain;
-    }
+  try {
+    const client = await _pool!.connect();
+    client.release();
+    _dbVerified = true;
+  } catch (e: any) {
+    console.warn(`[DB] Connection failed: ${e.message}`);
+    _db = null;
+    _pool = null;
+    _initPromise = null; // retry allowed after a transient outage
+    return _noopChain;
   }
   return _db;
+}
+
+export async function getDb() {
+  if (_db && _dbVerified) return _db;
+  if (!_initPromise) _initPromise = _initDb();
+  return _initPromise;
 }
 
 /// ─── Users (Keycloak OIDC) ───────────────────────────────────────────────────
