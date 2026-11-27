@@ -97,3 +97,36 @@ claims:
     evidence:
       - scripts/load-smoke.mjs
       - PERFORMANCE.md
+
+  - id: CLAIM-012
+    title: "Actuary engine tRPC surface (rateQuote, reserveEstimate, capitalReport, adequacyMonitor, accumulationMap + actuaryAdmin mutations) with circuit-broken Go adapter and fail-closed actuary/actuary_admin Permify gates"
+    status: verified
+    evidence:
+      - insureportal/server/routers/actuary.ts
+      - insureportal/server/routers/actuaryAdmin.ts
+      - insureportal/server/routers/actuaryRoleGuard.ts
+      - insureportal/server/actuaryAdapter.ts
+      - infra/permify/schema.perm
+    verification: "Executed 2026-11-28 (W34-D): npm test (vitest run) in insureportal — the suites tests/routers/actuaryAdapter.test.ts (5-failure circuit trip, 30s reset semantics via injected short reset, half-open probe, recovery, backoff retries, 503-vs-4xx breaker accounting), tests/routers/actuary.test.ts (rateQuote zod validation, adapter happy path through a real in-process fake HTTP pricing service, outage SERVICE_UNAVAILABLE, reserveEstimate actuary-pass/non-actuary FORBIDDEN) and tests/routers/actuaryAdmin.authz.test.ts (Permify-down denies actuaryAdmin.* unconditionally incl. platform admin role, grant/deny decisions) all pass; wire doubles exist only at HTTP boundaries (in-process node:http fake pricing + fake Permify servers), matching the vitest.setup.ts precedent."
+
+  - id: CLAIM-013
+    title: "Actuary drizzle schema additions (12 tables) + idempotent migration 0049_actuary_engine.sql apply + rollback on real Postgres"
+    status: verified
+    evidence:
+      - insureportal/drizzle/schema.ts
+      - insureportal/drizzle/0049_actuary_engine.sql
+    verification: "Executed 2026-11-28 (W34-D): tests/integration/actuaryMigration.integration.test.ts applies 0049 verbatim against a spawned PGlite wire server, verifies all 12 tables, insert/read-back round-trip, double-apply idempotency, documented rollback + clean re-apply; tests/routers/actuaryDrizzleGenerate.test.ts proves drizzle-kit generate over drizzle/schema.ts emits all 12 tables and that re-generation is an empty diff. Both pass as part of npm test (vitest run) in insureportal."
+
+  - id: CLAIM-014
+    title: "Actuary portal pages (Dashboard, Triangles, Adequacy, Capital, Referrals, RateAdmin) behind the actuaryEngine feature flag with honest empty states"
+    status: verified
+    evidence:
+      - insureportal/client/src/pages/actuary/Dashboard.tsx
+      - insureportal/client/src/pages/actuary/Triangles.tsx
+      - insureportal/client/src/pages/actuary/Adequacy.tsx
+      - insureportal/client/src/pages/actuary/Capital.tsx
+      - insureportal/client/src/pages/actuary/Referrals.tsx
+      - insureportal/client/src/pages/actuary/RateAdmin.tsx
+      - insureportal/client/src/pages/actuary/ActuaryFeatureGate.tsx
+      - insureportal/client/src/pages/actuary/featureFlag.ts
+    verification: "Executed 2026-11-28 (W34-D): npm run build (vite client + esbuild server bundle) in insureportal exits 0 with the pages included; node scripts/check-insureportal-tsc-baseline.mjs keeps the 0-error ratchet; pages call only the live actuary/actuaryAdmin procedures and render explicit empty/disabled states (no fabricated figures). Browser rendering itself was NOT executed — the claim covers build/typecheck/wiring only."

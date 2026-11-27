@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // InsurePortal — Permify Authorization Schema
-// Version: 3.0.0 | 16 Keycloak roles mapped to 13 insurance domain entities
+// Version: 3.1.0 | 17 Keycloak roles mapped to 14 insurance domain entities
+// (W34-D, 2026-11-28: + `actuary` entity + `actuary_admin` role relation —
+// additive only, fail-closed semantics unchanged)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Entity: User ──────────────────────────────────────────────────────────────
@@ -8,12 +10,13 @@ entity user {}
 
 // ── Entity: Tenant ────────────────────────────────────────────────────────────
 entity tenant {
-    // All 16 role relations
+    // All 16 role relations (+ W34-D actuary_admin, additive)
     relation super_admin        @user
     relation admin              @user
     relation supervisor         @user
     relation underwriter        @user
     relation actuary            @user
+    relation actuary_admin      @user
     relation claims_adjuster    @user
     relation broker             @user
     relation agent              @user
@@ -118,14 +121,14 @@ entity actuarial_report {
     relation tenant   @tenant
     relation author   @user
 
-    action view         = tenant.super_admin or tenant.admin or tenant.actuary or tenant.compliance_officer or tenant.regulator or author
-    action create       = tenant.actuary or tenant.super_admin or tenant.admin
-    action edit         = author or tenant.actuary or tenant.super_admin
-    action publish      = tenant.actuary or tenant.super_admin or tenant.admin
-    action export       = tenant.actuary or tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator
+    action view         = tenant.super_admin or tenant.admin or tenant.actuary or tenant.actuary_admin or tenant.compliance_officer or tenant.regulator or author
+    action create       = tenant.actuary or tenant.actuary_admin or tenant.super_admin or tenant.admin
+    action edit         = author or tenant.actuary or tenant.actuary_admin or tenant.super_admin
+    action publish      = tenant.actuary or tenant.actuary_admin or tenant.super_admin or tenant.admin
+    action export       = tenant.actuary or tenant.actuary_admin or tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator
     action delete       = tenant.super_admin or tenant.admin
-    action run_ifrs17   = tenant.actuary or tenant.super_admin
-    action run_reserves = tenant.actuary or tenant.super_admin
+    action run_ifrs17   = tenant.actuary or tenant.actuary_admin or tenant.super_admin
+    action run_reserves = tenant.actuary or tenant.actuary_admin or tenant.super_admin
 }
 
 // ── Entity: ComplianceFiling ──────────────────────────────────────────────────
@@ -273,4 +276,37 @@ entity agent {
     action view      = tenant.super_admin or tenant.admin or tenant.supervisor or owner_user
     action operate   = owner_user or tenant.admin or tenant.supervisor
     action manage    = tenant.super_admin or tenant.admin or tenant.supervisor
+}
+
+// ── Entity: Actuary (W34-D, 2026-11-28 — ADDITIVE) ──────────────────────────
+// Actuary engine resource (design actuary-design/design.md §7.4). Singleton
+// id "engine": the check target for the actuary tRPC surface
+// (insureportal/server/routers/actuaryRoleGuard.ts). Fail-closed semantics
+// are unchanged — no entity here implies no grants; a Permify outage denies
+// (insureportal W23 boot-guard). Read-side permissions hang off the tenant
+// actuary relation; manage_* permissions hang off the direct actuary_admin
+// relation (tenant.super_admin included, mirroring the actuarial_report
+// entity's super-admin elevated actions) so platform admin ≠ actuary_admin
+// without an explicit tuple.
+entity actuary {
+    relation tenant        @tenant
+    relation actuary_admin @user
+    relation actuary_user  @user
+
+    // Any authenticated channel may quote (design Appendix I step 1 — the
+    // tRPC layer still requires a valid session).
+    action rate_quote            = tenant.actuary or tenant.admin or tenant.super_admin or tenant.broker or tenant.agent or tenant.policyholder or tenant.underwriter or actuary_user or actuary_admin
+    action view_reserves         = tenant.actuary or tenant.super_admin or tenant.admin or actuary_admin
+    action view_capital          = tenant.actuary or tenant.super_admin or tenant.admin or actuary_admin
+    action view_adequacy         = tenant.actuary or tenant.super_admin or tenant.admin or actuary_admin
+    action view_referrals        = tenant.underwriter or tenant.actuary or tenant.super_admin or tenant.admin or actuary_admin
+    // Underwriter or actuary adjudicates referral cases (Appendix D).
+    action decide_referral       = tenant.underwriter or tenant.actuary or tenant.super_admin or actuary_admin
+    // actuary_admin lifecycle/approval mutations — fail-closed gated in the
+    // tRPC layer (actuaryAdmin.*). Platform admin deliberately NOT included:
+    // admin composites billing-admin + supervisor only (Keycloak hierarchy).
+    action manage_rates          = actuary_admin or tenant.super_admin
+    action approve_runs          = actuary_admin or tenant.super_admin
+    action manage_assumptions    = actuary_admin or tenant.super_admin
+    action manage_referral_rules = actuary_admin or tenant.super_admin
 }

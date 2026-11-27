@@ -1,7 +1,12 @@
 # InsurePortal — Keycloak Roles & Permissions Breakdown
-**Version:** 3.0.0 | **Realm:** `insureportal` | **Total Roles:** 16  
-**Authorization Engine:** Permify v0.9 | **Entities:** 13 insurance domain objects  
+**Version:** 3.1.0 | **Realm:** `insureportal` | **Total Roles:** 17  
+**Authorization Engine:** Permify v0.9 | **Entities:** 14 insurance domain objects  
 **Token Delivery:** JWT via `realm_access.roles` + `platform_role` protocol mappers
+
+> 2026-11-28 (W34-D, additive): + `insureportal-actuary-admin` role (Role 17)
+> and the `actuary` Permify entity for the actuary engine
+> (actuary-design/design.md §7.4). Existing roles/entities unchanged; the
+> fail-closed authorization posture is unchanged.
 
 ---
 
@@ -34,6 +39,7 @@ insureportal-super-admin (composite → all 15 roles)
 │       └── insureportal-billing-analyst
 ├── insureportal-underwriter
 ├── insureportal-actuary
+├── insureportal-actuary-admin
 ├── insureportal-claims-adjuster
 ├── insureportal-broker
 ├── insureportal-agent
@@ -212,6 +218,7 @@ insureportal-super-admin (composite → all 15 roles)
 | `compliance_filing` | `view`, `create` |
 | `reinsurance_treaty` | `view`, `view_cessions`, `view_premium_accounting` |
 | `transaction` | `export` |
+| `actuary` (W34-D) | `rate_quote`, `view_reserves`, `view_capital`, `view_adequacy`, `view_referrals`, `decide_referral` |
 
 ---
 
@@ -495,6 +502,29 @@ insureportal-super-admin (composite → all 15 roles)
 | Entity | Permitted Actions |
 |---|---|
 | `tenant` | `view_tenant` (member relation) |
+
+---
+
+## Role 17: `insureportal-actuary-admin` (W34-D, 2026-11-28 — additive)
+
+**Type:** Standard  
+**Description:** Senior actuary with governance authority over the actuary engine: manages the rate-version lifecycle (draft → filing → approved), approves reserve/capital runs for NAICOM filing eligibility, attests assumption sets as NAICOM filing-ready, and manages automatic-referral rules. Deliberately NOT implied by `insureportal-admin` — the admin composite contains billing-admin + supervisor only, so actuarial governance requires this explicit role (design §7.4; enforced fail-closed via Permify in the tRPC layer, including during Permify outages).
+
+### Keycloak Attributes
+
+| Attribute | Value |
+|---|---|
+| `platform_role` | `actuary_admin` |
+| `scope` | `tenant` |
+| `license_number` | `{dynamic}` (actuarial professional license) |
+| `requires_mfa` | `true` |
+
+### Permify Permissions
+
+| Entity | Permitted Actions |
+|---|---|
+| `actuary` | `rate_quote`, `view_reserves`, `view_capital`, `view_adequacy`, `view_referrals`, `decide_referral`, `manage_rates`, `approve_runs`, `manage_assumptions`, `manage_referral_rules` |
+| `actuarial_report` | `view`, `create`, `edit`, `publish`, `export`, `run_ifrs17`, `run_reserves` |
 
 ---
 
