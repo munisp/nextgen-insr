@@ -1,0 +1,456 @@
+{
+  "lines": [
+    {"code": "motor"},
+    {"code": "fire_property"},
+    {"code": "health"},
+    {"code": "gadget"},
+    {"code": "travel"},
+    {"code": "liability"}
+  ],
+  "rateVersions": [
+    {
+      "id": 1,
+      "line": "motor",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "motor",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -2.92,
+              "age_band[2]": 0.31,
+              "age_band[3]": 0.18,
+              "ncd[3]": -0.25,
+              "driver_profile[young]": 0.42,
+              "vehicle_class[suv]": 0.12,
+              "use[commercial]": 0.35
+            },
+            "base_frequency": 0.054
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 14.4326,
+              "vehicle_class[suv]": 0.12,
+              "vehicle_class[truck]": 0.25
+            },
+            "base_severity_kobo": 185500000
+          },
+          "relativities": {
+            "territory": {
+              "lagos_mainland": 1.18,
+              "lagos_island": 1.12,
+              "kano": 0.94,
+              "abuja": 1.05
+            }
+          },
+          "exposureUnit": "vehicle_year"
+        },
+        "loading": {
+          "expenseRatio": 0.20,
+          "commissionRate": 0.10,
+          "profitMargin": 0.05,
+          "minPremiumKobo": 2500000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075},
+          {"code": "NAICOM_LEVY", "rate": 0.01}
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "line": "fire_property",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "fire_property",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -3.50,
+              "construction[wood]": 0.45,
+              "occupancy[residential]": -0.10,
+              "fire_protection[hydrant]": -0.20,
+              "sum_insured_band[large]": 0.15
+            },
+            "base_frequency": 0.0302
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 16.20,
+              "construction[wood]": 0.30,
+              "occupancy[industrial]": 0.35
+            },
+            "base_severity_kobo": 1085350000
+          },
+          "relativities": {
+            "territory": {
+              "lagos": 1.10,
+              "rivers": 1.02,
+              "kaduna": 0.96
+            }
+          },
+          "exposureUnit": "building_year"
+        },
+        "loading": {
+          "expenseRatio": 0.22,
+          "commissionRate": 0.08,
+          "profitMargin": 0.06,
+          "minPremiumKobo": 5000000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075},
+          {"code": "NIA_LEVY", "rate": 0.005}
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "line": "health",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "health",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -1.20,
+              "age_band[child]": -0.30,
+              "age_band[adult]": 0.05,
+              "age_band[senior]": 0.55,
+              "plan_tier[gold]": 0.20,
+              "plan_tier[platinum]": 0.35
+            },
+            "base_frequency": 0.3012
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 10.50,
+              "plan_tier[gold]": 0.25,
+              "plan_tier[platinum]": 0.60,
+              "pre_existing[yes]": 0.45
+            },
+            "base_severity_kobo": 3631500
+          },
+          "relativities": {},
+          "exposureUnit": "member_year"
+        },
+        "loading": {
+          "expenseRatio": 0.25,
+          "commissionRate": 0.05,
+          "profitMargin": 0.04,
+          "minPremiumKobo": 1500000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075}
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "line": "gadget",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "gadget",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -2.60,
+              "device_type[laptop]": 0.15,
+              "device_type[phone]": 0.30,
+              "value_band[high]": 0.20,
+              "age[new]": -0.10
+            },
+            "base_frequency": 0.0743
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 11.80,
+              "device_type[laptop]": 0.40,
+              "value_band[high]": 0.50
+            },
+            "base_severity_kobo": 13325200
+          },
+          "relativities": {
+            "repair_network": {
+              "premium": 0.92,
+              "standard": 1.00
+            }
+          },
+          "exposureUnit": "device_year"
+        },
+        "loading": {
+          "expenseRatio": 0.18,
+          "commissionRate": 0.12,
+          "profitMargin": 0.05,
+          "minPremiumKobo": 500000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075},
+          {"code": "NAICOM_LEVY", "rate": 0.01}
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "line": "travel",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "travel",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -3.80,
+              "destination_zone[europe]": 0.25,
+              "destination_zone[asia]": 0.15,
+              "duration[long]": 0.30,
+              "age[senior]": 0.40,
+              "purpose[business]": -0.05
+            },
+            "base_frequency": 0.0224
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 9.90,
+              "destination_zone[usa]": 0.80,
+              "destination_zone[europe]": 0.50,
+              "age[senior]": 0.35
+            },
+            "base_severity_kobo": 1993000
+          },
+          "relativities": {},
+          "exposureUnit": "trip"
+        },
+        "loading": {
+          "expenseRatio": 0.21,
+          "commissionRate": 0.09,
+          "profitMargin": 0.05,
+          "minPremiumKobo": 300000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075}
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "line": "liability",
+      "version": "2026.09",
+      "status": "approved",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "liability",
+          "version": "2026.09",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -3.20,
+              "industry[construction]": 0.50,
+              "industry[retail]": -0.15,
+              "turnover_band[large]": 0.30,
+              "jurisdiction[federal]": 0.10
+            },
+            "base_frequency": 0.0408
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 15.10,
+              "industry[construction]": 0.45,
+              "limit[high]": 0.60
+            },
+            "base_severity_kobo": 363172000
+          },
+          "relativities": {},
+          "exposureUnit": "policy_year"
+        },
+        "loading": {
+          "expenseRatio": 0.19,
+          "commissionRate": 0.11,
+          "profitMargin": 0.06,
+          "minPremiumKobo": 2000000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075},
+          {"code": "NAICOM_LEVY", "rate": 0.01}
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "line": "motor",
+      "version": "2026.10",
+      "status": "filing",
+      "tables": {
+        "base": {
+          "artefactType": "freq_sev_glm",
+          "productLine": "motor",
+          "version": "2026.10",
+          "frequency": {
+            "family": "poisson",
+            "link": "log",
+            "coefficients": {
+              "intercept": -2.90,
+              "age_band[2]": 0.30,
+              "age_band[3]": 0.17,
+              "ncd[3]": -0.24,
+              "driver_profile[young]": 0.41,
+              "vehicle_class[suv]": 0.11,
+              "use[commercial]": 0.34
+            },
+            "base_frequency": 0.055
+          },
+          "severity": {
+            "family": "gamma",
+            "link": "log",
+            "coefficients": {
+              "intercept": 14.4326,
+              "vehicle_class[suv]": 0.12,
+              "vehicle_class[truck]": 0.24
+            },
+            "base_severity_kobo": 185500000
+          },
+          "relativities": {
+            "territory": {
+              "lagos_mainland": 1.19,
+              "lagos_island": 1.13,
+              "kano": 0.95,
+              "abuja": 1.06
+            }
+          },
+          "exposureUnit": "vehicle_year"
+        },
+        "loading": {
+          "expenseRatio": 0.20,
+          "commissionRate": 0.10,
+          "profitMargin": 0.05,
+          "minPremiumKobo": 2500000,
+          "maxPremiumKobo": 0
+        },
+        "tax": [
+          {"code": "VAT", "rate": 0.075},
+          {"code": "NAICOM_LEVY", "rate": 0.01}
+        ]
+      }
+    }
+  ],
+  "exposureLimits": [
+    {
+      "line": "motor",
+      "maxSumInsuredKobo": 5000000000,
+      "maxPremiumKobo": 500000000,
+      "maxAggregateKobo": 50000000000,
+      "geoAccumulationKobo": {
+        "lagos_mainland": 50000000000,
+        "kano": 10000000000
+      }
+    },
+    {
+      "line": "fire_property",
+      "maxSumInsuredKobo": 50000000000,
+      "geoAccumulationKobo": {
+        "lagos": 100000000000
+      }
+    },
+    {
+      "line": "gadget",
+      "maxSumInsuredKobo": 2000000000
+    }
+  ],
+  "referralRules": [
+    {
+      "id": 1,
+      "line": "motor",
+      "predicate": {"field": "sumInsuredKobo", "op": "gt", "value": 3000000000},
+      "action": "refer",
+      "reasonCode": "SI_THRESHOLD",
+      "priority": 10,
+      "isActive": true
+    },
+    {
+      "id": 2,
+      "line": "motor",
+      "predicate": {"field": "fraudScore", "op": "gte", "value": 0.85},
+      "action": "refer",
+      "reasonCode": "FRAUD_SCORE",
+      "priority": 20,
+      "isActive": true
+    },
+    {
+      "id": 3,
+      "line": "gadget",
+      "predicate": {"field": "var.imei_status", "op": "eq", "value": "duplicate"},
+      "action": "refer",
+      "reasonCode": "IMEI_DUPLICATE",
+      "priority": 10,
+      "isActive": true
+    },
+    {
+      "id": 4,
+      "line": "travel",
+      "predicate": {"field": "sumInsuredKobo", "op": "gt", "value": 500000000},
+      "action": "refer",
+      "reasonCode": "SI_THRESHOLD",
+      "priority": 10,
+      "isActive": true
+    }
+  ],
+  "accumulationSeeds": {
+    "accum:motor:lagos_mainland": 19000000000,
+    "accum:motor:__total__": 20000000000,
+    "accum:fire_property:lagos": 30000000000
+  },
+  "capitalSummary": {
+    "required": 2500000000.00,
+    "available": 5000000000.00,
+    "var995": 1800000000.00,
+    "tvar99": 2100000000.00,
+    "perLine": [
+      {"line": "motor", "tvar99": 900000000.00},
+      {"line": "fire_property", "tvar99": 1200000000.00}
+    ],
+    "asOf": "2026-09-30T00:00:00Z"
+  }
+}
