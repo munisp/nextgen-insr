@@ -42,7 +42,18 @@ const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
-      transformer: superjson,
+      // 2026-11-27 (W32-D): type-only cast — ZERO runtime change (the cast
+      // erases at compile time; superjson remains the live transformer on
+      // both ends, so the wire format is untouched). Root cause of the
+      // TS2322 this clears: tRPC v11 detects "server configured a
+      // transformer" via the conditional type
+      // `undefined extends TOptions['transformer'] ? false : true`, which
+      // ALWAYS evaluates to `false` under this tsconfig's `strict: false`
+      // (strictNullChecks off makes `undefined extends X` true for every X),
+      // so the AppRouter type advertises transformer:false even though
+      // server/_core/trpc.ts passes superjson at runtime. Full analysis:
+      // w31c-superjson-investigation.md (fix #1, zero wire risk).
+      transformer: superjson as never,
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
