@@ -23,6 +23,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(templateRoot, "client", "src"),
       "@shared": path.resolve(templateRoot, "shared"),
+      "@schema": path.resolve(templateRoot, "drizzle", "schema.ts"),
       "@assets": path.resolve(templateRoot, "attached_assets"),
     },
   },

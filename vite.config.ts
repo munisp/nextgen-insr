@@ -360,6 +360,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
+      "@schema": path.resolve(import.meta.dirname, "drizzle", "schema.ts"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
