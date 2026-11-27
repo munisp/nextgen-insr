@@ -5,6 +5,7 @@ import {
   index,
   integer,
   json,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -5929,3 +5930,519 @@ export const pensionContributions = pgTable(
 );
 export type PensionContribution = typeof pensionContributions.$inferSelect;
 export type InsertPensionContribution = typeof pensionContributions.$inferInsert;
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Actuary Engine (W34-D, 2026-11-28) ────────────────────────────────────
+// Design: actuary-design/design.md §5 (data model) — the 12 Leg-D tables.
+// Cross-leg contract (frozen): table/column names below are consumed by the
+// Go pricing service (Leg B) and the Python analytics package (Leg C).
+//
+// Type-choice note: the design pins `payload jsonb` for the rating-table /
+// assumption-set / accumulation payloads; this file otherwise uses `json`
+// (82 sites, zero jsonb). jsonb is kept here exactly as pinned because the
+// Go/Python legs query inside these payloads (relativity keys, predicate
+// terms); the mismatch with the older `json` convention is intentional and
+// documented, not drift.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 22 registered product lines (design §1 + Appendix J): the line set is
+// registry DATA, not code — engines dispatch on act_product_lines rows.
+export const actProductLineEnum = pgEnum("act_product_line", [
+  "group_life",
+  "whole_life",
+  "health",
+  "micro",
+  "parametric_crop",
+  "takaful",
+  "motor",
+  "fire_property",
+  "marine_hull",
+  "marine_cargo",
+  "oil_gas",
+  "agri_multi_peril",
+  "livestock",
+  "term_life",
+  "funeral",
+  "annuity",
+  "credit_life",
+  "hmo_health",
+  "engineering_car",
+  "bonds_surety",
+  "liability",
+  "git",
+]);
+
+// Rating style drives engine dispatch (design §5 / Appendix J column 2).
+export const actRatingStyleEnum = pgEnum("act_rating_style", [
+  "frequency_severity",
+  "burning_cost",
+  "mortality_based",
+  "exposure_based",
+  "parametric",
+]);
+
+// Rate-version lifecycle (design Appendix E: draft → filing → approved).
+export const actRateVersionStatusEnum = pgEnum("act_rate_version_status", [
+  "draft",
+  "filing",
+  "approved",
+  "retired",
+]);
+
+export const actRatingTableTypeEnum = pgEnum("act_rating_table_type", [
+  "base",
+  "relativity",
+  "territory",
+  "loading",
+  "tax",
+]);
+
+export const actAssumptionScopeEnum = pgEnum("act_assumption_scope", [
+  "pricing",
+  "reserving",
+  "capital",
+  "life",
+]);
+
+// Reserve-run methods (design §4.b).
+export const actReserveMethodEnum = pgEnum("act_reserve_method", [
+  "chainladder",
+  "bf",
+  "mack",
+]);
+
+// Shared run lifecycle: approveRun flips completed → approved (design §7.2).
+export const actRunStatusEnum = pgEnum("act_run_status", [
+  "draft",
+  "running",
+  "completed",
+  "approved",
+  "failed",
+]);
+
+export const actCapitalModelEnum = pgEnum("act_capital_model", [
+  "naicom_rbc",
+  "internal_ec",
+]);
+
+export const actModelTypeEnum = pgEnum("act_model_type", [
+  "freq_glm",
+  "sev_glm",
+  "mortality",
+  "capital",
+  "fraud_link",
+]);
+
+export const actModelStatusEnum = pgEnum("act_model_status", [
+  "candidate",
+  "approved",
+  "retired",
+]);
+
+export const actReferralActionEnum = pgEnum("act_referral_action", [
+  "refer",
+  "decline",
+]);
+
+export const actReferralStatusEnum = pgEnum("act_referral_status", [
+  "open",
+  "accepted",
+  "declined",
+]);
+
+export const actAlertSeverityEnum = pgEnum("act_alert_severity", [
+  "amber",
+  "red",
+]);
+
+// ─── act_product_lines — the 22-line registry (design Appendix J) ──────────
+export const actProductLines = pgTable(
+  "act_product_lines",
+  {
+    id: serial("id").primaryKey(),
+    code: actProductLineEnum("code").notNull().unique(),
+    name: varchar("name", { length: 128 }).notNull(),
+    ratingStyle: actRatingStyleEnum("ratingStyle").notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    codeIdx: uniqueIndex("actpl_code_idx").on(t.code),
+    isActiveIdx: index("actpl_isActive_idx").on(t.isActive),
+    tenantIdx: index("actpl_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActProductLine = typeof actProductLines.$inferSelect;
+export type InsertActProductLine = typeof actProductLines.$inferInsert;
+
+// ─── act_rate_versions — versioned, NAICOM-filing-ready rating ─────────────
+// unique(productLineId, version): a version number is immutable per line.
+// At most one row per line is expected in status 'approved' — the Go service
+// enforces the single-active invariant transactionally on activate
+// (design Appendix D); this leg never auto-approves.
+export const actRateVersions = pgTable(
+  "act_rate_versions",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    version: varchar("version", { length: 32 }).notNull(),
+    effectiveFrom: timestamp("effectiveFrom"),
+    effectiveTo: timestamp("effectiveTo"),
+    status: actRateVersionStatusEnum("status").default("draft").notNull(),
+    // NAICOM filing reference captured at draft → filing transition;
+    // required before 'approved' (upsertRateVersion gate, design §7.2).
+    naicomFilingRef: varchar("naicomFilingRef", { length: 128 }),
+    // Registry artefact (GLM coefficients) this version scores with.
+    modelRegistryId: integer("modelRegistryId"),
+    createdBy: integer("createdBy"),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    lineVersionIdx: uniqueIndex("actrv_line_version_idx").on(
+      t.productLineId,
+      t.version
+    ),
+    statusIdx: index("actrv_status_idx").on(t.status),
+    tenantIdx: index("actrv_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActRateVersion = typeof actRateVersions.$inferSelect;
+export type InsertActRateVersion = typeof actRateVersions.$inferInsert;
+
+// ─── act_rating_tables — per-version base/relativity/territory/loading/tax ──
+export const actRatingTables = pgTable(
+  "act_rating_tables",
+  {
+    id: serial("id").primaryKey(),
+    rateVersionId: integer("rateVersionId")
+      .references(() => actRateVersions.id)
+      .notNull(),
+    tableType: actRatingTableTypeEnum("tableType").notNull(),
+    payload: jsonb("payload").notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    versionTypeIdx: uniqueIndex("actrt_version_type_idx").on(
+      t.rateVersionId,
+      t.tableType
+    ),
+    tenantIdx: index("actrt_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActRatingTable = typeof actRatingTables.$inferSelect;
+export type InsertActRatingTable = typeof actRatingTables.$inferInsert;
+
+// ─── act_assumption_sets — versioned factors/curves/RI params/thresholds ───
+// naicomFilingReady is a human attestation (actuary_admin gate), never
+// auto-set: upsertAssumptionSet refuses to flip it true without approvedBy
+// (design Appendix E "naicomFilingReady gate").
+export const actAssumptionSets = pgTable(
+  "act_assumption_sets",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    scope: actAssumptionScopeEnum("scope").notNull(),
+    version: varchar("version", { length: 32 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    naicomFilingReady: boolean("naicomFilingReady").default(false).notNull(),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    nameScopeVersionIdx: uniqueIndex("actas_name_scope_version_idx").on(
+      t.name,
+      t.scope,
+      t.version
+    ),
+    scopeIdx: index("actas_scope_idx").on(t.scope),
+    tenantIdx: index("actas_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActAssumptionSet = typeof actAssumptionSets.$inferSelect;
+export type InsertActAssumptionSet = typeof actAssumptionSets.$inferInsert;
+
+// ─── act_reserve_runs — CL/BF/Mack outputs per line & valuation date ───────
+// Written by the Python analytics batch (Leg C); approveRun flips
+// completed → approved (filing eligibility, design §7.2).
+export const actReserveRuns = pgTable(
+  "act_reserve_runs",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    asOf: timestamp("asOf").notNull(),
+    method: actReserveMethodEnum("method").notNull(),
+    ultimateByOrigin: jsonb("ultimateByOrigin").notNull(),
+    // IBNR in NGN (numeric(18,2) platform money convention).
+    ibnr: numeric("ibnr", { precision: 18, scale: 2 }).notNull(),
+    // Mack parameter-uncertainty standard errors per origin (nullable: only
+    // method='mack' populates).
+    mackSe: jsonb("mackSe"),
+    assumptionSetId: integer("assumptionSetId").references(
+      () => actAssumptionSets.id
+    ),
+    status: actRunStatusEnum("status").default("draft").notNull(),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    lineAsOfIdx: index("actrr_line_asof_idx").on(t.productLineId, t.asOf),
+    statusIdx: index("actrr_status_idx").on(t.status),
+    tenantIdx: index("actrr_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActReserveRun = typeof actReserveRuns.$inferSelect;
+export type InsertActReserveRun = typeof actReserveRuns.$inferInsert;
+
+// ─── act_capital_runs — NAICOM RBC approximation + internal EC ─────────────
+// var995/tvar99 are aggregate-loss distribution quantiles in NGN; perLine
+// holds per-line marginal TVaR contributions (design §4.d).
+export const actCapitalRuns = pgTable(
+  "act_capital_runs",
+  {
+    id: serial("id").primaryKey(),
+    asOf: timestamp("asOf").notNull(),
+    model: actCapitalModelEnum("model").notNull(),
+    var995: numeric("var995", { precision: 18, scale: 2 }),
+    tvar99: numeric("tvar99", { precision: 18, scale: 2 }),
+    // NAICOM RBC approximation fields (design §4.d): required/available and
+    // the derived solvency ratio live alongside the EC quantiles so one row
+    // serves capitalReport without a second read. Nullable: internal_ec rows
+    // carry no RBC view and vice versa.
+    rbcRequired: numeric("rbcRequired", { precision: 18, scale: 2 }),
+    rbcAvailable: numeric("rbcAvailable", { precision: 18, scale: 2 }),
+    perLine: jsonb("perLine"),
+    riStructureId: integer("riStructureId"),
+    assumptionSetId: integer("assumptionSetId").references(
+      () => actAssumptionSets.id
+    ),
+    status: actRunStatusEnum("status").default("draft").notNull(),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    asOfIdx: index("actcr_asof_idx").on(t.asOf),
+    statusIdx: index("actcr_status_idx").on(t.status),
+    tenantIdx: index("actcr_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActCapitalRun = typeof actCapitalRuns.$inferSelect;
+export type InsertActCapitalRun = typeof actCapitalRuns.$inferInsert;
+
+// ─── act_referrals — automatic-referral worklist (underwriter queue) ───────
+// Design §5 act_referral_cases renamed to act_referrals per the frozen
+// Leg-D table list (mission pins 12 tables; this is the cases table).
+export const actReferrals = pgTable(
+  "act_referrals",
+  {
+    id: serial("id").primaryKey(),
+    quoteRef: varchar("quoteRef", { length: 64 }).notNull().unique(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    // Machine reason codes emitted by the Go referral engine
+    // (e.g. ACCUM_GEO, SI_THRESHOLD, FRAUD_SCORE, MODEL_OUT_OF_DOMAIN).
+    reasonCodes: text("reasonCodes").array().notNull(),
+    status: actReferralStatusEnum("status").default("open").notNull(),
+    underwriterId: integer("underwriterId"),
+    decidedAt: timestamp("decidedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    quoteRefIdx: uniqueIndex("actref_quoteRef_idx").on(t.quoteRef),
+    statusIdx: index("actref_status_idx").on(t.status),
+    lineIdx: index("actref_line_idx").on(t.productLineId),
+    tenantIdx: index("actref_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActReferral = typeof actReferrals.$inferSelect;
+export type InsertActReferral = typeof actReferrals.$inferInsert;
+
+// ─── act_referral_rules — declarative predicates evaluated at quote time ───
+// predicate holds the JSON rule (field/operator/threshold terms); the Go
+// service evaluates fail-closed: rules-engine error = refer, never accept
+// (design §4.g, mirroring product-builder's C2d convention).
+export const actReferralRules = pgTable(
+  "act_referral_rules",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    predicate: jsonb("predicate").notNull(),
+    action: actReferralActionEnum("action").notNull(),
+    reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+    // Lower number = evaluated first (manageReferralRules priority ordering).
+    priority: integer("priority").default(100).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    linePriorityIdx: index("actrrl_line_priority_idx").on(
+      t.productLineId,
+      t.priority
+    ),
+    isActiveIdx: index("actrrl_isActive_idx").on(t.isActive),
+    tenantIdx: index("actrrl_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActReferralRule = typeof actReferralRules.$inferSelect;
+export type InsertActReferralRule = typeof actReferralRules.$inferInsert;
+
+// ─── act_exposure_limits — per-product de-risking ceilings (design §4.g) ───
+export const actExposureLimits = pgTable(
+  "act_exposure_limits",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull()
+      .unique(),
+    maxSumInsured: numeric("maxSumInsured", { precision: 18, scale: 2 }),
+    maxPremium: numeric("maxPremium", { precision: 18, scale: 2 }),
+    maxAggregateExposure: numeric("maxAggregateExposure", {
+      precision: 18,
+      scale: 2,
+    }),
+    // Per-geo-cell ceilings: { "state/LGA cell id": limit NGN }.
+    geoAccumulationLimit: jsonb("geoAccumulationLimit"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    lineIdx: uniqueIndex("actel_line_idx").on(t.productLineId),
+    tenantIdx: index("actel_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActExposureLimit = typeof actExposureLimits.$inferSelect;
+export type InsertActExposureLimit = typeof actExposureLimits.$inferInsert;
+
+// ─── act_accumulation_cells — geo-cell aggregate exposure grid ─────────────
+// One row per (line, geoCell): the portal accumulationMap read model. The
+// authoritative running aggregates live in Redis on the Go side
+// (accum:{line}:{geo_cell}, design §4.g); these rows are the persisted
+// seed/snapshot PG state the map renders — never fabricated by this leg.
+export const actAccumulationCells = pgTable(
+  "act_accumulation_cells",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    geoCell: varchar("geoCell", { length: 64 }).notNull(),
+    aggregateExposure: numeric("aggregateExposure", {
+      precision: 18,
+      scale: 2,
+    })
+      .default("0.00")
+      .notNull(),
+    policyCount: integer("policyCount").default(0).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    tenantId: integer("tenantId"),
+  },
+  t => ({
+    lineCellIdx: uniqueIndex("actac_line_cell_idx").on(
+      t.productLineId,
+      t.geoCell
+    ),
+    tenantIdx: index("actac_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActAccumulationCell = typeof actAccumulationCells.$inferSelect;
+export type InsertActAccumulationCell = typeof actAccumulationCells.$inferInsert;
+
+// ─── act_adequacy_alerts — priced-vs-actual LR breaches (design §4.f) ──────
+// period is YYYY-MM (the adequacy job emits monthly actuary.adequacy.v1
+// events; breaches persist here).
+export const actAdequacyAlerts = pgTable(
+  "act_adequacy_alerts",
+  {
+    id: serial("id").primaryKey(),
+    productLineId: integer("productLineId")
+      .references(() => actProductLines.id)
+      .notNull(),
+    period: varchar("period", { length: 7 }).notNull(),
+    // Stored as ratios (0.625 = 62.5%), NOT percentages — numeric(18,4) so
+    // the ±5/±10 point alert bands (design §4.f) are representable exactly.
+    pricedLossRatio: numeric("pricedLossRatio", {
+      precision: 18,
+      scale: 4,
+    }).notNull(),
+    actualLossRatio: numeric("actualLossRatio", {
+      precision: 18,
+      scale: 4,
+    }).notNull(),
+    severity: actAlertSeverityEnum("severity").notNull(),
+    acknowledgedBy: integer("acknowledgedBy"),
+    acknowledgedAt: timestamp("acknowledgedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    linePeriodIdx: index("actaa_line_period_idx").on(
+      t.productLineId,
+      t.period
+    ),
+    severityIdx: index("actaa_severity_idx").on(t.severity),
+    tenantIdx: index("actaa_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActAdequacyAlert = typeof actAdequacyAlerts.$inferSelect;
+export type InsertActAdequacyAlert = typeof actAdequacyAlerts.$inferInsert;
+
+// ─── act_model_registry — GLM/mortality/capital artefact registry ──────────
+// artefactUri points at the MinIO/S3 object holding the JSON artefact
+// (design Appendix F); Go validates the artefact against its JSON-Schema at
+// import and scores deterministically from resolved coefficients.
+export const actModelRegistry = pgTable(
+  "act_model_registry",
+  {
+    id: serial("id").primaryKey(),
+    modelType: actModelTypeEnum("modelType").notNull(),
+    version: varchar("version", { length: 32 }).notNull(),
+    artefactUri: varchar("artefactUri", { length: 512 }).notNull(),
+    metrics: jsonb("metrics"),
+    trainedAt: timestamp("trainedAt"),
+    status: actModelStatusEnum("status").default("candidate").notNull(),
+    approvedBy: integer("approvedBy"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    typeVersionIdx: uniqueIndex("actmr_type_version_idx").on(
+      t.modelType,
+      t.version
+    ),
+    statusIdx: index("actmr_status_idx").on(t.status),
+    tenantIdx: index("actmr_tenantId_idx").on(t.tenantId),
+  })
+);
+export type ActModelRegistryEntry = typeof actModelRegistry.$inferSelect;
+export type InsertActModelRegistryEntry = typeof actModelRegistry.$inferInsert;

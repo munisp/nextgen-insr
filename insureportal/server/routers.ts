@@ -3,6 +3,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { agentRouter } from "./routers/agent";
 import { goServiceBridgeRouter } from "./routers/goServiceBridge";
+import { actuaryRouter } from "./routers/actuary";
+import { actuaryAdminRouter } from "./routers/actuaryAdmin";
 import { transactionsRouter } from "./routers/transactions";
 import { fraudRouter } from "./routers/fraud";
 import { loyaltyRouter } from "./routers/loyalty";
@@ -505,6 +507,9 @@ import { terminalLeasingRouter } from "./routers/terminalLeasing";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
+  // W34-D (2026-11-28): actuary engine surface (design Appendix E)
+  actuary: actuaryRouter,
+  actuaryAdmin: actuaryAdminRouter,
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
