@@ -5635,6 +5635,10 @@ export const loyaltyAccounts = pgTable(
     lifetimePoints: integer("lifetimePoints").default(0),
     customerId: integer("customerId"),
     referralCode: varchar("referralCode", { length: 32 }),
+    // W31-D: port from main drizzle/insurance-extended-schema.ts:61
+    // (loyalty_accounts.referredBy). Nullable: set once by
+    // promotions.applyReferral's guarded UPDATE (one-time claim).
+    referredBy: integer("referredBy"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
