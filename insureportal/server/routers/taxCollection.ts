@@ -160,15 +160,73 @@ export const taxCollectionRouter = router({
   //                      via ref (agent commission earned on the collections)
   //   successRate     <- integer percent of VAT records whose linked
   //                      transaction has status='success' (0 when no records)
-  // history stays fail-loud: no per-payment tax store exists (vat_records has
-  // no taxpayer name / tax type columns the page's history tab expects).
-  history: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "taxCollection.history is not implemented: no tax payment store exists in this service. Previously returned a fabricated 'remitted' payment.",
-    });
-  }),
+  // 2026-11-27 (W31-B): history is now a REAL read over vat_records — one row
+  // per VAT record, most recent first. Field-by-field provenance (consumer:
+  // client/src/pages/TaxCollectionPage.tsx payments tab, L126-152):
+  //   id        <- vat_records.id
+  //   reference <- vat_records.transactionId (holds the originating
+  //                transactions.ref — evidenced by repo seed.mjs, see the
+  //                analytics note above)
+  //   tin       <- vat_records.tinNumber (nullable)
+  //   taxType   <- constant "VAT": derived from the STORE IDENTITY, not a
+  //                per-row column — vat_records holds VAT collections only
+  //                (written by restBridge POST /api/vat-records); the page's
+  //                "Tax Type" badge is therefore truthful for every row
+  //   amount    <- vat_records.vatAmount (the tax amount collected)
+  //   period    <- vat_records.period ("YYYY-MM")
+  //   status    <- derived from vat_records.remittedAt: remitted once the
+  //                remittance timestamp is set, else collected (agent holds
+  //                it) — matches the page badge contract (remitted→default,
+  //                collected→secondary, else destructive)
+  // taxpayerName has NO schema source (vat_records carries no taxpayer name)
+  // and is deliberately omitted — the page renders `{p.taxpayerName}`
+  // defensively (blank cell, no crash). The page's agents tab reuses this
+  // payload (L205-223) expecting an aggregate shape (agentName/state/
+  // totalCollected/transactionCount/commission/rating) that no per-row query
+  // can honestly provide — omitted for the same reason.
+  history: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(100).default(20),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "taxCollection.history requires the database; DATABASE_URL is not configured.",
+        });
+      }
+      const rows = await database
+        .select({
+          id: vatRecords.id,
+          reference: vatRecords.transactionId,
+          tin: vatRecords.tinNumber,
+          amount: vatRecords.vatAmount,
+          period: vatRecords.period,
+          remittedAt: vatRecords.remittedAt,
+        })
+        .from(vatRecords)
+        .orderBy(desc(vatRecords.createdAt), desc(vatRecords.id))
+        .limit(input?.limit ?? 20);
+      return {
+        payments: rows.map(r => ({
+          id: r.id,
+          reference: r.reference,
+          tin: r.tin,
+          taxType: "VAT", // store identity — see header comment
+          amount: Number(r.amount), // pg numeric → string
+          period: r.period,
+          status: (r.remittedAt ? "remitted" : "collected") as
+            | "remitted"
+            | "collected",
+        })),
+      };
+    }),
   analytics: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) {

@@ -142,8 +142,8 @@ export const pensionCollectionRouter = router({
   // pension domain (drizzle/schema.ts: pfa_registry, pension_contributions —
   // migration 0047). Contract: client/src/pages/PensionCollectionPage.tsx.
   // Fail-closed PRECONDITION_FAILED when the DB is unavailable (W29
-  // taxCollection.analytics pattern). `history` stays fail-loud: it serves
-  // the contributions/employers tabs and is W31 scope.
+  // taxCollection.analytics pattern). 2026-11-27 (W31-B): `history` is now
+  // also a REAL read (below).
   pfas: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) {
@@ -187,13 +187,67 @@ export const pensionCollectionRouter = router({
       })),
     };
   }),
-  history: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "pensionCollection.history is not implemented: no pension contribution store exists in this service. Previously returned a fabricated 'remitted' contribution.",
-    });
-  }),
+  // 2026-11-27 (W31-B): history is now a REAL read over the W30 pension
+  // domain — one row per pension_contributions record, most recent first,
+  // pfaName via the pfaId join. Every emitted field traces to a column
+  // (schema.ts pension_contributions / pfa_registry). Contract:
+  // client/src/pages/PensionCollectionPage.tsx contributions tab (L129-157).
+  // ALL statuses are returned, including 'failed' — it is a history view and
+  // the page renders failed rows with the destructive badge (L147-151).
+  // The page's employers tab reuses this payload (L213-233) but expects an
+  // employer-registry shape (name/rcNumber/employeeCount/totalContributed/
+  // compliant/active); no employers table exists, so those keys are
+  // deliberately omitted (the page renders them defensively).
+  history: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(100).default(20),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "pensionCollection.history requires the database; DATABASE_URL is not configured.",
+        });
+      }
+      const rows = await database
+        .select({
+          id: pensionContributions.id,
+          rsaPin: pensionContributions.rsaPin,
+          contributorName: pensionContributions.contributorName,
+          pfaName: pfaRegistry.name,
+          type: pensionContributions.type,
+          employeeAmount: pensionContributions.employeeAmount,
+          employerAmount: pensionContributions.employerAmount,
+          period: pensionContributions.period,
+          status: pensionContributions.status,
+        })
+        .from(pensionContributions)
+        .innerJoin(pfaRegistry, eq(pfaRegistry.id, pensionContributions.pfaId))
+        .orderBy(
+          desc(pensionContributions.createdAt),
+          desc(pensionContributions.id)
+        )
+        .limit(input?.limit ?? 20);
+      return {
+        contributions: rows.map(r => ({
+          id: r.id,
+          rsaPin: r.rsaPin,
+          contributorName: r.contributorName,
+          pfaName: r.pfaName,
+          type: r.type,
+          employeeAmount: Number(r.employeeAmount), // pg numeric → string
+          employerAmount: Number(r.employerAmount),
+          period: r.period,
+          status: r.status,
+        })),
+      };
+    }),
   analytics: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) {
