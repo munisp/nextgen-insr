@@ -1,0 +1,28 @@
+[package]
+name = "actuary-kernels"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Actuarial compute kernels for the InsureTech platform: premium mathematics, chain-ladder/BF/Mack reserving, Monte Carlo economic capital, and life/annuity present values. Exposed as a C ABI (cdylib) and rlib."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "actuary_kernels"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Build the PyO3 extension module `actuary_kernels_py`. Off by default so
+# cgo-only builds (Leg B pricing service) skip the Python toolchain entirely.
+python = ["dep:pyo3", "dep:numpy"]
+
+[dependencies]
+pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
+numpy = { version = "0.23", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "unwind" # catch_unwind at the FFI boundary requires unwinding
