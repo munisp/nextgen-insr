@@ -1,0 +1,16 @@
+# Runtime pins used for W34-C validation (pip install -r requirements.txt).
+# Exact versions verified against chainladder 0.10.1 dataset goldens;
+# see w34c-report.md for the pip hash table of this environment.
+chainladder==0.10.1
+lifelines==0.30.3
+statsmodels==0.14.5
+scikit-learn==1.7.2
+pandas==2.3.3
+numpy==2.2.5
+fastapi==0.116.1
+pydantic==2.11.4
+psycopg2-binary==2.9.13
+minio==7.2.20
+httpx==0.28.1
+uvicorn==0.34.2
+pytest==9.2.0
