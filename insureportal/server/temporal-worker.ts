@@ -8,6 +8,7 @@
  * Connects to Temporal server at TEMPORAL_ADDRESS (default: localhost:7233).
  */
 import path from "path";
+import fs from "fs";
 import {
   NativeConnection,
   Worker,
@@ -49,11 +50,22 @@ async function run() {
     address: TEMPORAL_ADDRESS,
   });
 
-  // Resolve the workflows file path — works in both CJS and ESM contexts
-  const workflowsPath = path.resolve(
-    __dirname ?? process.cwd(),
-    "temporal-workflows"
-  );
+  // Resolve the workflows file path. Two real defects fixed here (W31-C):
+  //  1. The portal always runs as ESM ("type": "module"; tsx loader in dev,
+  //     esbuild --format=esm dist bundle in prod), where the old
+  //     `__dirname ?? process.cwd()` threw ReferenceError — the `??` fallback
+  //     was unreachable because the reference itself throws.
+  //     import.meta.dirname is defined on Node >= 20.11.
+  //  2. @temporalio/worker's bundler statSync()s workflowsPath verbatim
+  //     (makeEntrypointPath in lib/workflow/bundler.js) — it does NOT append
+  //     extensions, so the extensionless "temporal-workflows" never resolved
+  //     to temporal-workflows.ts (dev) or .js (compiled). Probe both.
+  const workflowsDir = import.meta.dirname ?? process.cwd();
+  const workflowsPath =
+    [".js", ".ts"]
+      .map(ext => path.resolve(workflowsDir, `temporal-workflows${ext}`))
+      .find(p => fs.existsSync(p)) ??
+    path.resolve(workflowsDir, "temporal-workflows");
 
   const worker = await Worker.create({
     connection,
