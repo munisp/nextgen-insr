@@ -12,6 +12,19 @@
  * real failing transport — the Permify answer path is covered by the
  * production deployment, not fabricatable here (LABELLED transport gap).
  *
+ * 2026-11-27 (W34-D — honest-contract known-answer refresh, NOT weakening):
+ * infra/permify/schema.perm moved v3.0.0 → v3.1.0 (SemVer-correct minor
+ * bump) for the ADDITIVE `actuary` entity (10 action statements: rate_quote,
+ * view_reserves, view_capital, view_adequacy, view_referrals,
+ * decide_referral, manage_rates, approve_runs, manage_assumptions,
+ * manage_referral_rules) plus additive `or tenant.actuary_admin` grants on
+ * actuarial_report actions and the additive tenant.actuary_admin relation.
+ * Every schema-content pin below was RE-DERIVED by running the real parser
+ * (loadPermifySchema / parsePermifySchema — the module under test) over the
+ * NEW v3.1.0 file: 129 action statements across 16 entities, 127 unique
+ * (entity, permission) pairs, the SAME two duplicate declarations
+ * (tenant.view_tenant, agent.view). The pins remain exact — just current.
+ *
  * B2 (scanner): availability-probe tests + the fail-loud no-scanner case
  * (PATH pointed at an empty dir — a REAL probe outcome, not a mock) + a
  * parser test against REAL captured trivy JSON fixtures
@@ -94,13 +107,16 @@ describe(`${FILE}: PBAC viewer + security scanner (B1, B2)`, () => {
 
   it("parser extracts the real policies from the real schema file", () => {
     const { version, policies } = loadPermifySchema();
-    expect(version).toBe("3.0.0");
-    // The real v3.0.0 schema declares exactly 119 action statements across
-    // 15 entities (enumerated 2026-09-12 by running this parser over the
-    // file and printing every entity-action pair; 117 unique
-    // (entity, permission) pairs — two pairs are declared twice in the
-    // real file, see the sync test below).
-    expect(policies.length).toBe(119);
+    expect(version).toBe("3.1.0");
+    // The real v3.1.0 schema declares exactly 129 action statements across
+    // 16 entities (re-derived 2026-11-27 (W34-D) by running this parser over
+    // the file and printing every entity-action pair; 127 unique
+    // (entity, permission) pairs — the same two pairs remain declared twice
+    // in the real file, see the sync test below).
+    // 2026-11-27 (W34-D): v3.0.0 → v3.1.0 additive `actuary` entity — the
+    // +10 actions / +1 entity delta is exactly the new entity's action
+    // statements; the version pin remains intentional per SemVer.
+    expect(policies.length).toBe(129);
     const manageTenant = policies.find(
       p => p.entity === "tenant" && p.permission === "manage_tenant"
     );
@@ -116,31 +132,33 @@ describe(`${FILE}: PBAC viewer + security scanner (B1, B2)`, () => {
   it("syncPbacPolicies seeds the store from the real file; re-sync is idempotent", async () => {
     const admin = callerFor(adminUser);
     const first = await admin.securityAudit.syncPbacPolicies();
-    expect(first.schemaVersion).toBe("3.0.0");
-    // Known answers derived 2026-09-12 by running the REAL parser over
-    // infra/permify/schema.perm v3.0.0 and enumerating the output: the file
-    // contains 119 action declarations across 15 entities, but TWO
+    expect(first.schemaVersion).toBe("3.1.0");
+    // Known answers derived 2026-11-27 (W34-D) by running the REAL parser
+    // over infra/permify/schema.perm v3.1.0 and enumerating the output: the
+    // file contains 129 action declarations across 16 entities, but TWO
     // (entity, permission) pairs are declared TWICE in the real file —
     // tenant.view_tenant (two different grant expressions) and agent.view
     // ('supervisor' vs 'tenant.supervisor', textually different) — so the
-    // upsert store keys on 117 UNIQUE policies: first sync inserts 117 rows
+    // upsert store keys on 127 UNIQUE policies: first sync inserts 127 rows
     // and updates 2 (the duplicate declarations), never dropping anything.
-    expect(first.parsed).toBe(119);
-    expect(first.inserted).toBe(117);
+    // (v3.0.0 → v3.1.0 additive actuary entity: +10 declarations, +10
+    // unique pairs, duplicate count unchanged.)
+    expect(first.parsed).toBe(129);
+    expect(first.inserted).toBe(127);
     expect(first.updated).toBe(2);
 
     const second = await admin.securityAudit.syncPbacPolicies();
-    // Re-sync is idempotent: all 119 declarations now match existing rows.
+    // Re-sync is idempotent: all 129 declarations now match existing rows.
     expect(second.inserted).toBe(0);
     expect(second.updated).toBe(second.parsed);
 
     const rows = await admin.securityAudit.getPolicies({ limit: 500 });
-    // 117 unique (entity, permission) policies — the store key.
-    expect(rows.length).toBe(117);
+    // 127 unique (entity, permission) policies — the store key.
+    expect(rows.length).toBe(127);
     const claimAdjudicate = rows.find(
       r => r.entity === "claim" && r.permission === "adjudicate"
     );
-    expect(claimAdjudicate?.permifySchemaVersion).toBe("3.0.0");
+    expect(claimAdjudicate?.permifySchemaVersion).toBe("3.1.0");
     expect(claimAdjudicate?.expression).toContain("claims_adjuster");
   });
 
