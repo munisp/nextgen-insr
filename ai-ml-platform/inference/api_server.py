@@ -282,7 +282,7 @@ class ModelRegistry:
 def create_app(weights_dir: str | Path = "weights") -> FastAPI:
     """Create the inference API server."""
     app = FastAPI(
-        title="NGApp AI/ML Inference API",
+        title="InsureTech AI/ML Inference API",
         description="Real trained PyTorch models for insurance AI",
         version="1.0.0",
     )

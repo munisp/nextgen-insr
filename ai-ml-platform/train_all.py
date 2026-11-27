@@ -57,7 +57,7 @@ def main() -> None:
     all_results: dict[str, dict] = {}
 
     print("=" * 70)
-    print("  NGApp AI/ML Platform — Full Training Pipeline")
+    print("  InsureTech AI/ML Platform — Full Training Pipeline")
     print("=" * 70)
     print(f"  PyTorch version: {torch.__version__}")
     print(f"  Device: CPU (as required for inference)")

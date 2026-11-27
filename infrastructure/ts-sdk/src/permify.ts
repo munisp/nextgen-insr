@@ -6,7 +6,7 @@ export class PermifyClient {
   private baseUrl: string;
   private tenantId: string;
 
-  constructor(baseUrl: string, tenantId: string = 'ngapp') {
+  constructor(baseUrl: string, tenantId: string = 'insuretech') {
     this.baseUrl = baseUrl;
     this.tenantId = tenantId;
   }

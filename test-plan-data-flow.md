@@ -8,7 +8,7 @@
 
 ## Test Environment
 - Server: `http://localhost:5002` (Node.js, PORT=5002)
-- Database: PostgreSQL `ngapp@localhost:5432/ngapp`
+- Database: PostgreSQL `insuretech@localhost:5432/insuretech`
 - Auth: `demo@insureportal.ng` / `demo123` → JWT token
 - All testing via shell (curl + node scripts) — no browser UI
 
@@ -106,10 +106,10 @@ curl -s http://localhost:5002/api/trpc/notifications.list | jq '.result.data | l
 **Steps:**
 ```bash
 # Count tables in public schema
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';"
 
 # Verify a sample of critical tables exist with correct camelCase columns
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c "SELECT column_name FROM information_schema.columns WHERE table_name='policies' AND column_name IN ('policyNumber','startDate','sumAssured','createdAt') ORDER BY column_name;"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c "SELECT column_name FROM information_schema.columns WHERE table_name='policies' AND column_name IN ('policyNumber','startDate','sumAssured','createdAt') ORDER BY column_name;"
 ```
 
 **Pass criteria:**

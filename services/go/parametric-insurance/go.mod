@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/parametric-insurance
+module github.com/munisp/insuretech/services/parametric-insurance
 
 go 1.22
 

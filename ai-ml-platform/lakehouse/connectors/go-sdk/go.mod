@@ -1,3 +1,3 @@
-module github.com/munisp/NGApp/ai-ml-platform/lakehouse/connectors/go-sdk
+module github.com/munisp/insuretech/ai-ml-platform/lakehouse/connectors/go-sdk
 
 go 1.21

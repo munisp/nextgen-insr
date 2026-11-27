@@ -28,7 +28,7 @@ func main() {
 	started = time.Now()
 
 	var err error
-	db, err = sql.Open("postgres", envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"))
+	db, err = sql.Open("postgres", envOr("DATABASE_URL", "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"))
 	if err != nil {
 		log.Fatalf("[insurance-ops] Failed to open database: %v", err)
 	}

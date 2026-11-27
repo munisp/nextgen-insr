@@ -41,7 +41,7 @@ func Test_Calculate(t *testing.T) {
 func Test_PayoutSummary(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dsn = "postgresql://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	testDB, err := sql.Open("postgres", dsn)
 	if err != nil {

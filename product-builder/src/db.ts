@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://ngapp:ngapp@localhost:5432/ngapp";
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://insuretech:insuretech@localhost:5432/insuretech";
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
 

@@ -11,7 +11,7 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.keycloak")
+logger = logging.getLogger("insuretech.infra.keycloak")
 
 MAX_TOKEN_CACHE_SIZE = 10_000
 

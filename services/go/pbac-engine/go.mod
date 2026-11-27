@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/pbac-engine
+module github.com/munisp/insuretech/services/pbac-engine
 
 go 1.22
 

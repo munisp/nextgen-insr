@@ -5,7 +5,7 @@
 // prices/SLAs. Those are now replaced by channel-core's honest templates
 // (replies.ts) driven by this config: support contact details come from env
 // (SUPPORT_PHONE / SUPPORT_EMAIL); when unset, templates honestly point at
-// the NGApp app instead of inventing contacts.
+// the InsureTech app instead of inventing contacts.
 import {
   ReplyTemplateConfig,
   supportContactLine,
@@ -21,7 +21,7 @@ export function replyConfig(
   env: NodeJS.ProcessEnv = process.env
 ): ReplyTemplateConfig {
   return {
-    brandName: "NGApp",
+    brandName: "InsureTech",
     supportPhone: env.SUPPORT_PHONE ?? null,
     supportEmail: env.SUPPORT_EMAIL ?? null,
   };

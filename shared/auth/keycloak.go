@@ -22,9 +22,9 @@ type KeycloakConfig struct {
 func KeycloakConfigFromEnv() KeycloakConfig {
 	return KeycloakConfig{
 		IssuerURL:    envOr("KEYCLOAK_URL", "http://localhost:8180"),
-		ClientID:     envOr("KEYCLOAK_CLIENT_ID", "ngapp"),
+		ClientID:     envOr("KEYCLOAK_CLIENT_ID", "insuretech"),
 		ClientSecret: os.Getenv("KEYCLOAK_CLIENT_SECRET"),
-		Realm:        envOr("KEYCLOAK_REALM", "ngapp"),
+		Realm:        envOr("KEYCLOAK_REALM", "insuretech"),
 	}
 }
 
@@ -69,7 +69,7 @@ func (m *JWTMiddleware) Authenticate(next http.Handler) http.Handler {
 		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("NODE_ENV") == "development" {
 			claims := &Claims{
 				PreferredUser: "dev-user",
-				Email:         "dev@ngapp.local",
+				Email:         "dev@insuretech.local",
 				RealmAccess:   RealmAccess{Roles: []string{"user"}},
 				TenantID:      "default",
 			}

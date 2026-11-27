@@ -55,7 +55,7 @@ func NewMojaloopClient(logger *zap.Logger, baseURL string) *MojaloopClient {
 			Timeout: 15 * time.Second,
 		},
 		logger: logger,
-		fspID:  "ngapp-insurance",
+		fspID:  "insuretech-insurance",
 	}
 }
 

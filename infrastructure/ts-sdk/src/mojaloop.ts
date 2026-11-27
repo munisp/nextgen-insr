@@ -25,7 +25,7 @@ export class MojaloopClient {
   private baseUrl: string;
   private fspId: string;
 
-  constructor(baseUrl: string, fspId: string = 'ngapp-insurance') {
+  constructor(baseUrl: string, fspId: string = 'insuretech-insurance') {
     this.baseUrl = baseUrl;
     this.fspId = fspId;
   }

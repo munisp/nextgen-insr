@@ -10,16 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/audit"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/bridge"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/cache"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/events"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/gateway"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/handlers"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/middleware"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/repository"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/services"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/workflows"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/audit"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/bridge"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/cache"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/events"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/gateway"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/handlers"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/middleware"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/repository"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/services"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/workflows"
 )
 
 func main() {

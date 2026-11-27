@@ -1,5 +1,5 @@
 {
-  "name": "@ngapp/product-builder",
+  "name": "@insuretech/product-builder",
   "version": "1.0.0",
   "description": "No-code insurance product builder",
   "main": "dist/index.js",

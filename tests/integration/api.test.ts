@@ -11,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 /**
- * Integration Tests — NGApp Platform API
+ * Integration Tests — InsureTech Platform API
  *
  * Tests end-to-end flows across tRPC routers with a real database connection.
  * Requires: DATABASE_URL environment variable pointing to a test database.

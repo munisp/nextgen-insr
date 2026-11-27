@@ -1,5 +1,5 @@
 """
-NGApp Production Lakehouse — Delta Lake Feature Store
+InsureTech Production Lakehouse — Delta Lake Feature Store
 
 A complete production-grade Lakehouse implementation:
 - Delta Lake with ACID transactions and time-travel

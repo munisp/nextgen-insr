@@ -37,10 +37,10 @@ export class OpenSearchClient {
   }
 
   async createILMPolicy(): Promise<void> {
-    await fetch(`${this.baseUrl}/_plugins/_ism/policies/ngapp-retention`, {
+    await fetch(`${this.baseUrl}/_plugins/_ism/policies/insuretech-retention`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        policy: { description: 'NGApp data retention', default_state: 'hot',
+        policy: { description: 'InsureTech data retention', default_state: 'hot',
           states: [
             { name: 'hot', actions: [], transitions: [{ state_name: 'warm', conditions: { min_index_age: '30d' } }] },
             { name: 'warm', actions: [{ replica_count: { number_of_replicas: 0 } }], transitions: [{ state_name: 'delete', conditions: { min_index_age: '365d' } }] },

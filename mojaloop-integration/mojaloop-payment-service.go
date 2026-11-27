@@ -13,7 +13,7 @@ import (
 	tigerbeetle_go "github.com/tigerbeetle/tigerbeetle-go"
 	"gorm.io/gorm"
 
-	"github.com/munisp/NGApp/mojaloop-integration/ledger"
+	"github.com/munisp/insuretech/mojaloop-integration/ledger"
 )
 
 type MojaloopPaymentService struct {

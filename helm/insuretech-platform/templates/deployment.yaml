@@ -1,9 +1,9 @@
 {{- /*
-  deployment.yaml - Production-ready deployment template for NGApp microservices
+  deployment.yaml - Production-ready deployment template for InsureTech microservices
   Handles all services with proper resource limits, probes, rolling updates, and labels.
 */ -}}
 
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 
 {{- range $name, $config := .Values.services }}
 {{- $defaults := $.Values.serviceDefaults }}
@@ -18,9 +18,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
   annotations:
     # Force rolling restart when config changes
     checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum | quote }}
@@ -33,7 +33,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -42,7 +42,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 8 }}
+        {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum | quote }}
         prometheus.io/scrape: "true"
@@ -60,7 +60,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ $name }}
-          image: {{ include "ngapp.serviceImage" (dict "root" $ "serviceName" $name) }}
+          image: {{ include "insuretech.serviceImage" (dict "root" $ "serviceName" $name) }}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -131,11 +131,11 @@ spec:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
-              {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
+              {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
-              {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
+              {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
 {{- end }}

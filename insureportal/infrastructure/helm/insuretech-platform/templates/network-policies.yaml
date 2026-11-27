@@ -37,7 +37,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/part-of: ngapp-platform
+      app.kubernetes.io/part-of: insuretech-platform
   policyTypes:
     - Egress
   egress:

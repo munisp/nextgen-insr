@@ -25,7 +25,7 @@ func NewMojalloopClient() *MojalloopClient {
 	return &MojalloopClient{
 		baseURL: addr,
 		client:  &http.Client{Timeout: 30 * time.Second},
-		fspID:   envOrDefault("MOJALOOP_FSP_ID", "ngapp"),
+		fspID:   envOrDefault("MOJALOOP_FSP_ID", "insuretech"),
 	}
 }
 

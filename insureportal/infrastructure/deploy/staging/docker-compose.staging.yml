@@ -1,6 +1,6 @@
 version: "3.9"
 
-# NGApp Staging Environment
+# InsureTech Staging Environment
 # Usage: docker compose -f deploy/staging/docker-compose.staging.yml up -d
 
 services:
@@ -13,12 +13,12 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=staging
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
       - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=ngapp
-      - KEYCLOAK_CLIENT_ID=ngapp-portal
+      - KEYCLOAK_REALM=insuretech
+      - KEYCLOAK_CLIENT_ID=insuretech-portal
       - TEMPORAL_ADDRESS=temporal:7233
       - OPENSEARCH_URL=http://opensearch:9200
       - DEMO_MODE=false
@@ -37,15 +37,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ngapp
+      POSTGRES_USER: insuretech
       POSTGRES_PASSWORD: ${DB_PASSWORD:-staging_password}
-      POSTGRES_DB: ngapp_staging
+      POSTGRES_DB: insuretech_staging
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      test: ["CMD-SHELL", "pg_isready -U insuretech"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -88,8 +88,8 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/ngapp_staging
-      KC_DB_USERNAME: ngapp
+      KC_DB_URL: jdbc:postgresql://postgres:5432/insuretech_staging
+      KC_DB_USERNAME: insuretech
       KC_DB_PASSWORD: ${DB_PASSWORD:-staging_password}
     ports:
       - "8080:8080"
@@ -103,7 +103,7 @@ services:
     environment:
       DB: postgresql
       DB_PORT: 5432
-      POSTGRES_USER: ngapp
+      POSTGRES_USER: insuretech
       POSTGRES_PWD: ${DB_PASSWORD:-staging_password}
       POSTGRES_SEEDS: postgres
     ports:
@@ -131,7 +131,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8088
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -146,7 +146,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8096
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://redis:6379
     ports:
       - "8096:8096"

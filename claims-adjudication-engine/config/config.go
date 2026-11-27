@@ -124,7 +124,7 @@ func Load() *Config {
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "claims_engine"),
 			Password:        getEnv("DB_PASSWORD", ""),
-			DBName:          getEnv("DB_NAME", "ngapp_claims"),
+			DBName:          getEnv("DB_NAME", "insuretech_claims"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
@@ -148,7 +148,7 @@ func Load() *Config {
 		},
 		Kafka: KafkaConfig{
 			Brokers:        getEnvStringSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
-			TopicPrefix:    getEnv("KAFKA_TOPIC_PREFIX", "ngapp"),
+			TopicPrefix:    getEnv("KAFKA_TOPIC_PREFIX", "insuretech"),
 			ConsumerGroup:  getEnv("KAFKA_CONSUMER_GROUP", "claims-adjudication-group"),
 			MaxRetry:       getEnvInt("KAFKA_MAX_RETRY", 3),
 			CommitInterval: getEnvDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),

@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/feedback-management
+module github.com/munisp/insuretech/feedback-management
 
 go 1.22.0
 

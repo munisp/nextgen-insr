@@ -1,16 +1,16 @@
 {{- /*
-  configmap.yaml - Common configuration for all NGApp services
+  configmap.yaml - Common configuration for all InsureTech services
   Contains shared environment variables for middleware connectivity.
 */ -}}
 
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ $fullName }}-config
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 data:
   # ── Environment ──
   ENVIRONMENT: {{ .Values.global.environment | quote }}
@@ -41,8 +41,8 @@ data:
   # ── Keycloak ──
   {{- if .Values.keycloak.enabled }}
   KEYCLOAK_URL: "http://{{ $fullName }}-keycloak:8080"
-  KEYCLOAK_REALM: "ngapp"
-  KEYCLOAK_ADMIN_CLIENT: "ngapp-admin"
+  KEYCLOAK_REALM: "insuretech"
+  KEYCLOAK_ADMIN_CLIENT: "insuretech-admin"
   {{- end }}
 
   # ── OpenSearch ──
@@ -53,7 +53,7 @@ data:
   # ── Temporal ──
   {{- if .Values.temporal.enabled }}
   TEMPORAL_HOST: "{{ $fullName }}-temporal:7233"
-  TEMPORAL_NAMESPACE: "ngapp"
+  TEMPORAL_NAMESPACE: "insuretech"
   {{- end }}
 
   # ── TigerBeetle ──

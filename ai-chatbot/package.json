@@ -1,5 +1,5 @@
 {
-  "name": "@ngapp/ai-chatbot",
+  "name": "@insuretech/ai-chatbot",
   "version": "1.0.0",
   "description": "AI-powered conversational insurance assistant with multi-language support",
   "main": "dist/index.js",

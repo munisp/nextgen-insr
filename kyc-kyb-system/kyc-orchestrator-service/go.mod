@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service
+module github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service
 
 go 1.22
 

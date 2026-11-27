@@ -1,4 +1,4 @@
-# Prometheus stack values for NGApp Platform
+# Prometheus stack values for InsureTech Platform
 # Install with: helm install monitoring prometheus-community/kube-prometheus-stack -f monitoring/prometheus-values.yaml
 
 prometheus:
@@ -20,7 +20,7 @@ prometheus:
 grafana:
   enabled: true
   adminPassword: "" # Use existing secret
-  adminExistingSecret: ngapp-grafana-credentials
+  adminExistingSecret: insuretech-grafana-credentials
   persistence:
     enabled: true
     size: 10Gi
@@ -28,14 +28,14 @@ grafana:
     dashboardproviders.yaml:
       apiVersion: 1
       providers:
-        - name: ngapp
+        - name: insuretech
           orgId: 1
-          folder: NGApp
+          folder: InsureTech
           type: file
           disableDeletion: false
           editable: true
           options:
-            path: /var/lib/grafana/dashboards/ngapp
+            path: /var/lib/grafana/dashboards/insuretech
   sidecar:
     dashboards:
       enabled: true
@@ -71,7 +71,7 @@ alertmanager:
       - name: slack-notifications
         slack_configs:
           - api_url_file: /etc/alertmanager/secrets/slack-webhook-url
-            channel: "#ngapp-alerts"
+            channel: "#insuretech-alerts"
             title: "{{ "{{" }} .GroupLabels.alertname {{ "}}" }}"
             text: "{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.description {{ "}}" }}\n{{ "{{" }} end {{ "}}" }}"
       - name: pagerduty

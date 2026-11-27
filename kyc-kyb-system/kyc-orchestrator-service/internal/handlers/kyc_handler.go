@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/models"
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/services"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/models"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/services"
 )
 
 type KYCHandler struct {

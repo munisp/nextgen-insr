@@ -1,6 +1,6 @@
 # Test Report — PR #32: Production Hardening
 
-**Environment:** `localhost:5002` (node server.cjs), PostgreSQL ngapp@localhost:5432  
+**Environment:** `localhost:5002` (node server.cjs), PostgreSQL insuretech@localhost:5432  
 **Method:** Shell-based (curl + node test scripts) — no browser UI changes to test  
 **Server restarted between rate-limit test and test suites** to clear in-memory rate limit state
 

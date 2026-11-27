@@ -44,7 +44,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
-	infra "github.com/munisp/NGApp/infrastructure/go-sdk"
+	infra "github.com/munisp/insuretech/infrastructure/go-sdk"
 )
 
 // ─── Latency proxy ────────────────────────────────────────────────────────────

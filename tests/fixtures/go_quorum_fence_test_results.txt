@@ -185,4 +185,4 @@
     quorum_fence_integration_test.go:766: RenewLock after release correctly rejected: quorum_fence: lease expired
 --- PASS: TestRenewLockBackwardCompatibility (0.00s)
 PASS
-ok  	github.com/munisp/NGApp/infrastructure/go-sdk	25.255s
+ok  	github.com/munisp/insuretech/infrastructure/go-sdk	25.255s

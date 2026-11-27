@@ -489,7 +489,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let port = env::var("PORT").unwrap_or_else(|_| "8123".to_string());
-    let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://ngapp:ngapp@localhost:5432/ngapp".to_string());
+    let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://insuretech:insuretech@localhost:5432/insuretech".to_string());
     let weather_key = env::var("OPENWEATHERMAP_API_KEY").unwrap_or_default();
 
     log::info!("Smart Contract Oracle starting on port {}", port);

@@ -1,4 +1,4 @@
-# Contributing to NGApp
+# Contributing to InsureTech
 
 ## Development Workflow
 
@@ -58,7 +58,7 @@ cd <service-name> && pytest
 2. Add health check endpoint (`/health`)
 3. Add metrics endpoint (`/metrics`)
 4. Add Dockerfile
-5. Add to Helm values (`helm/ngapp-platform/values.yaml`)
+5. Add to Helm values (`helm/insuretech-platform/values.yaml`)
 6. Add to CI matrix (`.github/workflows/platform-ci.yml`)
 
 ## Environment Variables

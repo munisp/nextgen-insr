@@ -41,7 +41,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8109;
 const DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://ngapp:ngapp@localhost:5432/ngapp';
+  process.env.DATABASE_URL || 'postgresql://insuretech:insuretech@localhost:5432/insuretech';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

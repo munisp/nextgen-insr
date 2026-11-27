@@ -2,7 +2,7 @@
 
 **Result: 8/8 tests PASSED — all 62 routes return real DB data**
 
-Tested locally against `localhost:5002` with PostgreSQL `ngapp@localhost:5432`. All testing done via shell (curl + node scripts) — no browser UI.
+Tested locally against `localhost:5002` with PostgreSQL `insuretech@localhost:5432`. All testing done via shell (curl + node scripts) — no browser UI.
 
 ## Test Results
 

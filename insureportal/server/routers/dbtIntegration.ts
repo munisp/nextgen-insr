@@ -95,7 +95,7 @@ export const dbtIntegrationRouter = router({
 
   getProjectInfo: protectedProcedure.query(async () => {
     return {
-      name: "ngapp_analytics",
+      name: "insuretech_analytics",
       version: "1.0.0",
       models: 45,
       tests: 120,

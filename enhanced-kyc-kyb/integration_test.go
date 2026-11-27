@@ -42,7 +42,7 @@ func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dbURL = "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	testDB, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 	// Set up DB for health check
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dbURL = "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	svcDB, err = sql.Open("postgres", dbURL)
@@ -125,7 +125,7 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 func TestIntegration_ReadyEndpoint(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dbURL = "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	svcDB, err = sql.Open("postgres", dbURL)
@@ -175,7 +175,7 @@ func TestIntegration_LiveEndpoint(t *testing.T) {
 func TestIntegration_APIEndpoint(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dbURL = "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	svcDB, err = sql.Open("postgres", dbURL)

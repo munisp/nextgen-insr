@@ -323,7 +323,7 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 		return app.stateUsageCoverConfirm(sess, input)
 	case "end":
 		return models.USSDResponse{
-			Text:         "Thank you for using NGApp Insurance. Goodbye!",
+			Text:         "Thank you for using InsureTech Insurance. Goodbye!",
 			CloseSession: true,
 			Action:       "end",
 		}, nil
@@ -390,13 +390,13 @@ func (app *Application) stateMainMenu(sess *models.SessionData, input string) (m
 	case "0":
 		sess.State = "end"
 		return models.USSDResponse{
-			Text:         "Thank you for using NGApp Insurance. Goodbye!",
+			Text:         "Thank you for using InsureTech Insurance. Goodbye!",
 			CloseSession: true,
 			Action:       "end",
 		}, nil
 	default:
 		return models.USSDResponse{
-			Text:   "Welcome to NGApp Insurance\n1. Life Insurance\n2. Health Insurance\n3. Motor Insurance\n4. Micro-insurance\n5. Agent Services\n6. Claim Status\n\nEnter your choice:",
+			Text:   "Welcome to InsureTech Insurance\n1. Life Insurance\n2. Health Insurance\n3. Motor Insurance\n4. Micro-insurance\n5. Agent Services\n6. Claim Status\n\nEnter your choice:",
 			Action: "menu",
 		}, nil
 	}

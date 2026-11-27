@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const pool = new Pool({ host: 'localhost', port: 5432, database: 'ngapp', user: 'ngapp', password: 'ngapp' });
+const pool = new Pool({ host: 'localhost', port: 5432, database: 'insuretech', user: 'insuretech', password: 'insuretech' });
 
 async function main() {
   // Get empty tables

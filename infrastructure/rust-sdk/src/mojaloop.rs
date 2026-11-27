@@ -40,7 +40,7 @@ impl MojaloopClient {
         kyc_limits.insert(3, 10_000_000);
         Self {
             base_url: base_url.to_string(),
-            fsp_id: "ngapp-insurance".to_string(),
+            fsp_id: "insuretech-insurance".to_string(),
             client: Client::builder().timeout(Duration::from_secs(15)).build().unwrap_or_default(),
             kyc_limits,
         }

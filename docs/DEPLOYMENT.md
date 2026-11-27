@@ -21,27 +21,27 @@
 ### 1. Create Namespace and Secrets
 
 ```bash
-kubectl create namespace ngapp
+kubectl create namespace insuretech
 
 # Database credentials
-kubectl create secret generic ngapp-db-credentials \
-  --from-literal=url="postgres://ngapp:PASSWORD@db-host:5432/ngapp?sslmode=require" \
-  -n ngapp
+kubectl create secret generic insuretech-db-credentials \
+  --from-literal=url="postgres://insuretech:PASSWORD@db-host:5432/insuretech?sslmode=require" \
+  -n insuretech
 
 # Redis credentials
-kubectl create secret generic ngapp-redis-credentials \
+kubectl create secret generic insuretech-redis-credentials \
   --from-literal=url="redis://:PASSWORD@redis-host:6379" \
-  -n ngapp
+  -n insuretech
 
 # Keycloak admin
-kubectl create secret generic ngapp-keycloak-credentials \
+kubectl create secret generic insuretech-keycloak-credentials \
   --from-literal=admin-password="KEYCLOAK_ADMIN_PASSWORD" \
-  -n ngapp
+  -n insuretech
 
 # Grafana admin
-kubectl create secret generic ngapp-grafana-credentials \
+kubectl create secret generic insuretech-grafana-credentials \
   --from-literal=admin-password="GRAFANA_ADMIN_PASSWORD" \
-  -n ngapp
+  -n insuretech
 ```
 
 ### 2. Install Monitoring Stack
@@ -61,31 +61,31 @@ helm install monitoring prometheus-community/kube-prometheus-stack \
 kubectl apply -f monitoring/otel-collector.yaml
 ```
 
-### 4. Install NGApp Platform
+### 4. Install InsureTech Platform
 
 ```bash
-helm install ngapp helm/ngapp-platform/ \
-  -f helm/ngapp-platform/values.yaml \
+helm install insuretech helm/insuretech-platform/ \
+  -f helm/insuretech-platform/values.yaml \
   --set global.domain=your-domain.com \
   --set global.imageRegistry=your-registry.com \
-  -n ngapp
+  -n insuretech
 ```
 
 ### 5. Verify Deployment
 
 ```bash
 # Check all pods are running
-kubectl get pods -n ngapp
+kubectl get pods -n insuretech
 
 # Check services
-kubectl get svc -n ngapp
+kubectl get svc -n insuretech
 
 # Check ingress
-kubectl get ingress -n ngapp
+kubectl get ingress -n insuretech
 
 # Run health checks
-for svc in $(kubectl get svc -n ngapp -o jsonpath='{.items[*].metadata.name}'); do
-  echo "$svc: $(kubectl exec -n ngapp deploy/$svc -- wget -qO- http://localhost:8080/health 2>/dev/null || echo 'N/A')"
+for svc in $(kubectl get svc -n insuretech -o jsonpath='{.items[*].metadata.name}'); do
+  echo "$svc: $(kubectl exec -n insuretech deploy/$svc -- wget -qO- http://localhost:8080/health 2>/dev/null || echo 'N/A')"
 done
 ```
 
@@ -94,7 +94,7 @@ done
 ```bash
 kubectl run seed --rm -it --image=node:20-alpine \
   --env="DATABASE_URL=postgres://..." \
-  -n ngapp -- sh -c "npm install && node server/seed-comprehensive.mjs"
+  -n insuretech -- sh -c "npm install && node server/seed-comprehensive.mjs"
 ```
 
 ## Scaling
@@ -103,7 +103,7 @@ kubectl run seed --rm -it --image=node:20-alpine \
 
 ```bash
 # Scale a specific service
-kubectl scale deployment claims-adjudication-engine --replicas=5 -n ngapp
+kubectl scale deployment claims-adjudication-engine --replicas=5 -n insuretech
 ```
 
 ### Autoscaling (HPA)
@@ -127,10 +127,10 @@ services:
 
 ```bash
 # View release history
-helm history ngapp -n ngapp
+helm history insuretech -n insuretech
 
 # Rollback to previous version
-helm rollback ngapp 1 -n ngapp
+helm rollback insuretech 1 -n insuretech
 ```
 
 ## Disaster Recovery
@@ -145,7 +145,7 @@ The `disaster-recovery-module` service handles automated failover:
 ## Monitoring
 
 ### Grafana Dashboards
-- **NGApp Platform Overview** — Request rate, error rate, latency P99
+- **InsureTech Platform Overview** — Request rate, error rate, latency P99
 - **Claims Pipeline** — Submitted/approved/rejected/escalated rates
 - **Database Health** — Connection pool, query latency, replication lag
 - **Kafka Health** — Consumer lag, throughput, partition status

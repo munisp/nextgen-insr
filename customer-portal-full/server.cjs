@@ -615,9 +615,9 @@ function verifyJWT(token) {
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
-  database: process.env.PGDATABASE || 'ngapp',
-  user: process.env.PGUSER || 'ngapp',
-  password: process.env.PGPASSWORD || 'ngapp',
+  database: process.env.PGDATABASE || 'insuretech',
+  user: process.env.PGUSER || 'insuretech',
+  password: process.env.PGPASSWORD || 'insuretech',
   max: parseInt(process.env.PG_MAX_CONNECTIONS || '30'),
   min: parseInt(process.env.PG_MIN_CONNECTIONS || '5'),
   idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000'),
@@ -4836,7 +4836,7 @@ app.get('*', (req, res) => {
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info('InsurePortal started', { port: PORT, version: '3.0.0' });
-  logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp' });
+  logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'insuretech' });
   // 2026-10-02 (W7-B2): KAFKA_ENABLED/TB_ENABLED/OS_ENABLED were never defined — boot crash.
   logger.info('Middleware status', { redis: !!redis });
 });

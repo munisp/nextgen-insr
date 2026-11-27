@@ -33,7 +33,7 @@ impl OpenAppSecClient {
 
     pub async fn apply_platform_policy(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let policy = json!({
-            "name": "ngapp-insurance-waf", "mode": "prevent",
+            "name": "insuretech-insurance-waf", "mode": "prevent",
             "rules": [
                 { "name": "block-sqli", "type": "sql-injection", "action": "block", "severity": "critical" },
                 { "name": "block-xss", "type": "cross-site-scripting", "action": "block", "severity": "high" },

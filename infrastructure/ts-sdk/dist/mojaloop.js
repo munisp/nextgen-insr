@@ -8,7 +8,7 @@ const KYC_TRANSFER_LIMITS = { 0: 5000, 1: 50000, 2: 500000, 3: 10000000 };
 class MojaloopClient {
     baseUrl;
     fspId;
-    constructor(baseUrl, fspId = 'ngapp-insurance') {
+    constructor(baseUrl, fspId = 'insuretech-insurance') {
         this.baseUrl = baseUrl;
         this.fspId = fspId;
     }

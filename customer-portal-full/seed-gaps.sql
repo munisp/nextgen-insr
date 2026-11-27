@@ -1,6 +1,6 @@
 -- Seed data for platform gaps (PR #70)
 -- Fills all empty/stub tables with realistic Nigerian insurance data
--- Run: PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -f seed-gaps.sql
+-- Run: PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -f seed-gaps.sql
 
 -- Fix rate table product types to match insurance_products categories
 UPDATE premium_rate_tables SET "productType"='Motor' WHERE "productType"='Auto';

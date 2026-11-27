@@ -45,7 +45,7 @@ class StreamConfig:
 
     # Kafka
     kafka_brokers: str = "localhost:9092"
-    kafka_group_id: str = "ngapp-lakehouse-ingest"
+    kafka_group_id: str = "insuretech-lakehouse-ingest"
     kafka_auto_offset_reset: str = "earliest"
     kafka_enable_auto_commit: bool = False
 

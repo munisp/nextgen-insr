@@ -7,7 +7,7 @@ exports.PLATFORM_SCHEMA = exports.PermifyClient = void 0;
 class PermifyClient {
     baseUrl;
     tenantId;
-    constructor(baseUrl, tenantId = 'ngapp') {
+    constructor(baseUrl, tenantId = 'insuretech') {
         this.baseUrl = baseUrl;
         this.tenantId = tenantId;
     }

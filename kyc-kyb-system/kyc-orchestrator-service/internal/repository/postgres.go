@@ -9,7 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/models"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/models"
 )
 
 type PostgresRepository struct {

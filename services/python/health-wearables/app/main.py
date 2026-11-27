@@ -19,7 +19,7 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://insuretech:insuretech@localhost:5432/insuretech")
 app = FastAPI(title="Health Wearables", version="1.0.0")
 
 

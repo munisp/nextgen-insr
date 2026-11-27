@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/infrastructure/docker/cmd/insurance-ops
+module github.com/munisp/insuretech/infrastructure/docker/cmd/insurance-ops
 
 go 1.22.4
 

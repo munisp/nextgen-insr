@@ -260,10 +260,10 @@ class DataLineageTracker:
         state_file.write_text(json.dumps(self.graph.to_dict(), indent=2, default=str))
 
     def register_platform_lineage(self) -> None:
-        """Register the default NGApp platform lineage graph."""
+        """Register the default InsureTech platform lineage graph."""
         # Sources
         sources = [
-            ("src:postgresql", "PostgreSQL", {"host": "localhost", "database": "ngapp"}),
+            ("src:postgresql", "PostgreSQL", {"host": "localhost", "database": "insuretech"}),
             ("src:kafka", "Kafka Event Bus", {"brokers": "localhost:9092"}),
             ("src:kyc_service", "KYC/KYB Service", {"port": 8130}),
             ("src:fraud_service", "Fraud Detection Service", {"port": 8100}),

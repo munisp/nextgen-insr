@@ -17,9 +17,9 @@ const PORT = process.env.PAYMENT_PORT || 5011;
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
-  database: process.env.PGDATABASE || 'ngapp',
-  user: process.env.PGUSER || 'ngapp',
-  password: process.env.PGPASSWORD || 'ngapp',
+  database: process.env.PGDATABASE || 'insuretech',
+  user: process.env.PGUSER || 'insuretech',
+  password: process.env.PGPASSWORD || 'insuretech',
   max: 10,
 });
 

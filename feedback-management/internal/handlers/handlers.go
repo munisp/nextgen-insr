@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/munisp/NGApp/feedback-management/internal/service"
+	"github.com/munisp/insuretech/feedback-management/internal/service"
 	"net/http"
 
 	"github.com/google/uuid"

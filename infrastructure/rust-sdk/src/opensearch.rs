@@ -51,7 +51,7 @@ impl OpenSearchClient {
 
     pub async fn create_ilm_policy(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let body = json!({
-            "policy": { "description": "NGApp data retention", "default_state": "hot",
+            "policy": { "description": "InsureTech data retention", "default_state": "hot",
                 "states": [
                     { "name": "hot", "actions": [], "transitions": [{ "state_name": "warm", "conditions": { "min_index_age": "30d" } }] },
                     { "name": "warm", "actions": [{ "replica_count": { "number_of_replicas": 0 } }], "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "365d" } }] },
@@ -59,7 +59,7 @@ impl OpenSearchClient {
                 ],
             },
         });
-        self.client.put(format!("{}/_plugins/_ism/policies/ngapp-retention", self.base_url))
+        self.client.put(format!("{}/_plugins/_ism/policies/insuretech-retention", self.base_url))
             .json(&body).send().await?;
         Ok(())
     }

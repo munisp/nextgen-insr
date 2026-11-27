@@ -146,7 +146,7 @@ class ClaimCache {
   constructor(redis, pg) {
     this.redis = redis;
     this.pg = pg;
-    this.prefix = 'ngapp:claims:';
+    this.prefix = 'insuretech:claims:';
     this.lastHealthCheck = 0;
     this.redisHealthy = true;
     this.stats = { redisHits: 0, pgFallbacks: 0, cacheRepopulations: 0 };
@@ -271,7 +271,7 @@ async function testBasicRedisFallback() {
 
   // Pre-populate Redis with some data
   await cache.setIdempotency('pre_existing_key', 'pre_existing_result');
-  assert(redis.store.has('ngapp:claims:idem:pre_existing_key'), 'Pre-existing key in Redis');
+  assert(redis.store.has('insuretech:claims:idem:pre_existing_key'), 'Pre-existing key in Redis');
   assert(pg.idempotencyLog.has('pre_existing_key'), 'Pre-existing key also in PG (PG is authoritative)');
 
   // Kill Redis
@@ -286,7 +286,7 @@ async function testBasicRedisFallback() {
   // Test 2: New idempotency write goes to PG only
   await cache.setIdempotency('new_key_during_outage', 'new_result');
   assert(pg.idempotencyLog.has('new_key_during_outage'), 'New idempotency key written to PG during Redis outage');
-  assert(!redis.store.has('ngapp:claims:idem:new_key_during_outage'), 'New key NOT in Redis (Redis is down)');
+  assert(!redis.store.has('insuretech:claims:idem:new_key_during_outage'), 'New key NOT in Redis (Redis is down)');
 
   // Test 3: Lock acquisition falls back to PG advisory lock
   const lockAcquired = await cache.acquireLock('claim_001');
@@ -350,7 +350,7 @@ async function testRedisRecovery() {
   // Test: New idempotency write goes to both PG and Redis after recovery
   await cache.setIdempotency('post_recovery_key', 'post_recovery_result');
   assert(pg.idempotencyLog.has('post_recovery_key'), 'Post-recovery idempotency in PG');
-  assert(redis.store.has('ngapp:claims:idem:post_recovery_key'), 'Post-recovery idempotency also in Redis');
+  assert(redis.store.has('insuretech:claims:idem:post_recovery_key'), 'Post-recovery idempotency also in Redis');
 
   // Test: No duplicate writes — same key written once
   const pgWritesBefore = pg.stats.idempotencyWrites;

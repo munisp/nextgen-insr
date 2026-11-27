@@ -28,9 +28,9 @@ from app.services.telco_service import TelcoService
 _pg_config = {
     "host": os.environ.get("PGHOST", "localhost"),
     "port": int(os.environ.get("PGPORT", "5432")),
-    "database": os.environ.get("PGDATABASE", "ngapp"),
-    "user": os.environ.get("PGUSER", "ngapp"),
-    "password": os.environ.get("PGPASSWORD", "ngapp"),
+    "database": os.environ.get("PGDATABASE", "insuretech"),
+    "user": os.environ.get("PGUSER", "insuretech"),
+    "password": os.environ.get("PGPASSWORD", "insuretech"),
 }
 _pg_conn = None
 
@@ -63,7 +63,7 @@ def db_query(sql, params=None):
 logger = logging.getLogger(__name__)
 
 # ── Database Connection ──────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://insuretech:insuretech@localhost:5432/insuretech")
 _db_conn = None
 
 def get_db():

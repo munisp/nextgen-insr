@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/performance-benchmarks
+module github.com/munisp/insuretech/performance-benchmarks
 
 go 1.25.4
 

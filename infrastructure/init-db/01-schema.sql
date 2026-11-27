@@ -1,4 +1,4 @@
--- NGApp Insurance Platform — Database Schema
+-- InsureTech Insurance Platform — Database Schema
 -- Consolidated schema for all service groups
 
 -- Core: Customers

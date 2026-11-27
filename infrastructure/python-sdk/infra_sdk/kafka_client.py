@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.kafka")
+logger = logging.getLogger("insuretech.infra.kafka")
 
 PLATFORM_TOPICS = [
     "kyc.verification.events",

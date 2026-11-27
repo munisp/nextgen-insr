@@ -8,7 +8,7 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.apisix")
+logger = logging.getLogger("insuretech.infra.apisix")
 
 
 class APISixClient:

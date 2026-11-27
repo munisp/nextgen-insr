@@ -20,7 +20,7 @@ Ran the server locally, verified graceful shutdown via SIGTERM, ran full regress
 ### Test 1: Graceful Shutdown
 ```
 InsurePortal running at http://localhost:5002
-Database: PostgreSQL ngapp@localhost:5432
+Database: PostgreSQL insuretech@localhost:5432
 ✓ PostgreSQL connected
 ✓ Database schema initialized (122 tables)
 ✓ Connection pool pre-warmed (5 connections)

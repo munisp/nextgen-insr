@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/infrastructure/docker/cmd/communication
+module github.com/munisp/insuretech/infrastructure/docker/cmd/communication
 
 go 1.22.4
 

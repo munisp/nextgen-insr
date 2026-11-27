@@ -1,5 +1,5 @@
 /**
- * NGApp Infrastructure SDK — unified clients for all 12 platform components.
+ * InsureTech Infrastructure SDK — unified clients for all 12 platform components.
  * Used by customer-portal-full and other TypeScript services.
  */
 export { Platform, PlatformConfig } from './platform';

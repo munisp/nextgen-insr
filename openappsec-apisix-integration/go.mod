@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/openappsec-apisix-integration
+module github.com/munisp/insuretech/openappsec-apisix-integration
 
 go 1.23
 

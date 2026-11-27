@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/munisp/NGApp/feedback-management/internal/handlers"
-	"github.com/munisp/NGApp/feedback-management/internal/repository"
-	"github.com/munisp/NGApp/feedback-management/internal/service"
+	"github.com/munisp/insuretech/feedback-management/internal/handlers"
+	"github.com/munisp/insuretech/feedback-management/internal/repository"
+	"github.com/munisp/insuretech/feedback-management/internal/service"
 
 	"database/sql"
 	"gorm.io/driver/postgres"
@@ -26,7 +26,7 @@ var db *sql.DB
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dsn = "postgresql://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	db, err = sql.Open("postgres", dsn)

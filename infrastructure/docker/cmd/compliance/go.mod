@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/infrastructure/docker/cmd/compliance
+module github.com/munisp/insuretech/infrastructure/docker/cmd/compliance
 
 go 1.22.4
 

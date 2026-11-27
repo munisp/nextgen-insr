@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/telematics-engine
+module github.com/munisp/insuretech/services/telematics-engine
 
 go 1.22
 

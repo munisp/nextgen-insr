@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/ussd-gateway
+module github.com/munisp/insuretech/services/ussd-gateway
 
 go 1.22
 

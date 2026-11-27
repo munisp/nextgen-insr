@@ -55,7 +55,7 @@ services:
       - PORT=8107
       - KAFKA_BROKERS=kafka:9092
       - TEMPORAL_URL=http://temporal:7233
-      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+      - DATABASE_URL=postgresql://insuretech:insuretech@postgres:5432/insuretech
     depends_on: [kafka, postgres, temporal]
 
   comparison-engine:
@@ -92,7 +92,7 @@ services:
       - PORT=8101
       - KAFKA_BROKERS=kafka:9092
       - REDIS_URL=redis://redis:6379/6
-      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+      - DATABASE_URL=postgresql://insuretech:insuretech@postgres:5432/insuretech
       - TEMPORAL_URL=http://temporal:7233
       - KEYCLOAK_URL=http://keycloak:8080
       - PERMIFY_URL=http://permify:3476
@@ -119,7 +119,7 @@ services:
       - PORT=8103
       - KAFKA_BROKERS=kafka:9092
       - REDIS_URL=redis://redis:6379/12
-      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+      - DATABASE_URL=postgresql://insuretech:insuretech@postgres:5432/insuretech
       - OPENSEARCH_URL=http://opensearch:9200
     depends_on: [kafka, redis, postgres]
 
@@ -165,9 +165,9 @@ services:
     image: postgres:16-alpine
     ports: ["5432:5432"]
     environment:
-      POSTGRES_DB: ngapp
-      POSTGRES_USER: ngapp
-      POSTGRES_PASSWORD: ngapp
+      POSTGRES_DB: insuretech
+      POSTGRES_USER: insuretech
+      POSTGRES_PASSWORD: insuretech
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -177,8 +177,8 @@ services:
     environment:
       DB: postgresql
       DB_PORT: 5432
-      POSTGRES_USER: ngapp
-      POSTGRES_PWD: ngapp
+      POSTGRES_USER: insuretech
+      POSTGRES_PWD: insuretech
       POSTGRES_SEEDS: postgres
     depends_on: [postgres]
 

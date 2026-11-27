@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ngapp-infra-sdk"
+name = "insuretech-infra-sdk"
 version = "1.0.0"
-description = "NGApp Infrastructure SDK — unified async clients for all 12 platform components"
+description = "InsureTech Infrastructure SDK — unified async clients for all 12 platform components"
 requires-python = ">=3.10"
 dependencies = [
     "asyncpg>=0.29.0",

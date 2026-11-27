@@ -13,7 +13,7 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/insuretech
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
     depends_on:
@@ -42,7 +42,7 @@ services:
     ports:
       - "8084:8084"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/insuretech
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - postgres
@@ -53,7 +53,7 @@ services:
     ports:
       - "8085:8085"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/insuretech
       - REDIS_URL=redis://redis:6379
     depends_on:
       - postgres
@@ -64,7 +64,7 @@ services:
     ports:
       - "8086:8086"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/insuretech
       - REDIS_URL=redis://redis:6379
     depends_on:
       - postgres
@@ -78,7 +78,7 @@ services:
     ports:
       - "8087:8000"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/insuretech
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
 
@@ -134,7 +134,7 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: ngapp
+      POSTGRES_DB: insuretech
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:

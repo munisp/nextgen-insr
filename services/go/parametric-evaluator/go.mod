@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/parametric-evaluator
+module github.com/munisp/insuretech/services/parametric-evaluator
 
 go 1.22
 

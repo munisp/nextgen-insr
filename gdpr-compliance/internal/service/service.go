@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/munisp/NGApp/gdpr-compliance/internal/models"
-	"github.com/munisp/NGApp/gdpr-compliance/internal/repository"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/models"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/repository"
 )
 
 type GDPRService struct{ repo *repository.GDPRRepository }

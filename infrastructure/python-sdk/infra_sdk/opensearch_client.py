@@ -10,17 +10,17 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.opensearch")
+logger = logging.getLogger("insuretech.infra.opensearch")
 
-INDEX_AUDIT_TRAIL = "ngapp-audit-trail"
-INDEX_KYC_EVENTS = "ngapp-kyc-events"
-INDEX_COMPLIANCE = "ngapp-compliance"
-INDEX_METRICS = "ngapp-metrics"
-INDEX_POLICIES = "ngapp-policies"
-INDEX_CLAIMS = "ngapp-claims"
-INDEX_PAYMENTS = "ngapp-payments"
-INDEX_FRAUD = "ngapp-fraud-alerts"
-INDEX_SECURITY = "ngapp-security-events"
+INDEX_AUDIT_TRAIL = "insuretech-audit-trail"
+INDEX_KYC_EVENTS = "insuretech-kyc-events"
+INDEX_COMPLIANCE = "insuretech-compliance"
+INDEX_METRICS = "insuretech-metrics"
+INDEX_POLICIES = "insuretech-policies"
+INDEX_CLAIMS = "insuretech-claims"
+INDEX_PAYMENTS = "insuretech-payments"
+INDEX_FRAUD = "insuretech-fraud-alerts"
+INDEX_SECURITY = "insuretech-security-events"
 
 ALL_INDICES = [
     INDEX_AUDIT_TRAIL, INDEX_KYC_EVENTS, INDEX_COMPLIANCE, INDEX_METRICS,
@@ -67,7 +67,7 @@ class OpenSearchClient:
     async def _setup_ilm_policy(self):
         policy = {
             "policy": {
-                "description": "NGApp platform index lifecycle",
+                "description": "InsureTech platform index lifecycle",
                 "default_state": "hot",
                 "states": [
                     {"name": "hot", "actions": [{"rollover": {"min_size": "10gb", "min_index_age": "7d"}}],
@@ -79,7 +79,7 @@ class OpenSearchClient:
             }
         }
         try:
-            await self._http.put(f"{self._base_url}/_plugins/_ism/policies/ngapp-lifecycle", json=policy)
+            await self._http.put(f"{self._base_url}/_plugins/_ism/policies/insuretech-lifecycle", json=policy)
         except Exception as e:
             logger.warning("ilm_policy_failed: %s", e)
 

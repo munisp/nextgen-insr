@@ -140,7 +140,7 @@ class DataSourceUnavailableError(ActuarialPlatformError):
 
 # ── Database Connection ──────────────────────────────────────────────────────
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://insuretech:insuretech@localhost:5432/insuretech")
 _db_conn = None
 
 def get_db():

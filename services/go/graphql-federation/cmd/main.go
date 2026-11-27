@@ -32,7 +32,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8125"),
-		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
+		DatabaseURL: envOr("DATABASE_URL", "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"),
 		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		Environment: envOr("ENVIRONMENT", "development"),
 	}

@@ -58,7 +58,7 @@ func (o *OpenAppSecClient) ApplyPolicy(ctx context.Context, policy WAFPolicy) er
 
 func DefaultWAFPolicy() WAFPolicy {
 	return WAFPolicy{
-		Name: "ngapp-default",
+		Name: "insuretech-default",
 		Mode: "prevent",
 		Rules: []WAFRule{
 			{Type: "sql-injection", Action: "block", Severity: "critical"},

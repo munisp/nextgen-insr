@@ -2,7 +2,7 @@
  * Persistence tests for embedded-sdk (2026-10-02, C2-a2, persistence-audit A2).
  *
  * REAL-POSTGRES tests — no mocks/fakes/stubs. They connect to the database at
- * process.env.DATABASE_URL (default postgresql://ngapp:ngapp@localhost:5432/ngapp,
+ * process.env.DATABASE_URL (default postgresql://insuretech:insuretech@localhost:5432/insuretech,
  * the same default the service uses) and SKIP if no PostgreSQL is reachable.
  * The test schema is isolated via a random table suffix is NOT used; instead the
  * tests run against the service's own tables and clean up the rows they create.
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { Client as PgClient } from 'pg';
 
 const DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://ngapp:ngapp@localhost:5432/ngapp';
+  process.env.DATABASE_URL || 'postgresql://insuretech:insuretech@localhost:5432/insuretech';
 
 async function pgReachable(): Promise<boolean> {
   const c = new PgClient({ connectionString: DATABASE_URL, connectionTimeoutMillis: 3000 });

@@ -1,13 +1,13 @@
-import { NGAppInsurance } from "../client";
+import { InsureTechInsurance } from "../client";
 import { InsuranceProduct, Quote, EmbeddedConfig } from "../types";
 
 export class QuoteWidget {
-  private client: NGAppInsurance;
+  private client: InsureTechInsurance;
   private config: EmbeddedConfig;
 
   constructor(config: EmbeddedConfig) {
     this.config = config;
-    this.client = new NGAppInsurance(config);
+    this.client = new InsureTechInsurance(config);
   }
 
   generateHTML(product: InsuranceProduct, quote: Quote): string {
@@ -16,7 +16,7 @@ export class QuoteWidget {
     const borderRadius = this.config.theme?.borderRadius || "12px";
 
     return `
-      <div id="ngapp-quote-widget" style="
+      <div id="insuretech-quote-widget" style="
         font-family: ${fontFamily};
         max-width: 400px;
         border: 1px solid #e0e0e0;
@@ -66,7 +66,7 @@ export class QuoteWidget {
         </div>
 
         <button
-          onclick="window.NGAppCheckout && window.NGAppCheckout('${quote.id}')"
+          onclick="window.InsureTechCheckout && window.InsureTechCheckout('${quote.id}')"
           style="
             width: 100%;
             padding: 12px;
@@ -83,7 +83,7 @@ export class QuoteWidget {
         </button>
 
         <div style="text-align: center; margin-top: 8px; color: #999; font-size: 11px;">
-          Powered by NGApp Insurance
+          Powered by InsureTech Insurance
         </div>
       </div>
     `;

@@ -1,9 +1,9 @@
 {{- /*
-  microservices.yaml - ServiceAccounts for all NGApp microservices
+  microservices.yaml - ServiceAccounts for all InsureTech microservices
   Each service gets its own ServiceAccount for fine-grained RBAC.
 */ -}}
 
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 
 {{- range $name, $config := .Values.services }}
 ---
@@ -11,9 +11,9 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
   annotations:
     {{- if $.Values.serviceMesh.enabled }}
     sidecar.istio.io/inject: "true"
@@ -27,9 +27,9 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $fullName }}-frontend
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 {{- end }}
 
 {{- /* APISIX ServiceAccount */ -}}
@@ -39,7 +39,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $fullName }}-apisix
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 {{- end }}

@@ -47,8 +47,8 @@ A comprehensive, production-grade insurance technology platform built for the Ni
 
 ```bash
 # Clone the repository
-git clone https://github.com/munisp/NGApp.git
-cd NGApp
+git clone https://github.com/munisp/nextgen-insr.git
+cd nextgen-insr
 
 # Install frontend dependencies
 npm install
@@ -98,7 +98,7 @@ npx vitest run tests/integration/
 ## Project Structure
 
 ```
-NGApp/
+InsureTech/
 ├── client/src/           # React frontend (533 pages)
 │   ├── components/       # Shared UI components
 │   ├── pages/            # Page components by domain
@@ -181,9 +181,9 @@ docker compose -f deploy/staging/docker-compose.staging.yml up -d
 
 ```bash
 # Install the platform
-helm install ngapp helm/ngapp-platform/ \
-  -f helm/ngapp-platform/values.yaml \
-  -n ngapp --create-namespace
+helm install insuretech helm/insuretech-platform/ \
+  -f helm/insuretech-platform/values.yaml \
+  -n insuretech --create-namespace
 
 # Install monitoring stack
 helm install monitoring prometheus-community/kube-prometheus-stack \

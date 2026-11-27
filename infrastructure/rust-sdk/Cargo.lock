@@ -608,7 +608,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ngapp-infra-sdk"
+name = "insuretech-infra-sdk"
 version = "1.0.0"
 dependencies = [
  "reqwest",

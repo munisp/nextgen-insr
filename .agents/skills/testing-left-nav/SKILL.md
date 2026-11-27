@@ -13,7 +13,7 @@ description: Test the left nav sidebar features (search, favorites, recents, col
 - None — the app runs in demo mode with no authentication required
 
 ## Setup
-1. Start the dev server: `cd /home/ubuntu/repos/NGApp/customer-portal-full && pnpm dev`
+1. Start the dev server: `cd /home/ubuntu/repos/InsureTech/customer-portal-full && pnpm dev`
 2. Navigate to `http://localhost:5002/dashboard`
 3. Clear localStorage before testing for clean state:
    ```js

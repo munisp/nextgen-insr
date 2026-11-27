@@ -24,9 +24,9 @@ func ConfigFromEnv(prefix string) Config {
 	return Config{
 		Host:     envOr(prefix+"_DB_HOST", "localhost"),
 		Port:     envOr(prefix+"_DB_PORT", "5432"),
-		User:     envOr(prefix+"_DB_USER", "ngapp"),
+		User:     envOr(prefix+"_DB_USER", "insuretech"),
 		Password: envOr(prefix+"_DB_PASSWORD", os.Getenv("POSTGRES_PASSWORD")),
-		DBName:   envOr(prefix+"_DB_NAME", "ngapp"),
+		DBName:   envOr(prefix+"_DB_NAME", "insuretech"),
 		SSLMode:  envOr(prefix+"_DB_SSLMODE", "disable"),
 	}
 }

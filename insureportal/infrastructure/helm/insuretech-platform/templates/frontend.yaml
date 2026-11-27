@@ -2,14 +2,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ngapp.fullname" . }}-frontend
+  name: {{ include "insuretech.fullname" . }}-frontend
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
   selector:
     matchLabels:
-      {{- include "ngapp.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 6 }}
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 6 }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "ngapp.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 8 }}
+        {{- include "insuretech.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 8 }}
     spec:
       securityContext:
         runAsNonRoot: true
@@ -54,9 +54,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ngapp.fullname" . }}-frontend
+  name: {{ include "insuretech.fullname" . }}-frontend
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
 spec:
   type: {{ .Values.frontend.service.type }}
   ports:
@@ -65,15 +65,15 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "ngapp.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 4 }}
+    {{- include "insuretech.serviceSelectorLabels" (dict "root" . "serviceName" "frontend") | nindent 4 }}
 ---
 {{- if .Values.frontend.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "ngapp.fullname" . }}-frontend
+  name: {{ include "insuretech.fullname" . }}-frontend
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" . "serviceName" "frontend" "component" "frontend") | nindent 4 }}
   {{- with .Values.frontend.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -100,7 +100,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "ngapp.fullname" $ }}-frontend
+                name: {{ include "insuretech.fullname" $ }}-frontend
                 port:
                   name: http
           {{- end }}
@@ -111,12 +111,12 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "ngapp.fullname" . }}-frontend
+  name: {{ include "insuretech.fullname" . }}-frontend
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "ngapp.fullname" . }}-frontend
+    name: {{ include "insuretech.fullname" . }}-frontend
   minReplicas: {{ .Values.frontend.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.frontend.autoscaling.maxReplicas }}
   metrics:

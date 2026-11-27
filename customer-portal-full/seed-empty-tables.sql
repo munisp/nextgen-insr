@@ -1,5 +1,5 @@
 -- Seed script for 137 empty tables in InsurePortal
--- Run: PGPASSWORD=ngapp psql -U ngapp -d ngapp -h localhost -f seed-empty-tables.sql
+-- Run: PGPASSWORD=insuretech psql -U insuretech -d insuretech -h localhost -f seed-empty-tables.sql
 
 -- Agent tables
 INSERT INTO agents (id, name, email, phone, status, tier, "createdAt") VALUES

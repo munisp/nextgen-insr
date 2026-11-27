@@ -32,7 +32,7 @@ import (
 	miniredis "github.com/alicebob/miniredis/v2"
 	"go.uber.org/zap/zaptest"
 
-	infra "github.com/munisp/NGApp/infrastructure/go-sdk"
+	infra "github.com/munisp/insuretech/infrastructure/go-sdk"
 )
 
 // ─── Chaos proxy: a real TCP proxy that can be killed ─────────────────────────

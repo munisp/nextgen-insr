@@ -6,13 +6,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ngapp
-      POSTGRES_USER: ngapp
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ngapp}
+      POSTGRES_DB: insuretech
+      POSTGRES_USER: insuretech
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insuretech}
     ports: ["5432:5432"]
     volumes: ["pg_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      test: ["CMD-SHELL", "pg_isready -U insuretech"]
       interval: 5s
 
   redis:
@@ -46,8 +46,8 @@ services:
     environment:
       DB: postgresql
       DB_PORT: 5432
-      POSTGRES_USER: ngapp
-      POSTGRES_PWD: ${POSTGRES_PASSWORD:-ngapp}
+      POSTGRES_USER: insuretech
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-insuretech}
       POSTGRES_SEEDS: postgres
     depends_on: [postgres]
 
@@ -73,7 +73,7 @@ services:
     ports: ["8110:8110"]
     environment:
       PORT: "8110"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, kafka-rest, redis]
@@ -83,7 +83,7 @@ services:
     ports: ["8111:8111"]
     environment:
       PORT: "8111"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
@@ -93,7 +93,7 @@ services:
     ports: ["8114:8114"]
     environment:
       PORT: "8114"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
@@ -103,7 +103,7 @@ services:
     ports: ["8119:8119"]
     environment:
       PORT: "8119"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
 
@@ -112,7 +112,7 @@ services:
     ports: ["8122:8122"]
     environment:
       PORT: "8122"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
 
@@ -122,7 +122,7 @@ services:
     ports: ["8112:8112"]
     environment:
       PORT: "8112"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, kafka-rest, redis]
@@ -132,7 +132,7 @@ services:
     ports: ["8115:8115"]
     environment:
       PORT: "8115"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
     depends_on: [postgres, kafka-rest]
 
@@ -141,7 +141,7 @@ services:
     ports: ["8116:8116"]
     environment:
       PORT: "8116"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, kafka-rest, redis]
@@ -151,7 +151,7 @@ services:
     ports: ["8117:8117"]
     environment:
       PORT: "8117"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
     depends_on: [postgres]
 
   data-mesh-router:
@@ -159,7 +159,7 @@ services:
     ports: ["8118:8118"]
     environment:
       PORT: "8118"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       OPENSEARCH_URL: http://opensearch:9200
     depends_on: [postgres, opensearch]
 
@@ -168,7 +168,7 @@ services:
     ports: ["8120:8120"]
     environment:
       PORT: "8120"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
     depends_on: [postgres, kafka-rest]
 
@@ -177,7 +177,7 @@ services:
     ports: ["8121:8121"]
     environment:
       PORT: "8121"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
     depends_on: [postgres]
 
   graphql-federation:
@@ -185,7 +185,7 @@ services:
     ports: ["8125:8125"]
     environment:
       PORT: "8125"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
 
@@ -194,7 +194,7 @@ services:
     ports: ["8126:8126"]
     environment:
       PORT: "8126"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
     depends_on: [postgres, kafka-rest]
 
@@ -204,7 +204,7 @@ services:
     ports: ["8113:8113"]
     environment:
       PORT: "8113"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
 
@@ -213,7 +213,7 @@ services:
     ports: ["8123:8123"]
     environment:
       PORT: "8123"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, redis]
 
@@ -223,7 +223,7 @@ services:
     ports: ["8124:8124"]
     environment:
       PORT: "8124"
-      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      DATABASE_URL: postgresql://insuretech:insuretech@postgres:5432/insuretech
       KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
     depends_on: [postgres, kafka-rest, redis]

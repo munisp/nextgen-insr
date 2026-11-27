@@ -35,7 +35,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:           envOr("PORT", "8115"),
-		DatabaseURL:    envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
+		DatabaseURL:    envOr("DATABASE_URL", "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"),
 		KafkaURL:       envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		TigerBeetleURL: envOr("TIGERBEETLE_URL", "http://localhost:3001"),
 		MojaloopURL:    envOr("MOJALOOP_URL", "http://localhost:3002"),
