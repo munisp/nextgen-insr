@@ -182,6 +182,21 @@ CREATE TABLE IF NOT EXISTS "pension_contributions" (
   "createdAt" timestamp DEFAULT now() NOT NULL,
   "updatedAt" timestamp DEFAULT now() NOT NULL
 );
+-- 2026-11-27 (W31-B): the retired scope guards below now exercise the REAL
+-- savingsProducts.list, which joins customers/agents for customerName/
+-- agentName — these two minimal tables (join-by-value, FKs omitted per the
+-- harness convention) exist solely so that positive contract assertion can
+-- run. Additive only; no W30 assertion depends on them.
+CREATE TABLE IF NOT EXISTS "customers" (
+  "id" serial PRIMARY KEY,
+  "firstName" varchar(64) NOT NULL,
+  "lastName" varchar(64) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS "agents" (
+  "id" serial PRIMARY KEY,
+  "agentId" varchar(32) NOT NULL,
+  "name" varchar(128) NOT NULL
+);
 `;
 
 async function exec(sql: string) {
@@ -437,19 +452,60 @@ describe("W30: savings & pension domain real implementations (real PGlite DB)", 
       );
     });
 
-    // ── Scope guards: the out-of-scope stubs stay fail-loud ────────────────
-    it("savingsProducts.list still fails loud (NOT_IMPLEMENTED — W31 scope)", async () => {
-      await expectTrpcCode(
-        savingsProductsRouter.createCaller(ctxFor(plainUser)).list(),
-        "NOT_IMPLEMENTED"
-      );
+    // ── Former scope guards (W30 kept list/history fail-loud as out-of-scope;
+    // W31-B implemented them — guards rewritten as positive contract checks) ──
+    // ── Retired scope guards (positive contract assertions) ────────────────
+    it("savingsProducts.list returns real per-account rows (scope guard retired)", async () => {
+      // 2026-11-27 (W31-B): scope guard retired — this test previously
+      // asserted list throws NOT_IMPLEMENTED; the procedure is now
+      // implemented as a real read over savings_accounts JOIN
+      // savings_products with a ledger-SUM balance (router
+      // savingsProducts.ts). Full behavioral coverage (decoys, deposit/
+      // withdraw round-trip, gates) lives in
+      // tests/integration/w31SavingsPensionTax.integration.test.ts; this
+      // block positively asserts the new contract against the W30 seeds.
+      // Truth (from the seed table above): A1 = 250000 − 40000 + 3125.50
+      // = 213125.50, A2 = 100000 + 1200 = 101200, A3 = 75000, A4 = 900
+      // (interest on the closed account still sums into its balance).
+      const res = await savingsProductsRouter
+        .createCaller(ctxFor(plainUser))
+        .list();
+      expect(res.accounts.length).toBe(4); // all accounts, incl. closed A4
+      const byAcct = new Map(res.accounts.map(a => [a.accountNo, a]));
+      const a1 = byAcct.get("SAVA-0001")!;
+      expect(a1.productName).toBe("Ajo Daily Thrift");
+      expect(a1.balance).toBe(213125.5);
+      expect(a1.status).toBe("active");
+      expect(a1.customerName).toBeNull(); // no customers seeded → LEFT JOIN null
+      expect(byAcct.get("SAVA-0004")!.status).toBe("closed");
+      expect(byAcct.get("SAVA-0004")!.balance).toBe(900);
+      expect(byAcct.get("SAVA-0002")!.balance).toBe(101200);
     });
 
-    it("pensionCollection.history still fails loud (NOT_IMPLEMENTED — W31 scope)", async () => {
-      await expectTrpcCode(
-        pensionCollectionRouter.createCaller(ctxFor(plainUser)).history(),
-        "NOT_IMPLEMENTED"
-      );
+    it("pensionCollection.history returns real contribution rows (scope guard retired)", async () => {
+      // 2026-11-27 (W31-B): scope guard retired — this test previously
+      // asserted history throws NOT_IMPLEMENTED; the procedure is now
+      // implemented as a real read over pension_contributions JOIN
+      // pfa_registry (router pensionCollection.ts). Full behavioral coverage
+      // lives in tests/integration/w31SavingsPensionTax.integration.test.ts;
+      // this block positively asserts the new contract against the W30
+      // seeds: all 5 seeded rows are returned (history includes the failed
+      // R5 — the page renders it with the destructive badge), most recent
+      // first (R5 has the highest id).
+      const res = await pensionCollectionRouter
+        .createCaller(ctxFor(plainUser))
+        .history();
+      expect(res.contributions.length).toBe(5);
+      expect(res.contributions[0].rsaPin).toBe("PEN-100000000009"); // R5 first (id desc)
+      expect(res.contributions[0].status).toBe("failed");
+      const byRefPin = new Map(res.contributions.map(c => [c.rsaPin + c.period, c]));
+      const r1 = byRefPin.get("PEN-1000000000012026-10")!;
+      expect(r1.pfaName).toBe("Stanbic IBTC Pension Managers Limited");
+      expect(r1.contributorName).toBe("Adaeze Nwosu");
+      expect(r1.employeeAmount).toBe(40000);
+      expect(r1.employerAmount).toBe(50000);
+      expect(r1.type).toBe("Mandatory");
+      expect(r1.status).toBe("remitted");
     });
   });
 });
