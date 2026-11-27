@@ -9,7 +9,16 @@ import { loyaltyRouter } from "./routers/loyalty";
 import { chatRouter } from "./routers/chat";
 import { auditLogRouter } from "./routers/auditLog";
 import { agentManagementRouter } from "./routers/agentManagement";
-import { premiumTopUpRouter } from "./routers/premiumTopUp";
+// 2026-11-27 (W32-C): NAMESPACE DRIFT FIX — register the REAL premiumTopUp
+// implementation (server/routers/floatTopUp.ts, the agent-facing top-up
+// request router with submit/myRequests/supervisorPendingTopUps/
+// supervisorApproveTopUp) under the `premiumTopUp` namespace, matching
+// main's wiring (main registers its real premiumTopUp implementation under
+// the same `premiumTopUp` namespace). Previously this import pointed at the
+// auto-generated stub (server/routers/premiumTopUp.ts), leaving
+// SupervisorDashboard's premiumTopUp.supervisorPendingTopUps /
+// supervisorApproveTopUp calls without a backing procedure.
+import { premiumTopUpRouter } from "./routers/floatTopUp";
 import { smsReceiptRouter } from "./routers/smsReceipt";
 import { exportRouter } from "./routers/export";
 import { pinResetRouter } from "./routers/pinReset";

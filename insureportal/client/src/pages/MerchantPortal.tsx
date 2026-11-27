@@ -191,8 +191,17 @@ function StatusCheck({ onBack }: { onBack: () => void }) {
           >
             {statusQ.data.found ? (
               <>
+                {/* W32-C (2026-11-27): the server DELIBERATELY returns a
+                    status-only payload ({ found, status, createdAt }) from
+                    merchant.checkRegistrationStatus — the G1 fix-wave
+                    (audit CRIT-2) security decision documented in
+                    server/routers/merchant.ts: merchantCode is the merchant
+                    credential and must never be an email-keyed oracle, and
+                    businessName is withheld from the unauthenticated
+                    email-keyed lookup. Render only what the contract
+                    honestly carries; do NOT widen the server response. */}
                 <div className="text-sm font-bold text-white">
-                  {statusQ.data.businessName}
+                  Application found
                 </div>
                 <div className="flex items-center gap-2">
                   <span
@@ -208,7 +217,12 @@ function StatusCheck({ onBack }: { onBack: () => void }) {
                     className="text-xs text-gray-500"
                     style={{ fontFamily: MONO }}
                   >
-                    {statusQ.data.merchantCode}
+                    Submitted{" "}
+                    {statusQ.data.createdAt
+                      ? new Date(statusQ.data.createdAt).toLocaleDateString(
+                          "en-NG"
+                        )
+                      : "—"}
                   </span>
                 </div>
                 {statusQ.data.status === "pending" && (

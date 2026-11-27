@@ -14,7 +14,10 @@ export default function SimOrchestratorDashboard() {
     { retry: false, enabled: !!terminalId }
   );
   const carrierQ = trpc.simOrchestrator.getCarrierSummary.useQuery(
-    { agentId, hours: 24 },
+    // W32-C (2026-11-27): main's server contract is `agentCode` (the UI
+    // state var is named `agentId` but holds the agent CODE, see the
+    // "Agent Code" input label below) — byte-identical to main's page.
+    { agentCode: agentId, hours: 24 },
     { retry: false, enabled: !!agentId }
   );
 
