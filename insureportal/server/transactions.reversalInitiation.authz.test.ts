@@ -20,7 +20,12 @@
  *   - admin + Permify DENIES               → FORBIDDEN (fail-closed)
  *   - admin + Permify allows               → immediate reversal completes
  *   - supervisor + Permify allows          → immediate reversal completes
- *   create ('transfer' op — admin/super_admin/agent/broker):
+ *   create ('transfer' op — admin/super_admin/agent only;
+ *     2026-11-27 (W30) comment fix: this header previously listed 'broker'
+ *     as holding the transfer op — wrong. ROLE_PERMISSIONS in
+ *     ./_core/permifyMiddleware.ts grants broker only premium_collect+read;
+ *     transfer is held by admin/super_admin/agent. Comment-only correction;
+ *     no test or runtime behavior changed):
  *   - unauthenticated                      → UNAUTHORIZED
  *   - role 'user'                          → FORBIDDEN, handler never runs
  *   - role 'supervisor' (no 'transfer' op) → FORBIDDEN (matches main)

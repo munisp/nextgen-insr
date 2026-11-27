@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count, sum, and } from "drizzle-orm";
-import { transactions, auditLog } from "@schema";
+import { eq, desc, sql, count, sum, and, asc } from "drizzle-orm";
+import {
+  transactions,
+  auditLog,
+  savingsProducts,
+  savingsAccounts,
+  savingsLedger,
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -170,13 +176,43 @@ export const savingsProductsRouter = router({
   // ── Sprint 28 domain procedures ──
   // DD-LEGACY: previously returned a fabricated savings product, a fake
   // account with a ₦250,000 balance, and invented ₦50M/₦750M analytics.
-  // Money-path reads must be real or loud — these fail loud.
+  // Money-path reads must be real or loud.
+  //
+  // 2026-11-27 (W30): products + analytics are now REAL reads over the W30
+  // savings domain (drizzle/schema.ts: savings_products, savings_accounts,
+  // savings_ledger — migration 0047). Contract: client/src/pages/
+  // SavingsProductsPage.tsx. Fail-closed PRECONDITION_FAILED when the DB is
+  // unavailable (W29 taxCollection.analytics pattern) — a portal showing an
+  // empty catalog because the DB is down is a silent-failure mode.
+  // `list` stays fail-loud: it serves the accounts/transactions tabs and is
+  // W31 scope.
   products: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "savingsProducts.products is not implemented: no savings product catalog is persisted in this service. Previously returned a fabricated demo product.",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "savingsProducts.products requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    const rows = await database
+      .select()
+      .from(savingsProducts)
+      .where(eq(savingsProducts.isActive, true))
+      .orderBy(asc(savingsProducts.name));
+    return {
+      products: rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        type: r.type, // enum already display-cased
+        description: r.description ?? "",
+        minDeposit: Number(r.minDeposit), // pg returns numeric as string
+        interestRate: r.interestRateBps / 100, // bps → percent p.a.
+        lockPeriod:
+          r.lockPeriodDays === 0 ? "None" : `${r.lockPeriodDays} days`,
+        frequency: r.frequency,
+      })),
+    };
   }),
   list: protectedProcedure.query(async () => {
     throw new TRPCError({
@@ -186,10 +222,33 @@ export const savingsProductsRouter = router({
     });
   }),
   analytics: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "savingsProducts.analytics is not implemented: no savings analytics pipeline exists in this service. Previously returned fabricated balance/deposit figures.",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "savingsProducts.analytics requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    // Ledger and accounts are independent axes — two aggregate round-trips,
+    // no join. totalDeposits counts deposit postings only (withdrawals never
+    // enter it); totalInterestPaid counts every interest_credit posting,
+    // including those on since-closed accounts (a historical fact).
+    const [money] = await database
+      .select({
+        totalDeposits: sql<string>`coalesce(sum(${savingsLedger.amount}) filter (where ${savingsLedger.entryType} = 'deposit'), 0)`,
+        totalInterestPaid: sql<string>`coalesce(sum(${savingsLedger.amount}) filter (where ${savingsLedger.entryType} = 'interest_credit'), 0)`,
+      })
+      .from(savingsLedger);
+    const [accts] = await database
+      .select({
+        activeAccounts: sql<number>`count(*) filter (where ${savingsAccounts.status} = 'active')::int`,
+      })
+      .from(savingsAccounts);
+    return {
+      totalDeposits: Number(money?.totalDeposits ?? 0),
+      activeAccounts: Number(accts?.activeAccounts ?? 0),
+      totalInterestPaid: Number(money?.totalInterestPaid ?? 0),
+    };
   }),
 });

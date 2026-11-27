@@ -2,8 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "@schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { auditLog, pfaRegistry, pensionContributions } from "@schema";
+import { desc, eq, sql, and, gte, lte, count, asc, ne } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
@@ -136,13 +136,56 @@ export const pensionCollectionRouter = router({
   // ── Sprint 28 domain procedures ──
   // DD-LEGACY: previously returned fabricated PFAs, a fake "remitted"
   // contribution, and invented ₦25M portfolio analytics. Money-path reads
-  // must be real or loud — these fail loud.
+  // must be real or loud.
+  //
+  // 2026-11-27 (W30): pfas + analytics are now REAL reads over the W30
+  // pension domain (drizzle/schema.ts: pfa_registry, pension_contributions —
+  // migration 0047). Contract: client/src/pages/PensionCollectionPage.tsx.
+  // Fail-closed PRECONDITION_FAILED when the DB is unavailable (W29
+  // taxCollection.analytics pattern). `history` stays fail-loud: it serves
+  // the contributions/employers tabs and is W31 scope.
   pfas: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "pensionCollection.pfas is not implemented: no PFA registry is integrated in this service. Previously returned fabricated demo PFAs.",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "pensionCollection.pfas requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    // ALL registry rows are returned (active and inactive — the page renders
+    // an Active/Inactive badge per card). contributorCount = distinct RSA
+    // PINs with a non-failed contribution (a failed collection does not
+    // establish a contributor relationship).
+    const rows = await database
+      .select({
+        id: pfaRegistry.id,
+        name: pfaRegistry.name,
+        code: pfaRegistry.code,
+        licenseNo: pfaRegistry.licenseNo,
+        isActive: pfaRegistry.isActive,
+        contributorCount: sql<number>`count(distinct ${pensionContributions.rsaPin})::int`,
+      })
+      .from(pfaRegistry)
+      .leftJoin(
+        pensionContributions,
+        and(
+          eq(pensionContributions.pfaId, pfaRegistry.id),
+          ne(pensionContributions.status, "failed")
+        )
+      )
+      .groupBy(pfaRegistry.id)
+      .orderBy(asc(pfaRegistry.name));
+    return {
+      pfas: rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        code: r.code,
+        licenseNo: r.licenseNo,
+        contributorCount: Number(r.contributorCount),
+        active: r.isActive,
+      })),
+    };
   }),
   history: protectedProcedure.query(async () => {
     throw new TRPCError({
@@ -152,10 +195,29 @@ export const pensionCollectionRouter = router({
     });
   }),
   analytics: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "pensionCollection.analytics is not implemented: no pension analytics pipeline exists in this service. Previously returned fabricated collection/remittance figures.",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "pensionCollection.analytics requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    // status <> 'failed' is the honesty filter: a failed collection is not
+    // collected money. 'collected' + 'remitted' both count (remittance is a
+    // later lifecycle stage of the same collected money).
+    const [row] = await database
+      .select({
+        totalContributions: sql<number>`count(*)::int`,
+        totalVolume: sql<string>`coalesce(sum(${pensionContributions.employeeAmount}::numeric + ${pensionContributions.employerAmount}::numeric), 0)`,
+        totalCommission: sql<string>`coalesce(sum(${pensionContributions.commission}::numeric), 0)`,
+      })
+      .from(pensionContributions)
+      .where(ne(pensionContributions.status, "failed"));
+    return {
+      totalVolume: Number(row?.totalVolume ?? 0),
+      totalContributions: Number(row?.totalContributions ?? 0),
+      totalCommission: Number(row?.totalCommission ?? 0),
+    };
   }),
 });

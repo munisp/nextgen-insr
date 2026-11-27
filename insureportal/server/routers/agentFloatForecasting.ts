@@ -235,46 +235,34 @@ async function computeForecasts(
 }
 
 export const agentFloatForecastingRouter = router({
+  // 2026-11-27 (W30): converted to fail-loud NOT_IMPLEMENTED. The previous
+  // body fabricated its numbers: it read `agent.monthlyTarget` (no such
+  // column on the agents table — the read always fell through to the
+  // hardcoded 200000/30 "average daily demand"), fell back to a hardcoded
+  // 50000 float when premiumReserve was NULL, and reported a hardcoded
+  // confidence: 0.85. No honest per-row source exists for that shape: the
+  // real ported forecaster (computeForecasts, used by getForecast below) is
+  // fleet/window-scoped, deliberately fails loud below MIN_HISTORY_DAYS of
+  // history, and emits a different contract (avgDailyNetOutflow/
+  // predictedNeed/shortfall/risk) — it cannot populate list's paginated
+  // per-agent {avgDailyDemand, seasonalMultiplier, forecastedDemand7d,
+  // recommendedTopUp, stockoutRisk, daysUntilStockout, confidence} rows
+  // without re-inventing them. No client consumes this procedure
+  // (client/src/pages/AgentFloatForecasting.tsx uses getStats/getForecast),
+  // so fail-loud is the honest disposition. A future honest list would page
+  // agents and join each against computeForecasts output — a design item.
   list: protectedProcedure
     .input(z.object({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
       riskFilter: z.enum(["all", "critical", "high", "medium", "low"]).default("all"),
     }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
-
-      const results = await database.select().from(agents).orderBy(desc(agents.id)).limit(input.limit).offset(input.offset);
-      const totalRows = await database.select({ total: count() }).from(agents);
-
-      const forecasts = results.map((agent: any) => {
-        const currentFloat = agent.premiumReserve ?? 50000;
-        const avgDaily = (agent.monthlyTarget ?? 200000) / 30;
-        const multiplier = getSeasonalMultiplier(new Date());
-        const adjustedDemand = avgDaily * multiplier;
-        const tierBuffer = TIER_BUFFERS[agent.tier ?? "standard"] ?? 1.0;
-        const { risk, daysRemaining } = calculateStockoutRisk(currentFloat, adjustedDemand);
-        const forecastedDemand7d = Math.round(adjustedDemand * 7 * tierBuffer);
-        const recommendedTopUp = Math.max(0, forecastedDemand7d - currentFloat);
-
-        return {
-          ...agent,
-          forecast: {
-            avgDailyDemand: Math.round(adjustedDemand),
-            seasonalMultiplier: multiplier,
-            forecastedDemand7d,
-            recommendedTopUp,
-            stockoutRisk: risk,
-            daysUntilStockout: daysRemaining,
-            confidence: 0.85,
-          },
-        };
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "agentFloatForecasting.list is not implemented: its per-agent demand figures were derived from a nonexistent agents.monthlyTarget column with hardcoded fallbacks (fabrication). Use agentFloatForecasting.getForecast for the real trailing-average forecast.",
       });
-
-      const filtered = input.riskFilter === "all" ? forecasts : forecasts.filter((f: any) => f.forecast.stockoutRisk === input.riskFilter);
-
-      return { data: filtered, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
   // W29 (2026-11-27): REAL trailing-average forecast (main B17 semantics) —
