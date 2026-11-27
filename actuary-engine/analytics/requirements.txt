@@ -3,7 +3,11 @@
 # see w34c-report.md for the pip hash table of this environment.
 chainladder==0.10.1
 lifelines==0.30.3
-statsmodels==0.14.5
+# F1 (2026-11): bumped 0.14.5 -> 0.15.0. Upgrade check: the GLM artefact
+# golden (tests/data/glm_artefact_golden.json, byte-identical 1511B)
+# reproduces byte-for-byte under 0.15.0 with numpy 2.2.5 / pandas 2.3.3 /
+# scipy 1.18.1 (see f1-report.md for the measured evidence).
+statsmodels==0.15.0
 scikit-learn==1.7.2
 pandas==2.3.3
 numpy==2.2.5
@@ -14,3 +18,13 @@ minio==7.2.20
 httpx==0.28.1
 uvicorn==0.34.2
 pytest==9.2.0
+# F1 adoptions (capability map F1 row):
+#   aggregate 2.1.0 (BSD-3, mynl)  — analytic aggregate-loss distributions
+#     (FFT), VaR/TVaR, distortion pricing; actuary_analytics.aggdist.
+#   tweedie 0.0.9 (BSD-2, thequackdaddy) — standalone Tweedie distribution;
+#     actuary_analytics.freqsev.tweedie_tools.
+#   matplotlib pinned explicitly (transitive via aggregate; used by
+#     actuary_analytics.model_validation chart rendering).
+aggregate==2.1.0
+tweedie==0.0.9
+matplotlib==3.11.2
