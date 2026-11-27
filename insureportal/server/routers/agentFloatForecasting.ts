@@ -2,7 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { agents, premiumTopUpRequests, transactions } from "@schema";
-import { desc, eq, sql, and, gte, lte, count, avg, sum } from "drizzle-orm";
+import { desc, eq, sql, and, gte, lte, count, avg, sum, inArray } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 
 /**
  * Agent Float Forecasting Router
@@ -49,6 +50,190 @@ function calculateStockoutRisk(currentFloat: number, avgDailyDemand: number): { 
   return { risk: "low", daysRemaining };
 }
 
+// ── W29 (2026-11-27): B17 trailing-average forecaster ported from main ──────
+// Source: main server/routers/agentFloatForecasting.ts (computeForecasts +
+// getForecast). Method 'trailing_average' — NO ML: daily net float outflow is
+// the trailing average of (cash-out − cash-in) over the window (successful
+// transactions only), projected forward over the horizon. Below
+// MIN_HISTORY_DAYS distinct activity days the query FAILS LOUD
+// (PRECONDITION_FAILED, INSUFFICIENT_DATA) — a thin history projected as a
+// forecast would be fabrication.
+// Documented portal deltas (main -> portal):
+//  D1 tx vocabulary: portal txTypeEnum has no 'Cash In'/'Cash Out'. Portal's
+//     float-direction truth (transactions.ts FLOAT_CREDIT_TYPES /
+//     FLOAT_DEBIT_TYPES, corroborated by voiceCommandPos.ts mapping
+//     "Premium Payment"="Deposit cash" / "Claim Payout"="Withdraw cash"):
+//     in = 'Premium Payment', out = 'Claim Payout'. (Main likewise excludes
+//     'Transfer' from the forecast basis; mirrored.)
+//  D2 agentId: main accepts the agents.agentId string code; portal legacy
+//     callers pass the numeric agents.id PK — both accepted (union), each
+//     resolved to the PK, NOT_FOUND when the agent does not exist.
+//  D3 horizon: portal legacy alias for days; resolution days ?? horizon ?? 7
+//     (main's .default(7) preserved in effect).
+const MIN_HISTORY_DAYS = 7;
+const CASH_IN_TYPE = "Premium Payment";
+const CASH_OUT_TYPE = "Claim Payout";
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+type AgentFlowRow = {
+  agentPk: number;
+  cashIn: string | number;
+  cashOut: string | number;
+  activeDays: number;
+  dataPoints: number;
+};
+
+// Portal getDb() returns an any-typed instance (noop-proxy union), so awaited
+// query rows are `any`; row types are asserted explicitly (main's flowRows
+// cast pattern) to keep strict use-site checking.
+type AgentRow = {
+  id: number;
+  agentId: string;
+  name: string;
+  location: string | null;
+  premiumReserve: string | number | null;
+};
+
+export type FloatForecast = {
+  id: string; // agents.agentId
+  name: string;
+  location?: string;
+  currentFloat: number;
+  avgDailyVolume: number;
+  avgDailyNetOutflow: number;
+  predictedNeed: number;
+  shortfall: number;
+  risk: "low" | "medium" | "high" | "critical";
+  activeDays: number;
+};
+
+/**
+ * Compute trailing-average forecasts from the transactions table.
+ * windowDays = max(horizonDays, MIN_HISTORY_DAYS): the history window is
+ * never shorter than the minimum-history requirement, so the 1d horizon
+ * still forecasts from a 7-day window.
+ */
+async function computeForecasts(
+  db: Db,
+  horizonDays: number,
+  agentPk?: number
+): Promise<{
+  method: "trailing_average";
+  windowDays: number;
+  horizonDays: number;
+  historyDayCount: number;
+  minHistoryDays: number;
+  dataPoints: number;
+  forecasts: FloatForecast[];
+}> {
+  const windowDays = Math.max(horizonDays, MIN_HISTORY_DAYS);
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const scope = [
+    gte(transactions.createdAt, since),
+    eq(transactions.status, "success"),
+    inArray(transactions.type, [CASH_IN_TYPE, CASH_OUT_TYPE]),
+    agentPk != null ? eq(transactions.agentId, agentPk) : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c != null);
+
+  const flowRows = (await db
+    .select({
+      agentPk: transactions.agentId,
+      cashIn: sql<string>`coalesce(sum(cast(${transactions.amount} as numeric)) filter (where ${transactions.type} = ${CASH_IN_TYPE}), 0)`,
+      cashOut: sql<string>`coalesce(sum(cast(${transactions.amount} as numeric)) filter (where ${transactions.type} = ${CASH_OUT_TYPE}), 0)`,
+      activeDays: sql<number>`count(distinct date_trunc('day', ${transactions.createdAt}))::int`,
+      dataPoints: sql<number>`count(*)::int`,
+    })
+    .from(transactions)
+    .where(and(...scope))
+    .groupBy(transactions.agentId)) as AgentFlowRow[];
+
+  const [historyRow] = await db
+    .select({
+      days: sql<number>`count(distinct date_trunc('day', ${transactions.createdAt}))::int`,
+    })
+    .from(transactions)
+    .where(and(...scope));
+  const historyDayCount = Number(historyRow?.days ?? 0);
+
+  if (historyDayCount < MIN_HISTORY_DAYS) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        `INSUFFICIENT_DATA: only ${historyDayCount} day(s) of successful ` +
+        `${CASH_IN_TYPE}/${CASH_OUT_TYPE} history in the trailing ${windowDays}-day window ` +
+        `(minimum ${MIN_HISTORY_DAYS} required for a trailing-average forecast)`,
+    });
+  }
+
+  const agentRows = (await db
+    .select({
+      id: agents.id,
+      agentId: agents.agentId,
+      name: agents.name,
+      location: agents.location,
+      premiumReserve: agents.premiumReserve,
+    })
+    .from(agents)
+    .where(
+      agentPk != null
+        ? eq(agents.id, agentPk)
+        : flowRows.length > 0
+          ? inArray(
+              agents.id,
+              flowRows.map(r => r.agentPk)
+            )
+          : sql`false`
+    )) as AgentRow[];
+  const byPk = new Map(agentRows.map(a => [a.id, a] as const));
+
+  let dataPoints = 0;
+  const forecasts: FloatForecast[] = [];
+  for (const flow of flowRows) {
+    const agent = byPk.get(flow.agentPk);
+    if (!agent) continue;
+    const cashIn = Number(flow.cashIn);
+    const cashOut = Number(flow.cashOut);
+    dataPoints += Number(flow.dataPoints);
+    const avgDailyNetOutflow = (cashOut - cashIn) / windowDays;
+    const predictedNeed = round2(Math.max(0, avgDailyNetOutflow * horizonDays));
+    const currentFloat = round2(Number(agent.premiumReserve ?? 0));
+    const shortfall = round2(Math.max(0, predictedNeed - currentFloat));
+    const risk: FloatForecast["risk"] =
+      shortfall <= 0
+        ? "low"
+        : currentFloat <= 0 || shortfall >= currentFloat
+          ? "critical"
+          : shortfall >= 0.5 * currentFloat
+            ? "high"
+            : "medium";
+    forecasts.push({
+      id: agent.agentId,
+      name: agent.name,
+      ...(agent.location != null ? { location: agent.location } : {}),
+      currentFloat,
+      avgDailyVolume: round2((cashIn + cashOut) / windowDays),
+      avgDailyNetOutflow: round2(avgDailyNetOutflow),
+      predictedNeed,
+      shortfall,
+      risk,
+      activeDays: Number(flow.activeDays),
+    });
+  }
+  forecasts.sort((a, b) => b.shortfall - a.shortfall);
+  return {
+    method: "trailing_average",
+    windowDays,
+    horizonDays,
+    historyDayCount,
+    minHistoryDays: MIN_HISTORY_DAYS,
+    dataPoints,
+    forecasts,
+  };
+}
+
 export const agentFloatForecastingRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -92,43 +277,62 @@ export const agentFloatForecastingRouter = router({
       return { data: filtered, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
+  // W29 (2026-11-27): REAL trailing-average forecast (main B17 semantics) —
+  // fleet-wide when agentId is absent, fail-loud on insufficient history.
+  // Backward compatible: legacy { agentId: <numeric PK>, horizon: "7"|"14"|"30" }
+  // calls resolve to the same forecast, scoped to that agent (deltas D2/D3
+  // above). The previous monthlyTarget-based projection is replaced: the
+  // agents table has no monthlyTarget column — it was fabrication.
   getForecast: protectedProcedure
-    .input(z.object({ agentId: z.number(), horizon: z.enum(["7", "14", "30"]).default("7") }))
+    .input(
+      z.object({
+        days: z.number().int().min(1).max(90).optional(),
+        horizon: z.enum(["7", "14", "30"]).optional(),
+        agentId: z
+          .union([z.number().int().positive(), z.string().min(1)])
+          .optional(),
+      })
+    )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return null;
-
-      const [agent] = await database.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
-      if (!agent) throw new Error(`Agent ${input.agentId} not found`);
-
-      const horizonDays = parseInt(input.horizon);
-      const currentFloat = (agent as any).premiumReserve ?? 50000;
-      const avgDaily = ((agent as any).monthlyTarget ?? 200000) / 30;
-      const tierBuffer = TIER_BUFFERS[(agent as any).tier ?? "standard"] ?? 1.0;
-
-      const dailyForecasts = Array.from({ length: horizonDays }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() + i + 1);
-        const multiplier = getSeasonalMultiplier(date);
-        const demand = Math.round(avgDaily * multiplier * tierBuffer);
-        return { date: date.toISOString().split("T")[0], predictedDemand: demand, multiplier };
-      });
-
-      const totalPredictedDemand = dailyForecasts.reduce((sum, d) => sum + d.predictedDemand, 0);
-      const peakDay = dailyForecasts.reduce((max, d) => d.predictedDemand > max.predictedDemand ? d : max, dailyForecasts[0]);
-
-      return {
-        agentId: input.agentId,
-        agentName: (agent as any).fullName ?? `Agent ${input.agentId}`,
-        currentFloat,
-        horizon: horizonDays,
-        totalPredictedDemand,
-        recommendedTopUp: Math.max(0, totalPredictedDemand - currentFloat),
-        peakDay: peakDay.date,
-        peakDemand: peakDay.predictedDemand,
-        dailyForecasts,
-        stockoutRisk: calculateStockoutRisk(currentFloat, avgDaily * tierBuffer),
-      };
+      if (!database) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "agentFloatForecasting.getForecast: database unavailable",
+        });
+      }
+      const horizonDays =
+        input.days ?? (input.horizon ? parseInt(input.horizon, 10) : 7);
+      let agentPk: number | undefined;
+      if (typeof input.agentId === "number") {
+        const [agent] = await database
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, input.agentId))
+          .limit(1);
+        if (!agent) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `getForecast: agent id ${input.agentId} not found`,
+          });
+        }
+        agentPk = agent.id;
+      } else if (typeof input.agentId === "string") {
+        const [agent] = await database
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.agentId, input.agentId))
+          .limit(1);
+        if (!agent) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `getForecast: agent '${input.agentId}' not found`,
+          });
+        }
+        agentPk = agent.id;
+      }
+      const result = await computeForecasts(database, horizonDays, agentPk);
+      return { ...result, generatedAt: new Date().toISOString() };
     }),
 
   getStats: protectedProcedure.query(async () => {

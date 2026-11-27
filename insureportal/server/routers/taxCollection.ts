@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "@schema";
+import { auditLog, vatRecords, transactions } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -147,9 +147,21 @@ export const taxCollectionRouter = router({
       ],
     };
   }),
-  // DD-LEGACY: history/analytics previously returned a fabricated "remitted"
-  // ₦75,000 payment and invented ₦15M collection analytics. Money-path reads
-  // must be real or loud — these fail loud.
+  // W29 (2026-11-27): analytics is a REAL aggregate over vat_records (the VAT
+  // collection store, written by restBridge POST /api/vat-records and the
+  // management router) LEFT JOIN transactions on the evidenced ref link
+  // (vat_records.transactionId holds the originating transaction's ref — see
+  // repo seed.mjs where vat rows reference "TXN-SEED-0001/0002/0005", the
+  // transactions.ref values).
+  // Shape derivations (consumer: client/src/pages/TaxCollectionPage.tsx):
+  //   totalVolume     <- sum(vatRecords.vatAmount): total VAT collected
+  //   totalPayments   <- count(vatRecords)
+  //   totalCommission <- sum(transactions.commission) over transactions linked
+  //                      via ref (agent commission earned on the collections)
+  //   successRate     <- integer percent of VAT records whose linked
+  //                      transaction has status='success' (0 when no records)
+  // history stays fail-loud: no per-payment tax store exists (vat_records has
+  // no taxpayer name / tax type columns the page's history tab expects).
   history: protectedProcedure.query(async () => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
@@ -158,10 +170,29 @@ export const taxCollectionRouter = router({
     });
   }),
   analytics: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "taxCollection.analytics is not implemented: no tax analytics pipeline exists in this service. Previously returned fabricated collection/remittance figures.",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "taxCollection.analytics requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    const [row] = await database
+      .select({
+        totalVolume: sql<string>`coalesce(sum(${vatRecords.vatAmount}::numeric), 0)`,
+        totalPayments: sql<number>`count(*)::int`,
+        succeeded: sql<number>`count(*) filter (where ${transactions.status} = 'success')::int`,
+        totalCommission: sql<string>`coalesce(sum(${transactions.commission}::numeric), 0)`,
+      })
+      .from(vatRecords)
+      .leftJoin(transactions, eq(transactions.ref, vatRecords.transactionId));
+    const totalPayments = Number(row?.totalPayments ?? 0);
+    const succeeded = Number(row?.succeeded ?? 0);
+    return {
+      totalVolume: Number(row?.totalVolume ?? 0),
+      totalPayments,
+      totalCommission: Number(row?.totalCommission ?? 0),
+      successRate: totalPayments > 0 ? Math.round((succeeded / totalPayments) * 100) : 0,
+    };
   }),
 });

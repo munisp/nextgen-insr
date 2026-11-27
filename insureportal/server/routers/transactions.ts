@@ -297,7 +297,13 @@ async function validateDeviceToken(
 // ─── Router ───────────────────────────────────────────────────────────────────
 export const transactionsRouter = router({
   // ── Create transaction ────────────────────────────────────────────────────
-  create: protectedProcedure
+  // 2026-11-27 (W29): was protectedProcedure — any authenticated user with
+  // base Permify access reached the handler, bypassing the financial role
+  // matrix + Permify 'transfer' check the main repo enforces via
+  // financialProcedure (main server/routers/transactions.ts create).
+  // Realigned (fail-closed), mirroring the W25-B approveReversal/rejectReversal
+  // realignment; ROUTER_OPERATION_MAP maps transactions.create -> 'transfer'.
+  create: financialProcedure
     .input(
       z.object({
         type: z.enum([
@@ -1053,7 +1059,15 @@ export const transactionsRouter = router({
 
   // ── Reverse transaction ───────────────────────────────────────────────────
   // Phase 45: reversals > ₦10,000 require admin/supervisor approval.
-  reverse: protectedProcedure
+  // 2026-11-27 (W29): was protectedProcedure — any authenticated user with
+  // base Permify access could INITIATE a reversal, bypassing the financial
+  // role matrix + Permify 'reversal' check the main repo enforces via
+  // financialProcedure (main server/routers/transactions.ts reverse).
+  // Realigned (fail-closed), mirroring the W25-B approveReversal/
+  // rejectReversal realignment; ROUTER_OPERATION_MAP maps
+  // transactions.reverse -> 'reversal' (admin/super_admin/supervisor only —
+  // agents can no longer initiate reversals; user-decided product change).
+  reverse: financialProcedure
     .input(z.object({ ref: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       try {
