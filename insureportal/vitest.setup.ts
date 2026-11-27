@@ -54,6 +54,15 @@ if (!permifyAddr || typeof permifyAddr === "string") {
 process.env.PERMIFY_URL = `http://127.0.0.1:${permifyAddr.port}`;
 
 // Mock Redis for tests
+// 2026-11-27 (W32-A): added the EventEmitter surface (`on`). The real
+// server/lib/redisClient.getRedisClient() calls `_client.on("error"|"connect",
+// …)` during construction, and this double previously lacked `on` — the
+// first construction threw a TypeError that the OLD fail-open acquireLock
+// silently swallowed (`catch { return true }`). The W32-A fail-closed
+// replenishment lock treats that construction failure as a denial
+// (correctly), which exposed this harness fidelity gap. Adding `on` makes
+// the double faithful to the real client contract; lock semantics are
+// unchanged (set → "OK" = acquired).
 vi.mock("ioredis", () => ({
   default: vi.fn().mockImplementation(() => ({
     get: vi.fn().mockResolvedValue(null),
@@ -65,6 +74,7 @@ vi.mock("ioredis", () => ({
     ttl: vi.fn().mockResolvedValue(-1),
     ping: vi.fn().mockResolvedValue("PONG"),
     quit: vi.fn().mockResolvedValue("OK"),
+    on: vi.fn(),
   })),
 }));
 

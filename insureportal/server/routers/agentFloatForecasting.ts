@@ -5,8 +5,13 @@ import { agents, auditLog, premiumTopUpRequests, transactions } from "@schema";
 import { desc, eq, sql, and, gte, lte, count, avg, sum, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { logger } from "../_core/logger";
-import { acquireLock, releaseLock } from "../lib/redisClient";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { getRedisClient, releaseLock } from "../lib/redisClient";
+import {
+  tbCreateTransfer,
+  tbEnsureAgentAccount,
+  type TBTransferRequest,
+  type TBTransferResponse,
+} from "../tbClient";
 
 /**
  * Agent Float Forecasting Router
@@ -73,10 +78,11 @@ const CASH_OUT_TYPE = "Claim Payout";
 // triggerReplenishment). A replenishment is a REAL money movement:
 // TigerBeetle double-entry (sys-bank-reserve → float-<agentId>) +
 // authoritative agents.premiumReserve update + transactions audit row +
-// audit_log entry, under a Redis lock, admin-gated. Failure posture:
-// fail-loud on the PG legs, but the TB leg and the Redis lock are
-// fail-OPEN in the portal (D10/D11, verifier probe-verified 2026-11-27 —
-// W32 hardening candidates).
+// audit_log entry, under a Redis lock, admin-gated. Failure posture
+// (2026-11-27, W32-A): FAIL-CLOSED on every leg — the lock, the ledger
+// leg, and the PG legs (balance + transaction row + audit row, one atomic
+// transaction). D10–D13 below were fail-open weaknesses probe-proven by
+// the W31-A verifier; they are FIXED on this path as of W32-A.
 // Documented portal deltas (main -> portal), D4-D7:
 //  D4 tx vocabulary: portal txTypeEnum has no 'Float Transfer Received' and
 //     txChannelEnum has no 'Internal'. The audit row is written with the
@@ -90,33 +96,64 @@ const CASH_OUT_TYPE = "Claim Payout";
 //     floatManagement MAX_FLOAT.
 //  D7 audit row also records agentId (portal audit_log has the column;
 //     main's insert leaves it NULL).
-// 2026-11-27 (W31-A-fix, verifier probe findings — comment-only corrections;
-// real hardening is W32 scope since it touches the shared tbClient/
-// redisClient infra used by other callers):
-//  D10 TB leg is fail-OPEN in the portal (probe-verified): portal
-//     tbClient.tbCreateTransfer returns null when the sidecar is
-//     unreachable/times out/rejects, so replenishOne SUCCEEDS with the PG
-//     balance moved, tbTransferId=null and tx metadata.tbSyncStatus
-//     "pending" — the PG/TB views silently diverge. Main's tbClient throws
-//     TBLedgerUnavailableError (fail-closed: the mutation 5xx's and PG is
-//     never touched). W32 hardening candidate: fail-closed with
-//     compensation/rollback semantics on the PG leg.
-//  D11 Redis replenishment lock is fail-OPEN in the portal (probe-verified):
-//     portal redisClient.acquireLock does `catch { return true }`, so a
-//     Redis outage removes mutual exclusion entirely. Main's acquireLock
-//     fails closed (returns false — the money operation is refused). W32
-//     hardening candidate.
-//  D12 Lost-update race (probe-verified, inherited byte-exact from main):
-//     replenishOne reads premiumReserve BEFORE/outside the lock and writes
-//     current+amount non-atomically; two concurrent same-agent top-ups
-//     produce PG=5500 vs TB=5000 (a ₦2500 divergence on a 2500+2500 pair
-//     from 3000) — and the stale pre-lock read persists even with a working
-//     lock. W32 hardening candidate: atomic read-modify-write
-//     (UPDATE ... SET "premiumReserve" = "premiumReserve" + $n with a
-//     cap-check RETURNING guard) or TB-as-source-of-truth.
-//  D13 audit_log insert `.catch(() => {})` silently swallows audit-write
-//     failure (byte-exact from main) — a replenishment can persist with NO
-//     audit row. W32 hardening candidate.
+// 2026-11-27 (W32-A): the D10–D13 money-path weaknesses (probe-proven by
+// the W31-A verifier) are FIXED on this path. Caller survey (2026-11-27;
+// corrected after the W32-A verifier REVISE — the first draft's claim that
+// "~30 call sites depend on the null-return contract" was WRONG on both
+// the count and two characterizations): tbCreateTransfer is imported by
+// ~30 non-wave files, but grep-visible `tbCreateTransfer(` hits number
+// only 9 across 7 files, and 2 of those hits are doc-comment references
+// (disputeMiddleware.ts:119, settlementMiddleware.ts:123) — leaving 7 REAL
+// invocations in 7 files: transactions.ts:673, disputeMiddleware.ts:137,
+// observabilityMiddleware.ts:98, commissionMiddleware.ts:188,
+// settlementMiddleware.ts:142, txDisputeArbitration.ts:207 and
+// settlementNettingEngine.ts:183. The remaining ~23 importers never call
+// it. Of the 7 real invocations, the genuine fail-OPEN dependents on the
+// null-return contract are transactions.ts:673 (null branches to the
+// PG-only fallback "…persisted to PostgreSQL only", :692-696) and
+// disputeMiddleware.ts:137 (returns null on a null result; its catch logs
+// "(fail-open)" and returns null); observabilityMiddleware.ts:98,
+// txDisputeArbitration.ts:207 and settlementNettingEngine.ts:183 are
+// null-tolerant fire-and-forget audit/observability entries whose results
+// are ignored. commissionMiddleware.ts:188 and settlementMiddleware.ts:142
+// are FAIL-CLOSED wrappers — both THROW on null ("TigerBeetle returned
+// null") and rethrow in catch (logged "(fail-closed)"). acquireLock is
+// shared with permifyMiddleware's idempotency guard (a Redis outage there
+// merely degrades duplicate detection — flip it to fail-closed and every
+// idempotent financial procedure starts rejecting under Redis outage).
+// The genuine fail-open dependents make a shared flip unsafe, so the
+// shared modules were NOT changed; this router wraps them with fail-closed
+// LOCAL helpers (acquireReplenishmentLock / strictTBCreateTransfer below):
+//  D10 FIXED — TB leg was fail-OPEN (portal tbCreateTransfer returns null
+//     on sidecar outage/timeout/rejection, so replenishOne SUCCEEDED with
+//     the PG balance moved, tbTransferId=null and tx metadata.tbSyncStatus
+//     "pending" — silent PG/TB divergence; main throws
+//     TBLedgerUnavailableError instead). Now strictTBCreateTransfer throws
+//     on null BEFORE any PG write; ordering is TB-first-then-PG, and a PG
+//     failure after the ledger leg committed triggers a compensating
+//     ledger reversal (see replenishOne for the residual-window analysis).
+//  D11 FIXED — Redis lock was fail-OPEN (acquireLock `catch { return
+//     true }`: a Redis outage silently removed mutual exclusion; main
+//     fails closed). Now acquireReplenishmentLock calls the Redis client
+//     directly and DENIES the operation (PRECONDITION_FAILED) when the
+//     backend errors. releaseLock stays shared/fail-open: a failed
+//     release self-heals via the lock TTL and cannot strand funds.
+//  D12 FIXED — lost-update race: replenishOne read premiumReserve before
+//     the lock and wrote current+amount non-atomically (probe: concurrent
+//     2500+2500 from 3000 gave PG 5500 vs TB 5000). Now the balance is
+//     re-read INSIDE the lock (the handler's pre-lock read is only an
+//     existence check) and the PG write is an atomic conditional UPDATE
+//     ("premiumReserve" = COALESCE("premiumReserve",0)+$amt WHERE id=$id
+//     AND COALESCE("premiumReserve",0)+$amt <= cap RETURNING) — no stale
+//     read and no read-modify-write window, so concurrent top-ups cannot
+//     lose an update even if the lock were bypassed entirely.
+//  D13 FIXED — audit_log insert had `.catch(() => {})`, silently dropping
+//     audit-write failure (a replenishment could persist with NO audit
+//     row). Now the audit insert runs inside the same PG transaction as
+//     the balance credit and transaction row with NO catch: an audit
+//     failure aborts and rolls back the whole operation (and triggers the
+//     ledger compensation). Audit is part of the funds trail — a money
+//     movement without its audit row cannot persist.
 const MAX_FLOAT_NGN = 5_000_000;
 const AUTO_REPLENISH_CAP = 25;
 
@@ -281,65 +318,139 @@ async function computeForecasts(
 }
 
 /**
- * Execute ONE real float replenishment: TigerBeetle double-entry
- * (sys-bank-reserve → float-{agentId}) + authoritative PG balance update +
- * transaction row + audit entry. Same money primitives as
- * transactions.create's float-credit path.
- * W31 (2026-11-28): ported from main; portal deltas D4/D5/D7 above.
- * 2026-11-27 (W31-A-fix, verifier probe): the "fail-loud on any leg" claim
- * this comment used to carry was WRONG for the portal — the TB leg is
- * fail-open (D10), the Redis lock is fail-open (D11), the balance
- * read-modify-write races (D12), and the audit write is best-effort (D13).
- * All four are W32 hardening candidates; behavior intentionally unchanged
- * in the fix pass.
+ * 2026-11-27 (W32-A, D11): fail-CLOSED replenishment lock. The shared
+ * redisClient.acquireLock is fail-OPEN (`catch { return true }`) — kept
+ * that way for its other caller (permifyMiddleware's idempotency guard,
+ * where a Redis outage merely degrades duplicate detection) — but that is
+ * unacceptable on a money path: under a Redis outage two admins could
+ * replenish the same agent concurrently with no mutual exclusion. This
+ * local helper calls the Redis client directly and DENIES the operation
+ * when the lock backend errors. Throws CONFLICT on contention and
+ * PRECONDITION_FAILED when the backend is unavailable.
  */
-async function replenishOne(
-  db: Db,
-  agent: { id: number; agentId: string; premiumReserve: string | number | null },
-  amountNGN: number,
-  reference: string
-): Promise<{ agentId: string; amountNGN: number; ref: string; newBalanceNGN: number; tbTransferId: string | null }> {
-  // 2026-11-27 (W31-A-fix, D12): LOST-UPDATE RACE — this balance is read
-  // before the lock is acquired and the write below is a non-atomic
-  // read-modify-write; even with a working lock the pre-lock read is stale
-  // (probe: two concurrent same-agent top-ups of 2500+2500 from 3000 gave
-  // PG 5500 vs TB 5000 — a real divergence). W32: atomic conditional
-  // UPDATE ("premiumReserve" = "premiumReserve" + $n WHERE cap holds) or
-  // TB-as-source-of-truth.
-  const currentBalance = Number(agent.premiumReserve ?? 0);
-  if (currentBalance + amountNGN > MAX_FLOAT_NGN) {
+async function acquireReplenishmentLock(
+  agentId: string,
+  lockKey: string,
+  ttlMs: number
+): Promise<void> {
+  let result: string | null;
+  try {
+    result = await getRedisClient().set(
+      `lock:${lockKey}`,
+      "1",
+      "PX",
+      ttlMs,
+      "NX"
+    );
+  } catch (err) {
+    logger.error(
+      `[FloatForecast] lock backend error acquiring ${lockKey} — replenishment DENIED (fail-closed): ${err}`
+    );
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message:
-        `triggerReplenishment: replenishing ${agent.agentId} by ₦${amountNGN.toLocaleString()} ` +
-        `would exceed the ₦${MAX_FLOAT_NGN.toLocaleString()} max float ` +
-        `(current ₦${currentBalance.toLocaleString()})`,
+        "triggerReplenishment: lock backend unavailable — refusing to move money without mutual exclusion (fail-closed)",
     });
   }
-  const lockKey = `float-replenish:${agent.agentId}`;
-  // 2026-11-27 (W31-A-fix, D11): portal acquireLock is FAIL-OPEN
-  // (`catch { return true }` in lib/redisClient.ts) — under a Redis outage
-  // this always "succeeds" and there is NO mutual exclusion. Main's
-  // acquireLock fails closed (lock error => operation refused). W32
-  // hardening candidate (shared infra, other callers affected).
-  const locked = await acquireLock(lockKey, 15_000);
-  if (!locked) {
+  if (result !== "OK") {
     throw new TRPCError({
       code: "CONFLICT",
-      message: `Another replenishment is in progress for agent ${agent.agentId}`,
+      message: `Another replenishment is in progress for agent ${agentId}`,
     });
   }
+}
+
+/**
+ * 2026-11-27 (W32-A, D10): fail-CLOSED wrapper around the shared fail-open
+ * tbCreateTransfer. The shared helper returns null on sidecar
+ * outage/timeout/rejection; genuine fail-open dependents exist
+ * (transactions.ts:673's PG-only fallback and disputeMiddleware.ts:137 —
+ * full inventory in the header survey note), so the shared contract was
+ * left unchanged. On this money path null silently diverged PG from TB
+ * (W31-A verifier probe P2); here a null is a refusal: the replenishment
+ * throws BEFORE any PG write, so a failed ledger leg can never produce a
+ * phantom PG balance.
+ */
+async function strictTBCreateTransfer(
+  req: TBTransferRequest
+): Promise<TBTransferResponse> {
+  const result = await tbCreateTransfer(req);
+  if (!result) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "triggerReplenishment: TigerBeetle ledger leg failed or is unreachable — replenishment refused, no funds moved (fail-closed)",
+    });
+  }
+  return result;
+}
+
+/**
+ * Execute ONE real float replenishment: TigerBeetle double-entry
+ * (sys-bank-reserve → float-{agentId}) + atomic PG balance credit +
+ * transaction row + audit entry. Same money primitives as
+ * transactions.create's float-credit path.
+ * W31 (2026-11-28): ported from main; portal deltas D4/D5/D7 above.
+ * 2026-11-27 (W32-A): failure posture hardened fail-closed (fixes D10–D13):
+ *  - the lock is fail-CLOSED (a Redis error denies the operation);
+ *  - the ledger leg is fail-CLOSED and runs BEFORE the PG legs — a ledger
+ *    failure throws and no PG state is touched;
+ *  - the PG legs (balance credit + transaction row + audit row) commit as
+ *    ONE transaction — any failure (including the audit insert) rolls all
+ *    three back;
+ *  - if the PG transaction fails after the ledger leg committed, a
+ *    compensating ledger reversal (float-{agentId} → sys-bank-reserve) is
+ *    posted. RESIDUAL WINDOW: if the compensation itself fails, PG and TB
+ *    diverge (TB ahead by amountNGN) until manual reconciliation — that
+ *    window is LOUD (logger.error with agent/amount/tbTransferId/ref) and
+ *    detectable by comparing agents.premiumReserve against the TB
+ *    /agent/{id}/balance endpoint; it is never silent.
+ */
+async function replenishOne(
+  db: Db,
+  // 2026-11-27 (W32-A, D12): the handler's pre-lock agent row is used only
+  // for the NOT_FOUND existence check and the id/agentId pair — its
+  // premiumReserve is NEVER trusted for money (stale by construction).
+  agent: { id: number; agentId: string },
+  amountNGN: number,
+  reference: string
+): Promise<{ agentId: string; amountNGN: number; ref: string; newBalanceNGN: number; tbTransferId: string }> {
+  const lockKey = `float-replenish:${agent.agentId}`;
+  // 2026-11-27 (W32-A, D11): fail-closed — throws CONFLICT on contention,
+  // PRECONDITION_FAILED when the lock backend is down.
+  await acquireReplenishmentLock(agent.agentId, lockKey, 15_000);
   try {
+    // 2026-11-27 (W32-A, D12): FRESH balance read INSIDE the lock.
+    const [fresh] = (await db
+      .select({ premiumReserve: agents.premiumReserve })
+      .from(agents)
+      .where(eq(agents.id, agent.id))
+      .limit(1)) as { premiumReserve: string | number | null }[];
+    if (!fresh) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `triggerReplenishment: agent '${agent.agentId}' no longer exists`,
+      });
+    }
+    const currentBalance = Number(fresh.premiumReserve ?? 0);
+    // Pre-flight cap check (inside the lock): avoids posting a ledger leg
+    // that would only have to be compensated. The atomic UPDATE below
+    // repeats the cap as a WHERE guard — THAT guard is authoritative.
+    if (currentBalance + amountNGN > MAX_FLOAT_NGN) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          `triggerReplenishment: replenishing ${agent.agentId} by ₦${amountNGN.toLocaleString()} ` +
+          `would exceed the ₦${MAX_FLOAT_NGN.toLocaleString()} max float ` +
+          `(current ₦${currentBalance.toLocaleString()})`,
+      });
+    }
+    // Best-effort (unchanged semantics): the strict transfer below is the
+    // authoritative ledger gate — a genuine sidecar outage surfaces there.
     await tbEnsureAgentAccount(agent.agentId);
-    // 2026-11-27 (W31-A-fix, D10): FAIL-OPEN TB LEG — portal
-    // tbCreateTransfer returns null on sidecar outage/timeout/rejection
-    // (probe-verified), so this mutation then SUCCEEDS with the PG balance
-    // moved, tbTransferId=null and metadata.tbSyncStatus "pending": PG and
-    // TB silently diverge. Main's tbCreateTransfer throws
-    // TBLedgerUnavailableError instead (fail-closed: the mutation errors
-    // and PG is never written). W32 hardening candidate: fail-closed with
-    // compensation/rollback of the PG leg.
-    const tbResult = await tbCreateTransfer({
+    // 2026-11-27 (W32-A, D10): fail-closed ledger leg, TB-first-then-PG —
+    // throws before any PG write when the ledger cannot commit.
+    const tbResult = await strictTBCreateTransfer({
       debitAccountId: "sys-bank-reserve",
       creditAccountId: `float-${agent.agentId}`,
       amount: Math.round(amountNGN * 100),
@@ -349,63 +460,130 @@ async function replenishOne(
       txType: "Float Top-Up",
       agentId: agent.agentId,
     });
-    const newBalance = round2(currentBalance + amountNGN);
-    await db
-      .update(agents)
-      .set({ premiumReserve: String(newBalance), updatedAt: new Date() })
-      .where(eq(agents.id, agent.id));
-    await db.insert(transactions).values({
-      ref: reference,
-      agentId: agent.id,
-      // D4: portal txTypeEnum has no 'Float Transfer Received'; 'Transfer' is
-      // the in-enum fit and is excluded from the forecast basis (mirroring
-      // main). Main's label is preserved in metadata.txTypeDetail.
-      type: "Transfer",
-      amount: String(amountNGN),
-      fee: "0",
-      commission: "0",
-      channel: "App", // D4: portal txChannelEnum has no 'Internal'
-      status: "success",
-      fraudScore: "0.00",
-      metadata: {
-        source: "agentFloatForecasting.triggerReplenishment",
-        txTypeDetail: "Float Transfer Received",
-        tbSyncStatus: tbResult ? "synced" : "pending",
-        tbTransferId: tbResult?.id ?? null,
-      },
-    });
-    await db
-      .insert(auditLog)
-      .values({
-        agentId: agent.id, // D7: portal audit_log carries agentId
-        action: "FLOAT_REPLENISH",
-        resource: "agent_float",
-        resourceId: String(agent.id),
-        status: "success",
-        metadata: {
-          agentId: agent.agentId,
-          amountNGN,
-          newBalance,
+    let newBalance: number;
+    try {
+      // 2026-11-27 (W32-A, D12/D13): the three PG legs are ONE atomic
+      // transaction. The balance credit is a conditional additive UPDATE
+      // (lost-update-proof: PostgreSQL computes premiumReserve+$amt at
+      // write time under the row lock); the audit insert has NO catch, so
+      // an audit failure rolls back the balance credit and the
+      // transaction row with it.
+      newBalance = await db.transaction(async (tx: any) => {
+        const upd = (await tx.execute(
+          sql`UPDATE "agents"
+              SET "premiumReserve" = COALESCE("premiumReserve", 0) + ${amountNGN},
+                  "updatedAt" = now()
+              WHERE "id" = ${agent.id}
+                AND COALESCE("premiumReserve", 0) + ${amountNGN} <= ${MAX_FLOAT_NGN}
+              RETURNING "premiumReserve"`
+        )) as unknown as { rows: { premiumReserve: string | number }[] };
+        const row = upd.rows[0];
+        if (!row) {
+          // Defense-in-depth: reachable only if a writer outside this lock
+          // raced the pre-flight cap check above.
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              `triggerReplenishment: replenishing ${agent.agentId} by ₦${amountNGN.toLocaleString()} ` +
+              `would exceed the ₦${MAX_FLOAT_NGN.toLocaleString()} max float ` +
+              `(re-checked atomically at write time)`,
+          });
+        }
+        await tx.insert(transactions).values({
           ref: reference,
-          tbTransferId: tbResult?.id ?? null,
-        },
-      })
-      // 2026-11-27 (W31-A-fix, D13): `.catch(() => {})` silently swallows
-      // an audit-write failure — a real money movement can then persist
-      // with NO audit row (byte-exact from main). W32 hardening candidate:
-      // fail loud or enqueue a compensating audit record.
-      .catch(() => {});
+          agentId: agent.id,
+          // D4: portal txTypeEnum has no 'Float Transfer Received'; 'Transfer'
+          // is the in-enum fit and is excluded from the forecast basis
+          // (mirroring main). Main's label is preserved in
+          // metadata.txTypeDetail.
+          type: "Transfer",
+          amount: String(amountNGN),
+          fee: "0",
+          commission: "0",
+          channel: "App", // D4: portal txChannelEnum has no 'Internal'
+          status: "success",
+          fraudScore: "0.00",
+          metadata: {
+            source: "agentFloatForecasting.triggerReplenishment",
+            txTypeDetail: "Float Transfer Received",
+            // 2026-11-27 (W32-A, D10): the ledger leg is fail-closed now —
+            // reaching this row means the transfer committed, so
+            // tbSyncStatus is always "synced" and tbTransferId is never
+            // null. The "pending" marker is retained in the vocabulary for
+            // historical rows only.
+            tbSyncStatus: "synced",
+            tbTransferId: tbResult.id,
+          },
+        });
+        // 2026-11-27 (W32-A, D13): NO `.catch(() => {})` — the audit row is
+        // part of the funds trail; if this insert fails the whole
+        // transaction aborts (balance credit + transaction row roll back)
+        // and the ledger leg is compensated below.
+        await tx.insert(auditLog).values({
+          agentId: agent.id, // D7: portal audit_log carries agentId
+          action: "FLOAT_REPLENISH",
+          resource: "agent_float",
+          resourceId: String(agent.id),
+          status: "success",
+          metadata: {
+            agentId: agent.agentId,
+            amountNGN,
+            newBalance: Number(row.premiumReserve),
+            ref: reference,
+            tbTransferId: tbResult.id,
+          },
+        });
+        return Number(row.premiumReserve);
+      });
+    } catch (pgErr) {
+      // The ledger leg committed but PostgreSQL did not — compensate
+      // (reverse) the ledger leg so the system state stays explainable.
+      const compensation = await tbCreateTransfer({
+        debitAccountId: `float-${agent.agentId}`,
+        creditAccountId: "sys-bank-reserve",
+        amount: Math.round(amountNGN * 100),
+        ledger: 2000,
+        code: 300,
+        ref: `CMP-${reference}`.slice(0, 32),
+        txType: "Float Top-Up Reversal",
+        agentId: agent.agentId,
+      });
+      if (compensation) {
+        logger.warn(
+          `[FloatForecast] Replenishment aborted after the ledger leg committed; compensation transfer ${compensation.id} reversed ₦${amountNGN} for agent ${agent.agentId} (ref ${reference}, original tbTransferId ${tbResult.id}) — PG and TB consistent, no funds moved`
+        );
+      } else {
+        // The ONLY residual divergence window: TB holds a credit that PG
+        // does not, and the reversal failed too. LOUD by design — every
+        // identifier needed for manual reconciliation is in this line.
+        logger.error(
+          `[FloatForecast] CRITICAL PG/TB DIVERGENCE: replenishment aborted after the ledger leg committed AND compensation failed — agent ${agent.agentId}, amount ₦${amountNGN}, tbTransferId ${tbResult.id}, ref ${reference}. Manual reconciliation required (compare agents.premiumReserve with TB /agent/${agent.agentId}/balance).`
+        );
+      }
+      if (pgErr instanceof TRPCError) throw pgErr;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          `triggerReplenishment: database write failed for agent ${agent.agentId} after the ledger leg committed; ` +
+          (compensation
+            ? "the ledger leg was compensated (reversed) — no funds moved"
+            : `compensation ALSO failed — PG/TB divergence logged for manual reconciliation (tbTransferId ${tbResult.id}, ref ${reference})`),
+      });
+    }
     logger.info(
-      `[FloatForecast] Replenished ₦${amountNGN} for agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`
+      `[FloatForecast] Replenished ₦${amountNGN} for agent ${agent.agentId} | TB: ${tbResult.id}`
     );
     return {
       agentId: agent.agentId,
       amountNGN,
       ref: reference,
       newBalanceNGN: newBalance,
-      tbTransferId: tbResult?.id ?? null,
+      tbTransferId: tbResult.id,
     };
   } finally {
+    // 2026-11-27 (W32-A): release stays fail-open (shared helper) — a
+    // failed release self-heals via the lock TTL, so it cannot strand
+    // funds or deadlock the path.
     await releaseLock(lockKey);
   }
 }
