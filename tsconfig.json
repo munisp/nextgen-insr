@@ -18,7 +18,8 @@
     "types": ["node", "vite/client", "vite-plugin-pwa/client"],
     "paths": {
       "@/*": ["./client/src/*"],
-      "@shared/*": ["./shared/*"]
+      "@shared/*": ["./shared/*"],
+      "@schema": ["./drizzle/schema.ts"]
     }
   }
 }
