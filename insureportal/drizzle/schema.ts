@@ -5698,3 +5698,230 @@ export const merchantSettlementChangeRequests = pgTable(
 );
 export type MerchantSettlementChangeRequest =
   typeof merchantSettlementChangeRequests.$inferSelect;
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// W30 (2026-11-27): real savings & pension domain — replaces the four
+// throw-only NOT_IMPLEMENTED stubs (savingsProducts.products/analytics,
+// pensionCollection.pfas/analytics) with persisted tables. Design:
+// w30-design.md §2. Conventions follow the file: serial PKs, numeric(15,2)
+// money, varchar(3) currency default 'NGN', defaultNow timestamps, index-map
+// 3rd pgTable arg, $inferSelect/$inferInsert exports.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── W30 Enums ──────────────────────────────────────────────────────────────
+// Display-cased values rendered raw by the page (precedent: txTypeEnum
+// stores "Premium Payment"/"Claim Payout", :26-38).
+export const savingsProductTypeEnum = pgEnum("savings_product_type", [
+  "Daily Thrift",
+  "Target Savings",
+  "Fixed Deposit",
+]);
+export const savingsFrequencyEnum = pgEnum("savings_frequency", [
+  "Daily",
+  "Weekly",
+  "Monthly",
+  "Flexible",
+]);
+export const savingsAccountStatusEnum = pgEnum("savings_account_status", [
+  "active",
+  "dormant",
+  "closed",
+]);
+export const savingsEntryTypeEnum = pgEnum("savings_entry_type", [
+  "deposit",
+  "withdrawal",
+  "interest_credit",
+]);
+export const pensionContributionStatusEnum = pgEnum(
+  "pension_contribution_status",
+  ["collected", "remitted", "failed"]
+);
+
+// ─── Savings Products (catalog — serves savingsProducts.products) ───────────
+export const savingsProducts = pgTable(
+  "savings_products",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 32 }).notNull().unique(),
+    name: varchar("name", { length: 256 }).notNull(),
+    type: savingsProductTypeEnum("type").notNull(),
+    description: text("description"),
+    minDeposit: numeric("minDeposit", { precision: 15, scale: 2 })
+      .notNull()
+      .default("0.00"),
+    // Product-level deposit ceiling — consumed by the deposit-mutation
+    // validation rewiring (W31); not a page field.
+    maxDeposit: numeric("maxDeposit", { precision: 15, scale: 2 }),
+    // Basis points; procedures emit interestRate = bps/100 (percent p.a.).
+    // Integer bps avoids float drift in accrual math.
+    interestRateBps: integer("interestRateBps").notNull().default(0),
+    // Tenor in days; 0 = no lock (daily thrift).
+    lockPeriodDays: integer("lockPeriodDays").notNull().default(0),
+    frequency: savingsFrequencyEnum("frequency").notNull().default("Flexible"),
+    isActive: boolean("isActive").default(true).notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    codeIdx: uniqueIndex("savprod_code_idx").on(t.code),
+    isActiveIdx: index("savprod_isActive_idx").on(t.isActive),
+    tenantIdx: index("savprod_tenantId_idx").on(t.tenantId),
+  })
+);
+export type SavingsProduct = typeof savingsProducts.$inferSelect;
+export type InsertSavingsProduct = typeof savingsProducts.$inferInsert;
+
+// ─── Savings Accounts (registry — serves activeAccounts) ────────────────────
+// Deliberately NO balance column: balance = SUM(savings_ledger) per account
+// (append-only postings are the source of truth — platformBillingLedger
+// precedent, :4128). A cached balance would be derived-value denormalization.
+export const savingsAccounts = pgTable(
+  "savings_accounts",
+  {
+    id: serial("id").primaryKey(),
+    accountNo: varchar("accountNo", { length: 32 }).notNull().unique(),
+    productId: integer("productId")
+      .references(() => savingsProducts.id)
+      .notNull(),
+    // Nullable: walk-in thrift savers may predate full KYC.
+    customerId: integer("customerId").references(() => customers.id),
+    // Nullable: head-office-opened accounts have no field agent.
+    agentId: integer("agentId").references(() => agents.id),
+    status: savingsAccountStatusEnum("status").notNull().default("active"),
+    openedAt: timestamp("openedAt").defaultNow().notNull(),
+    closedAt: timestamp("closedAt"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    accountNoIdx: uniqueIndex("savacct_accountNo_idx").on(t.accountNo),
+    productIdx: index("savacct_productId_idx").on(t.productId),
+    statusIdx: index("savacct_status_idx").on(t.status),
+    tenantIdx: index("savacct_tenantId_idx").on(t.tenantId),
+  })
+);
+export type SavingsAccount = typeof savingsAccounts.$inferSelect;
+export type InsertSavingsAccount = typeof savingsAccounts.$inferInsert;
+
+// ─── Savings Ledger (append-only postings) ──────────────────────────────────
+// One row per money event (deposit / withdrawal / interest credit); no
+// running balance. Aggregates: totalDeposits = SUM(amount) WHERE
+// entryType='deposit'; totalInterestPaid = SUM(amount) WHERE
+// entryType='interest_credit'. Interest postings carry rateBpsApplied +
+// accrual window so rate changes never rewrite history.
+export const savingsLedger = pgTable(
+  "savings_ledger",
+  {
+    id: serial("id").primaryKey(),
+    // Idempotency key per posting (convention: transactions.ref).
+    entryRef: varchar("entryRef", { length: 32 }).notNull().unique(),
+    accountId: integer("accountId")
+      .references(() => savingsAccounts.id)
+      .notNull(),
+    entryType: savingsEntryTypeEnum("entryType").notNull(),
+    // Positive amount; direction implied by entryType.
+    amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    // Product rate in effect when an interest posting was computed.
+    // NULL for deposit/withdrawal.
+    rateBpsApplied: integer("rateBpsApplied"),
+    periodStart: timestamp("periodStart"), // accrual window (interest only)
+    periodEnd: timestamp("periodEnd"),
+    // Collecting agent for deposits; NULL for system-posted interest.
+    agentId: integer("agentId"),
+    postedAt: timestamp("postedAt").defaultNow().notNull(), // value date
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    entryRefIdx: uniqueIndex("savled_entryRef_idx").on(t.entryRef),
+    accountTypeIdx: index("savled_accountId_type_idx").on(
+      t.accountId,
+      t.entryType
+    ),
+    typePostedIdx: index("savled_type_posted_idx").on(t.entryType, t.postedAt),
+    tenantIdx: index("savled_tenantId_idx").on(t.tenantId),
+  })
+);
+export type SavingsLedgerEntry = typeof savingsLedger.$inferSelect;
+export type InsertSavingsLedgerEntry = typeof savingsLedger.$inferInsert;
+
+// ─── PFA Registry (PenCom-licensed Pension Fund Administrators) ─────────────
+// Serves pensionCollection.pfas. Registry rows persist even when inactive
+// (the page renders Active/Inactive badges per card).
+export const pfaRegistry = pgTable(
+  "pfa_registry",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 32 }).notNull().unique(),
+    name: varchar("name", { length: 256 }).notNull(),
+    licenseNo: varchar("licenseNo", { length: 64 }).notNull(), // PenCom license
+    contactEmail: varchar("contactEmail", { length: 320 }),
+    contactPhone: varchar("contactPhone", { length: 20 }),
+    isActive: boolean("isActive").default(true).notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    codeIdx: uniqueIndex("pfa_code_idx").on(t.code),
+    isActiveIdx: index("pfa_isActive_idx").on(t.isActive),
+    tenantIdx: index("pfa_tenantId_idx").on(t.tenantId),
+  })
+);
+export type PfaRegistryEntry = typeof pfaRegistry.$inferSelect;
+export type InsertPfaRegistryEntry = typeof pfaRegistry.$inferInsert;
+
+// ─── Pension Contributions (serves pensionCollection.analytics + pfas.contributorCount) ──
+// `type` is a plain varchar (values "Mandatory"/"Voluntary") rather than an
+// enum: display-only, and PenCom terminology evolves (AVC → VC) — cheap to
+// widen a varchar, expensive to alter an enum.
+export const pensionContributions = pgTable(
+  "pension_contributions",
+  {
+    id: serial("id").primaryKey(),
+    ref: varchar("ref", { length: 32 }).notNull().unique(),
+    rsaPin: varchar("rsaPin", { length: 32 }).notNull(), // PenCom-issued RSA PIN
+    contributorName: varchar("contributorName", { length: 256 }),
+    pfaId: integer("pfaId")
+      .references(() => pfaRegistry.id)
+      .notNull(),
+    type: varchar("type", { length: 32 }).notNull().default("Mandatory"),
+    // PenCom mandatory split: 8% employee / 10% employer.
+    employeeAmount: numeric("employeeAmount", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    employerAmount: numeric("employerAmount", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    // Platform collection fee earned per contribution, written at collection
+    // time (mirrors transactions.commission: per-row earned commission,
+    // aggregated by SUM). totalCommission = SUM(commission) WHERE status
+    // <> 'failed'.
+    commission: numeric("commission", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0.00"),
+    period: varchar("period", { length: 7 }).notNull(), // "YYYY-MM"
+    status: pensionContributionStatusEnum("status")
+      .notNull()
+      .default("collected"),
+    agentId: integer("agentId"), // collecting agent attribution
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    refIdx: uniqueIndex("pencon_ref_idx").on(t.ref),
+    pfaStatusIdx: index("pencon_pfaId_status_idx").on(t.pfaId, t.status),
+    rsaPinIdx: index("pencon_rsaPin_idx").on(t.rsaPin),
+    periodIdx: index("pencon_period_idx").on(t.period),
+    tenantIdx: index("pencon_tenantId_idx").on(t.tenantId),
+  })
+);
+export type PensionContribution = typeof pensionContributions.$inferSelect;
+export type InsertPensionContribution = typeof pensionContributions.$inferInsert;
