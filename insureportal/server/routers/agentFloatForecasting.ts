@@ -1,9 +1,12 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents, premiumTopUpRequests, transactions } from "@schema";
+import { agents, auditLog, premiumTopUpRequests, transactions } from "@schema";
 import { desc, eq, sql, and, gte, lte, count, avg, sum, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { logger } from "../_core/logger";
+import { acquireLock, releaseLock } from "../lib/redisClient";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 /**
  * Agent Float Forecasting Router
@@ -18,13 +21,6 @@ import { TRPCError } from "@trpc/server";
  * - Alert when predicted demand exceeds 80% of current premium reserve
  */
 
-const SEASONAL_MULTIPLIERS = {
-  monthEnd: 1.4, // 25th to 5th of next month
-  friday: 1.2,
-  monday: 1.1,
-  default: 1.0,
-};
-
 const TIER_BUFFERS: Record<string, number> = {
   super_agent: 1.5,
   senior: 1.3,
@@ -32,14 +28,12 @@ const TIER_BUFFERS: Record<string, number> = {
   probationary: 1.0,
 };
 
-function getSeasonalMultiplier(date: Date): number {
-  const day = date.getDate();
-  const dayOfWeek = date.getDay();
-  if (day >= 25 || day <= 5) return SEASONAL_MULTIPLIERS.monthEnd;
-  if (dayOfWeek === 5) return SEASONAL_MULTIPLIERS.friday;
-  if (dayOfWeek === 1) return SEASONAL_MULTIPLIERS.monday;
-  return SEASONAL_MULTIPLIERS.default;
-}
+// 2026-11-28 (W31): SEASONAL_MULTIPLIERS/getSeasonalMultiplier removed —
+// they existed only to feed the fabricated getStats demand figure
+// (hardcoded 200000/30 × seasonalFactor). The ported F-12 getStats (below)
+// reports no seasonal factor; nothing honest consumed these constants.
+// TIER_BUFFERS/calculateStockoutRisk remain dead-but-retained per the W30
+// note (reserved for a future honest `list` design).
 
 function calculateStockoutRisk(currentFloat: number, avgDailyDemand: number): { risk: string; daysRemaining: number } {
   if (avgDailyDemand <= 0) return { risk: "low", daysRemaining: 999 };
@@ -73,6 +67,58 @@ function calculateStockoutRisk(currentFloat: number, avgDailyDemand: number): { 
 const MIN_HISTORY_DAYS = 7;
 const CASH_IN_TYPE = "Premium Payment";
 const CASH_OUT_TYPE = "Claim Payout";
+
+// ── W31 (2026-11-28): B17 triggerReplenishment ported from main ─────────────
+// Source: main server/routers/agentFloatForecasting.ts (replenishOne +
+// triggerReplenishment). A replenishment is a REAL money movement:
+// TigerBeetle double-entry (sys-bank-reserve → float-<agentId>) +
+// authoritative agents.premiumReserve update + transactions audit row +
+// audit_log entry, under a Redis lock, admin-gated. Failure posture:
+// fail-loud on the PG legs, but the TB leg and the Redis lock are
+// fail-OPEN in the portal (D10/D11, verifier probe-verified 2026-11-27 —
+// W32 hardening candidates).
+// Documented portal deltas (main -> portal), D4-D7:
+//  D4 tx vocabulary: portal txTypeEnum has no 'Float Transfer Received' and
+//     txChannelEnum has no 'Internal'. The audit row is written with the
+//     in-enum type 'Transfer' (excluded from the forecast basis, mirroring
+//     main's exclusion of transfers) and channel 'App'; main's original
+//     label is preserved in metadata.txTypeDetail.
+//  D5 TB transfer code: portal convention is code 300 (CodeAgentFloat —
+//     server/routers/transactions.ts, server/tbClient.ts); main used 100.
+//  D6 MAX_FLOAT_NGN mirrors portal floatManagement's ₦5,000,000 top-up cap
+//     (server/routers/floatManagement.ts:59) — the same value as main's
+//     floatManagement MAX_FLOAT.
+//  D7 audit row also records agentId (portal audit_log has the column;
+//     main's insert leaves it NULL).
+// 2026-11-27 (W31-A-fix, verifier probe findings — comment-only corrections;
+// real hardening is W32 scope since it touches the shared tbClient/
+// redisClient infra used by other callers):
+//  D10 TB leg is fail-OPEN in the portal (probe-verified): portal
+//     tbClient.tbCreateTransfer returns null when the sidecar is
+//     unreachable/times out/rejects, so replenishOne SUCCEEDS with the PG
+//     balance moved, tbTransferId=null and tx metadata.tbSyncStatus
+//     "pending" — the PG/TB views silently diverge. Main's tbClient throws
+//     TBLedgerUnavailableError (fail-closed: the mutation 5xx's and PG is
+//     never touched). W32 hardening candidate: fail-closed with
+//     compensation/rollback semantics on the PG leg.
+//  D11 Redis replenishment lock is fail-OPEN in the portal (probe-verified):
+//     portal redisClient.acquireLock does `catch { return true }`, so a
+//     Redis outage removes mutual exclusion entirely. Main's acquireLock
+//     fails closed (returns false — the money operation is refused). W32
+//     hardening candidate.
+//  D12 Lost-update race (probe-verified, inherited byte-exact from main):
+//     replenishOne reads premiumReserve BEFORE/outside the lock and writes
+//     current+amount non-atomically; two concurrent same-agent top-ups
+//     produce PG=5500 vs TB=5000 (a ₦2500 divergence on a 2500+2500 pair
+//     from 3000) — and the stale pre-lock read persists even with a working
+//     lock. W32 hardening candidate: atomic read-modify-write
+//     (UPDATE ... SET "premiumReserve" = "premiumReserve" + $n with a
+//     cap-check RETURNING guard) or TB-as-source-of-truth.
+//  D13 audit_log insert `.catch(() => {})` silently swallows audit-write
+//     failure (byte-exact from main) — a replenishment can persist with NO
+//     audit row. W32 hardening candidate.
+const MAX_FLOAT_NGN = 5_000_000;
+const AUTO_REPLENISH_CAP = 25;
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -234,6 +280,143 @@ async function computeForecasts(
   };
 }
 
+/**
+ * Execute ONE real float replenishment: TigerBeetle double-entry
+ * (sys-bank-reserve → float-{agentId}) + authoritative PG balance update +
+ * transaction row + audit entry. Same money primitives as
+ * transactions.create's float-credit path.
+ * W31 (2026-11-28): ported from main; portal deltas D4/D5/D7 above.
+ * 2026-11-27 (W31-A-fix, verifier probe): the "fail-loud on any leg" claim
+ * this comment used to carry was WRONG for the portal — the TB leg is
+ * fail-open (D10), the Redis lock is fail-open (D11), the balance
+ * read-modify-write races (D12), and the audit write is best-effort (D13).
+ * All four are W32 hardening candidates; behavior intentionally unchanged
+ * in the fix pass.
+ */
+async function replenishOne(
+  db: Db,
+  agent: { id: number; agentId: string; premiumReserve: string | number | null },
+  amountNGN: number,
+  reference: string
+): Promise<{ agentId: string; amountNGN: number; ref: string; newBalanceNGN: number; tbTransferId: string | null }> {
+  // 2026-11-27 (W31-A-fix, D12): LOST-UPDATE RACE — this balance is read
+  // before the lock is acquired and the write below is a non-atomic
+  // read-modify-write; even with a working lock the pre-lock read is stale
+  // (probe: two concurrent same-agent top-ups of 2500+2500 from 3000 gave
+  // PG 5500 vs TB 5000 — a real divergence). W32: atomic conditional
+  // UPDATE ("premiumReserve" = "premiumReserve" + $n WHERE cap holds) or
+  // TB-as-source-of-truth.
+  const currentBalance = Number(agent.premiumReserve ?? 0);
+  if (currentBalance + amountNGN > MAX_FLOAT_NGN) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        `triggerReplenishment: replenishing ${agent.agentId} by ₦${amountNGN.toLocaleString()} ` +
+        `would exceed the ₦${MAX_FLOAT_NGN.toLocaleString()} max float ` +
+        `(current ₦${currentBalance.toLocaleString()})`,
+    });
+  }
+  const lockKey = `float-replenish:${agent.agentId}`;
+  // 2026-11-27 (W31-A-fix, D11): portal acquireLock is FAIL-OPEN
+  // (`catch { return true }` in lib/redisClient.ts) — under a Redis outage
+  // this always "succeeds" and there is NO mutual exclusion. Main's
+  // acquireLock fails closed (lock error => operation refused). W32
+  // hardening candidate (shared infra, other callers affected).
+  const locked = await acquireLock(lockKey, 15_000);
+  if (!locked) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Another replenishment is in progress for agent ${agent.agentId}`,
+    });
+  }
+  try {
+    await tbEnsureAgentAccount(agent.agentId);
+    // 2026-11-27 (W31-A-fix, D10): FAIL-OPEN TB LEG — portal
+    // tbCreateTransfer returns null on sidecar outage/timeout/rejection
+    // (probe-verified), so this mutation then SUCCEEDS with the PG balance
+    // moved, tbTransferId=null and metadata.tbSyncStatus "pending": PG and
+    // TB silently diverge. Main's tbCreateTransfer throws
+    // TBLedgerUnavailableError instead (fail-closed: the mutation errors
+    // and PG is never written). W32 hardening candidate: fail-closed with
+    // compensation/rollback of the PG leg.
+    const tbResult = await tbCreateTransfer({
+      debitAccountId: "sys-bank-reserve",
+      creditAccountId: `float-${agent.agentId}`,
+      amount: Math.round(amountNGN * 100),
+      ledger: 2000,
+      code: 300, // D5: portal CodeAgentFloat convention (main used 100)
+      ref: reference,
+      txType: "Float Top-Up",
+      agentId: agent.agentId,
+    });
+    const newBalance = round2(currentBalance + amountNGN);
+    await db
+      .update(agents)
+      .set({ premiumReserve: String(newBalance), updatedAt: new Date() })
+      .where(eq(agents.id, agent.id));
+    await db.insert(transactions).values({
+      ref: reference,
+      agentId: agent.id,
+      // D4: portal txTypeEnum has no 'Float Transfer Received'; 'Transfer' is
+      // the in-enum fit and is excluded from the forecast basis (mirroring
+      // main). Main's label is preserved in metadata.txTypeDetail.
+      type: "Transfer",
+      amount: String(amountNGN),
+      fee: "0",
+      commission: "0",
+      channel: "App", // D4: portal txChannelEnum has no 'Internal'
+      status: "success",
+      fraudScore: "0.00",
+      metadata: {
+        source: "agentFloatForecasting.triggerReplenishment",
+        txTypeDetail: "Float Transfer Received",
+        tbSyncStatus: tbResult ? "synced" : "pending",
+        tbTransferId: tbResult?.id ?? null,
+      },
+    });
+    await db
+      .insert(auditLog)
+      .values({
+        agentId: agent.id, // D7: portal audit_log carries agentId
+        action: "FLOAT_REPLENISH",
+        resource: "agent_float",
+        resourceId: String(agent.id),
+        status: "success",
+        metadata: {
+          agentId: agent.agentId,
+          amountNGN,
+          newBalance,
+          ref: reference,
+          tbTransferId: tbResult?.id ?? null,
+        },
+      })
+      // 2026-11-27 (W31-A-fix, D13): `.catch(() => {})` silently swallows
+      // an audit-write failure — a real money movement can then persist
+      // with NO audit row (byte-exact from main). W32 hardening candidate:
+      // fail loud or enqueue a compensating audit record.
+      .catch(() => {});
+    logger.info(
+      `[FloatForecast] Replenished ₦${amountNGN} for agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`
+    );
+    return {
+      agentId: agent.agentId,
+      amountNGN,
+      ref: reference,
+      newBalanceNGN: newBalance,
+      tbTransferId: tbResult?.id ?? null,
+    };
+  } finally {
+    await releaseLock(lockKey);
+  }
+}
+
+// transactions.ref is varchar(32): RPL- + base36 timestamp + random suffix.
+const newReplenishRef = () =>
+  `RPL-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 15)}`.slice(
+    0,
+    32
+  );
+
 export const agentFloatForecastingRouter = router({
   // 2026-11-27 (W30): converted to fail-loud NOT_IMPLEMENTED. The previous
   // body fabricated its numbers: it read `agent.monthlyTarget` (no such
@@ -323,23 +506,161 @@ export const agentFloatForecastingRouter = router({
       return { ...result, generatedAt: new Date().toISOString() };
     }),
 
+  // W31 (2026-11-28): ported from main's F-12 getStats (real aggregates over
+  // agents.premiumReserve + transactions), replacing the fabricated body
+  // (agentCount × hardcoded 50000 float, agentCount × 0.12 stockout risk,
+  // hardcoded avgAccuracy 0.85, demand from a hardcoded 200000/30 —
+  // confirmed fabrication in the W30 verifier pass).
+  // Documented portal deltas (main -> portal):
+  //  D8 db-unavailable: main returns a zeroed payload; portal fails closed
+  //     (PRECONDITION_FAILED) per the W29/W30 house rule — zeros on outage
+  //     are indistinguishable from a real empty fleet (fabrication).
+  //  D9 predictedDemand7d: consumed by client/src/pages/
+  //     AgentFloatForecasting.tsx:262 but absent from main's shape. Real
+  //     source: sum of the ported forecaster's per-agent 7-day
+  //     predictedNeed (same trailing-average basis as getForecast). null
+  //     when trailing history is below MIN_HISTORY_DAYS
+  //     (INSUFFICIENT_DATA) — no honest basis exists, so none is invented;
+  //     any other forecaster error propagates.
+  //  STOP avgAccuracy (page :275): no honest source exists — there is no
+  //     forecast-accuracy telemetry table and the method is a trailing
+  //     average, not a scored model, so no measured accuracy can be
+  //     computed. The field is emitted as explicit null (never a fabricated
+  //     number); null documents "no measurement exists" in-band and keeps
+  //     the page's pre-existing `?? 94.7` client fallback (client debt,
+  //     out of W31-A scope, flagged in w31a-report) type-checking.
+  //  NOTE stockoutRisk is main's definition: the PERCENTAGE of monitored
+  //     agents whose premiumReserve <= 0 (0-100). The page labels it
+  //     "Agents Below Threshold" and renders it as a count next to
+  //     agentsMonitored (:247-250) — a client display-semantics mismatch,
+  //     flagged in w31a-report (client files are out of W31-A scope).
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { totalFloat: 0, stockoutRisk: 0, agentsMonitored: 0, predictedDemand7d: 0, avgAccuracy: 0.85 };
-
-    const totalRows = await database.select({ total: count() }).from(agents);
-    const agentCount = (totalRows as any)[0]?.total ?? 0;
-    const avgDaily = 200000 / 30;
-    const multiplier = getSeasonalMultiplier(new Date());
-
+    const db = await getDb();
+    if (!db) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "agentFloatForecasting.getStats: database unavailable",
+      });
+    }
+    const [{ total: a }] = await db.select({ total: count() }).from(agents);
+    const [{ total: t }] = await db
+      .select({ total: count() })
+      .from(transactions);
+    // F-12: real float aggregates from agents.premiumReserve — the
+    // ledger-backed float balance this router forecasts against.
+    const [floatRow] = await db
+      .select({
+        totalFloat: sum(agents.premiumReserve),
+        atRisk: sql<number>`count(*) filter (where cast(${agents.premiumReserve} as numeric) <= 0)::int`,
+      })
+      .from(agents);
+    const totalAgents = Number(a ?? 0);
+    const atRisk = Number(floatRow?.atRisk ?? 0);
+    // D9: real 7-day predicted demand from the same forecaster getForecast
+    // exposes; null when the history floor is not met.
+    let predictedDemand7d: number | null;
+    try {
+      const { forecasts } = await computeForecasts(db, 7);
+      predictedDemand7d = round2(
+        forecasts.reduce((acc, f) => acc + f.predictedNeed, 0)
+      );
+    } catch (err) {
+      if (err instanceof TRPCError && err.code === "PRECONDITION_FAILED") {
+        predictedDemand7d = null;
+      } else {
+        throw err;
+      }
+    }
     return {
-      totalFloat: agentCount * 50000,
-      stockoutRisk: Math.round(agentCount * 0.12),
-      agentsMonitored: agentCount,
-      predictedDemand7d: Math.round(agentCount * avgDaily * multiplier * 7),
-      avgAccuracy: 0.85,
+      totalAgents,
+      agentsMonitored: totalAgents,
+      totalFloat: Number(floatRow?.totalFloat ?? 0),
+      stockoutRisk:
+        totalAgents > 0 ? Math.round((atRisk / totalAgents) * 100) : 0,
+      totalTransactions: Number(t ?? 0),
+      predictedDemand7d,
+      // STOP field: no honest accuracy source — explicit null, never a
+      // fabricated score (see comment above).
+      avgAccuracy: null,
       lastUpdated: new Date().toISOString(),
-      seasonalFactor: multiplier,
     };
   }),
+
+  // W31 (2026-11-28): REAL replenishment ported from main B17 — TB
+  // double-entry + PG balance + transaction row + audit entry, admin-gated.
+  // agentId 'all-below-threshold' replenishes every agent whose computed
+  // 7-day shortfall is positive, by exactly that shortfall. Fixes the
+  // pre-existing contract drift: client/src/pages/AgentFloatForecasting.tsx
+  // (:162, :192, :289) called this procedure while the server router did
+  // not implement it.
+  triggerReplenishment: adminProcedure
+    .input(
+      z.object({
+        agentId: z.string().min(1),
+        amount: z.number().positive().max(MAX_FLOAT_NGN),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "agentFloatForecasting.triggerReplenishment: database unavailable",
+        });
+      }
+      if (input.agentId === "all-below-threshold") {
+        // Auto mode: the passed amount is a UI artifact; each agent is
+        // topped up by its OWN computed shortfall — never a blanket figure.
+        const { forecasts } = await computeForecasts(db, 7);
+        const targets = forecasts
+          .filter(f => f.shortfall > 0)
+          .slice(0, AUTO_REPLENISH_CAP);
+        const replenished = [];
+        for (const target of targets) {
+          const [agent] = await db
+            .select({
+              id: agents.id,
+              agentId: agents.agentId,
+              premiumReserve: agents.premiumReserve,
+            })
+            .from(agents)
+            .where(eq(agents.agentId, target.id))
+            .limit(1);
+          if (!agent) continue;
+          replenished.push(
+            await replenishOne(db, agent, target.shortfall, newReplenishRef())
+          );
+        }
+        return {
+          mode: "auto" as const,
+          basis:
+            "per-agent 7-day trailing-average shortfall (not the requested blanket amount)",
+          replenished,
+          cappedAt: AUTO_REPLENISH_CAP,
+        };
+      }
+      const [agent] = await db
+        .select({
+          id: agents.id,
+          agentId: agents.agentId,
+          premiumReserve: agents.premiumReserve,
+        })
+        .from(agents)
+        .where(eq(agents.agentId, input.agentId))
+        .limit(1);
+      if (!agent) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `triggerReplenishment: agent '${input.agentId}' not found`,
+        });
+      }
+      const result = await replenishOne(
+        db,
+        agent,
+        input.amount,
+        newReplenishRef()
+      );
+      return { mode: "single" as const, replenished: [result] };
+    }),
 });
