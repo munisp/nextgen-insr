@@ -32,6 +32,25 @@ export const disputeWorkflowEngineRouter = router({
             ref,
             transactionId:
               parseInt(input.transactionId.replace(/\D/g, "")) || null,
+            // 2026-11-27 (W32-B): disputes.agentId is NOT NULL with no
+            // default (migration 0003; 0016 dropped NOT NULL only from
+            // transactionId/transactionRef/reason), so every insert that
+            // omitted it died PG 23502 → INTERNAL_SERVER_ERROR with zero
+            // persisted. Main's copy of this procedure is byte-identical
+            // (same outage), so the source is derived from main's own
+            // correction for this exact bug class —
+            // server/routers/memberDisputes.ts fileDispute ("worklist
+            // correction 1"): the caller identity is forced server-side,
+            // agentId = ctx.user.id, never client-controlled. No
+            // users→agents join exists in the portal schema (agents has no
+            // userId/keycloakSub; users has no agentId), and the platform
+            // convention treats agentId columns as the filing principal's
+            // id (memberDisputes dual identity-space; posDispute
+            // session.id). protectedProcedure guarantees ctx.user
+            // (anonymous callers are rejected UNAUTHORIZED before this
+            // point), so agentId is resolvable for every authenticated
+            // caller class.
+            agentId: ctx.user.id,
             type: "workflow",
             reason: input.reason,
             description: input.description,

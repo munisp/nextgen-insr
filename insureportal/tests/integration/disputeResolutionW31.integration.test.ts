@@ -24,11 +24,20 @@
  * ⚠ SCHEMA-VERBATIM FINDING pinned by this suite: the migrated `disputes`
  * table keeps `"agentId" integer NOT NULL` with NO default (0003 creates it
  * NOT NULL; 0016 drops NOT NULL only from transactionId/transactionRef/
- * reason; nothing ever drops agentId's). Both createDispute procedures omit
- * agentId from their INSERT — so against the real schema they fail closed
- * with INTERNAL_SERVER_ERROR (Postgres 23502) and persist NO partial state.
- * This suite asserts that fail-closed behavior (and the absence of any
- * mirror row) rather than relaxing the DDL, which would be test weakening.
+ * reason; nothing ever drops agentId's). Both createDispute procedures
+ * omitted agentId from their INSERT — so against the real schema they
+ * failed closed with INTERNAL_SERVER_ERROR (Postgres 23502) and persisted
+ * NO partial state. W31-C asserted that fail-closed behavior.
+ *
+ * 2026-11-27 (W32-B) HONEST-CONTRACT REWRITE: the W31-C fail-closed
+ * assertions documented a PRODUCTION OUTAGE (dispute creation down on
+ * every call), not a contract worth keeping. W32-B fixed both procedures
+ * to populate agentId from the caller identity forced server-side
+ * (agentId = ctx.user.id — main's memberDisputes "worklist correction 1"
+ * precedent; see the dated router comments for the full sourcing rule).
+ * The two former fail-closed legs are rewritten below to assert SUCCESS
+ * with correct agentId persistence; no DDL was relaxed (agentId stays
+ * NOT NULL in the harness, exactly like the migrated schema).
  *
  * Seeded truth is computed in the header of each describe block so the
  * assertions trace to the seeds, not to the implementation. Mutation tests
@@ -100,6 +109,17 @@ const adminUser = {
   name: "W31 Admin User",
   role: "admin",
   keycloakSub: "k-w31-admin",
+} as unknown as TrpcContext["user"];
+
+// 2026-11-27 (W32-B): non-admin, non-agent caller for the createDispute
+// edge leg — proves the agentId sourcing rule (filing principal's id) is
+// resolvable for EVERY authenticated caller class, not just admins.
+const plainUser = {
+  id: 950032,
+  email: "user@w31.test",
+  name: "W31 Plain User",
+  role: "user",
+  keycloakSub: "k-w31-user",
 } as unknown as TrpcContext["user"];
 
 // Minimal DDL — schema-verbatim column names/types/NULLABILITY for every
@@ -377,47 +397,106 @@ describe("W31-C: dispute middleware + routers (real PGlite DB)", () => {
     });
   });
 
-  // ── Fail-closed create paths (schema-verbatim NOT NULL agentId) ─────────
-  describe("createDispute fail-closed against the real schema", () => {
-    it("disputeResolution.createDispute omits agentId → INTERNAL_SERVER_ERROR, no partial state", async () => {
+  // ── Create paths (2026-11-27 W32-B honest-contract rewrite) ───────────
+  // These two legs WERE the W31-C "fail-closed" assertions (every call →
+  // INTERNAL_SERVER_ERROR, zero persisted). That pinned a production
+  // outage, so W32-B fixed the routers (agentId = ctx.user.id, forced
+  // server-side) and rewrote the contract to assert SUCCESS with correct
+  // agentId persistence. The three disputes created here (ids 6, 7, 8 —
+  // the seed setval pinned the sequence at 5) shift the global counts
+  // asserted by the later getDeliveryStats / UNAUTHORIZED legs; those
+  // expectations carry their own dated updates.
+  describe("createDispute persists with server-side agentId (W32-B fix)", () => {
+    it("disputeResolution.createDispute succeeds and persists agentId = caller id", async () => {
       const caller = disputeResolutionRouter.createCaller(ctxFor(adminUser));
-      const before = await scalar(`SELECT count(*)::int AS c FROM "disputes"`);
-      await expectTrpcCode(
-        caller.createDispute({
-          transactionId: "TXN-W31-DUP",
-          type: "double_charge",
-          reason: "charged twice",
-          amount: 5000,
-        }),
-        "INTERNAL_SERVER_ERROR"
+      const r = await caller.createDispute({
+        transactionId: "TXN-7001",
+        type: "double_charge",
+        reason: "charged twice",
+        amount: 5000,
+      });
+      expect(r.status).toBe("open");
+      expect(r.ref).toMatch(/^DSP-/);
+      expect(r.id).toBe(6);
+      // The outage column: agentId must persist as the filing principal.
+      expect(await scalar(`SELECT "agentId" FROM "disputes" WHERE id = 6`)).toBe(
+        adminUser.id
       );
-      expect(await scalar(`SELECT count(*)::int AS c FROM "disputes"`)).toBe(
-        before
+      // Digit-parse of the transactionId input persists the PK 7001.
+      expect(
+        await scalar(`SELECT "transactionId" FROM "disputes" WHERE id = 6`)
+      ).toBe(7001);
+      expect(
+        await scalar(`SELECT amount::float8 FROM "disputes" WHERE id = 6`)
+      ).toBe(5000);
+      expect(await scalar(`SELECT status FROM "disputes" WHERE id = 6`)).toBe(
+        "open"
       );
-      // No mirror/orphan rows either.
+      expect(
+        await scalar(`SELECT "createdBy" FROM "disputes" WHERE id = 6`)
+      ).toBe("W31 Admin User");
+      // This procedure writes no mirror messages (workflowEngine does).
       expect(
         await scalar(
-          `SELECT count(*)::int AS c FROM "dispute_messages" WHERE "disputeId" > 5`
+          `SELECT count(*)::int AS c FROM "dispute_messages" WHERE "disputeId" = 6`
         )
       ).toBe(0);
     });
 
-    it("disputeWorkflowEngine.createDispute fails closed the same way", async () => {
+    it("disputeWorkflowEngine.createDispute persists agentId + evidence mirror rows", async () => {
       const caller = disputeWorkflowEngineRouter.createCaller(
         ctxFor(adminUser)
       );
-      await expectTrpcCode(
-        caller.createDispute({
-          transactionId: "TXN-W31-FRAUD",
-          reason: "fraud",
-          description: "unauthorized debit",
-          evidence: ["receipt.pdf"],
-        }),
-        "INTERNAL_SERVER_ERROR"
+      const r = await caller.createDispute({
+        transactionId: "TXN-FRAUD",
+        reason: "fraud",
+        description: "unauthorized debit",
+        evidence: ["receipt.pdf", "photo.jpg"],
+      });
+      expect(r.success).toBe(true);
+      expect(r.ref).toMatch(/^WF-/);
+      expect(r.id).toBe(7);
+      expect(await scalar(`SELECT "agentId" FROM "disputes" WHERE id = 7`)).toBe(
+        adminUser.id
       );
+      // "TXN-FRAUD" carries no digits → transactionId persists NULL.
       expect(
-        await scalar(`SELECT count(*)::int AS c FROM "disputes"`)
-      ).toBe(5);
+        await scalar(`SELECT "transactionId" FROM "disputes" WHERE id = 7`)
+      ).toBeNull();
+      expect(await scalar(`SELECT type FROM "disputes" WHERE id = 7`)).toBe(
+        "workflow"
+      );
+      // Both evidence items mirror as customer messages on the new dispute.
+      expect(
+        await scalar(
+          `SELECT count(*)::int AS c FROM "dispute_messages" WHERE "disputeId" = 7 AND "senderType" = 'customer' AND content LIKE 'Evidence: %'`
+        )
+      ).toBe(2);
+      // Decoy guard: dispute 5's seeded messages are untouched.
+      expect(
+        await scalar(
+          `SELECT count(*)::int AS c FROM "dispute_messages" WHERE "disputeId" = 5`
+        )
+      ).toBe(2);
+    });
+
+    it("non-agent caller class files with agentId = own user id (no INTERNAL_SERVER_ERROR)", async () => {
+      // The sourcing rule (dated router comments, 2026-11-27 W32-B): no
+      // users→agents join exists in the portal schema, so agentId is the
+      // FILING PRINCIPAL's id — resolvable for every authenticated caller,
+      // agent or not. A plain non-admin user with no agent record must
+      // succeed, not explode.
+      const caller = disputeResolutionRouter.createCaller(ctxFor(plainUser));
+      const r = await caller.createDispute({
+        transactionId: "TXN-W31-DUP",
+        type: "general",
+        reason: "non-agent filing",
+        amount: 100,
+      });
+      expect(r.id).toBe(8);
+      expect(await scalar(`SELECT "agentId" FROM "disputes" WHERE id = 8`)).toBe(
+        plainUser.id
+      );
     });
   });
 
@@ -732,11 +811,14 @@ describe("W31-C: dispute middleware + routers (real PGlite DB)", () => {
       const s = await disputeNotificationsRouter
         .createCaller(ctxFor(adminUser))
         .getDeliveryStats();
-      // 1 logged send + 5 disputes (notificationLog is in-process module state)
-      expect(s.totalSent).toBe(6);
-      expect(s.delivered).toBe(6);
+      // 2026-11-27 (W32-B): 1 logged send + 8 disputes (5 seeds + 3 created
+      // by the W32-B createDispute success legs above; notificationLog is
+      // in-process module state). Channels recompute from the same count:
+      // ceil(8*0.5)=4, ceil(8*0.3)=3, ceil(8*0.2)=2.
+      expect(s.totalSent).toBe(9);
+      expect(s.delivered).toBe(9);
       expect(s.failed).toBe(0);
-      expect(s.channels).toEqual({ email: 3, sms: 2, push: 1 });
+      expect(s.channels).toEqual({ email: 4, sms: 3, push: 2 });
     });
   });
 
@@ -846,7 +928,8 @@ describe("W31-C: dispute middleware + routers (real PGlite DB)", () => {
         "UNAUTHORIZED"
       );
       // Anonymous calls must not have written anything.
-      expect(await scalar(`SELECT count(*)::int AS c FROM "disputes"`)).toBe(5);
+      // 2026-11-27 (W32-B): 5 seeds + 3 created by the W32-B success legs.
+      expect(await scalar(`SELECT count(*)::int AS c FROM "disputes"`)).toBe(8);
     });
   });
 });

@@ -14,6 +14,26 @@
  *        - self-referral and unknown-code fail before any write;
  *        - a never-referred DECOY account stays referredBy=NULL, untouched.
  *
+ *      2026-11-27 (W32-B) HONEST-CONTRACT REWRITE: applyReferral was
+ *      re-ported from main's I2/AB-13 version (session-bound referee
+ *      identity + claim/credits/ledger in ONE transaction). Where the
+ *      ported behavior changed the observable contract, the legs below
+ *      were rewritten (each carries a dated comment):
+ *        - the referee identity now comes from the SESSION
+ *          (customers.keycloakSub = String(ctx.user.id)); a client-supplied
+ *          customerId is only honored for staff (role=admin) applying for
+ *          a different customer, otherwise FORBIDDEN;
+ *        - failures are typed TRPCError codes (NOT_FOUND unknown code,
+ *          BAD_REQUEST self-referral, CONFLICT repeat claim, FORBIDDEN
+ *          cross-customer/no-profile) instead of untyped Errors that
+ *          surfaced as INTERNAL_SERVER_ERROR;
+ *        - a crash-atomicity leg (DB-trigger partial-failure injection)
+ *          proves a mid-transaction failure leaves NO locked-unpaid state
+ *          (referredBy stays NULL, no points, no ledger rows).
+ *      Portal-retained behavior (documented delta in the router): the two
+ *      referral ledger rows are KEPT (main writes none) and are now
+ *      written inside the same transaction.
+ *
  *   2. agentOnboardingWizard.getProgress — the "Terminal Assignment" step
  *      previously referenced a nonexistent `serviceNodes` identifier
  *      (runtime ReferenceError-class bug, TS2304 ×2); W31-D ported main's
@@ -30,7 +50,9 @@
  * every column the procedures touch (FKs omitted — joins are by value),
  * raw-SQL seeds, createCaller against the real routers. No mocks on the
  * procedures under test. The loyalty_accounts DDL carries "referredBy"
- * exactly as migration 0048 adds it (integer, nullable).
+ * exactly as migration 0048 adds it (integer, nullable). The 2026-11-27
+ * (W32-B) rewrite adds the customers table (session binding) and the
+ * audit_log table (the ported procedure's writeAuditLog audit trail).
  */
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
 import { spawn, type ChildProcess } from "child_process";
@@ -96,6 +118,39 @@ const plainUser = {
   keycloakSub: "k-w31d-user",
 } as unknown as TrpcContext["user"];
 
+// 2026-11-27 (W32-B): applyReferral is now session-bound, so each caller
+// class needs an explicit identity. customers.keycloakSub is matched
+// against String(ctx.user.id) (H2/AB-12 discipline, same as
+// customer.ts resolveCustomer) — the seeds below wire these ids up.
+const referrerUser = {
+  id: 950032, // session → customer 501 (owns referral code REF-AAA)
+  email: "referrer@w31d.test",
+  name: "Referral Owner",
+  role: "user",
+  keycloakSub: "k-w31d-referrer",
+} as unknown as TrpcContext["user"];
+const staffUser = {
+  id: 950033, // role=admin: may apply a referral for a different customerId
+  email: "staff@w31d.test",
+  name: "Staff Caller",
+  role: "admin",
+  keycloakSub: "k-w31d-staff",
+} as unknown as TrpcContext["user"];
+const noProfileUser = {
+  id: 950034, // no customers row → FORBIDDEN "No customer profile…"
+  email: "orphan@w31d.test",
+  name: "Profileless Caller",
+  role: "user",
+  keycloakSub: "k-w31d-orphan",
+} as unknown as TrpcContext["user"];
+const crashUser = {
+  id: 950035, // session → customer 505 (crash-atomicity referee)
+  email: "crash@w31d.test",
+  name: "Crash Caller",
+  role: "user",
+  keycloakSub: "k-w31d-crash",
+} as unknown as TrpcContext["user"];
+
 // Minimal DDL — schema-verbatim column names/types for every column the
 // procedures under test touch (drizzle/schema.ts; loyalty_accounts gains
 // "referredBy" integer exactly as migration 0048_referred_by.sql adds it).
@@ -128,6 +183,32 @@ CREATE TABLE IF NOT EXISTS "loyalty_transactions" (
   "referenceId" integer,
   "description" text,
   "expiresAt" timestamp,
+  "createdAt" timestamp DEFAULT now() NOT NULL
+);
+-- 2026-11-27 (W32-B): customers carries exactly the columns the ported
+-- applyReferral touches (id, keycloakSub for the session binding) plus the
+-- NOT NULL columns the seeds must satisfy. audit_log carries the columns
+-- the portal writeAuditLog inserts (status enum rendered as varchar per
+-- the harness enum-as-varchar convention, cf. agents.tier above).
+CREATE TABLE IF NOT EXISTS "customers" (
+  "id" serial PRIMARY KEY,
+  "firstName" varchar(64) NOT NULL,
+  "lastName" varchar(64) NOT NULL,
+  "phone" varchar(20) NOT NULL UNIQUE,
+  "keycloakSub" varchar(128) UNIQUE
+);
+CREATE TABLE IF NOT EXISTS "audit_log" (
+  "id" bigserial PRIMARY KEY,
+  "agentId" integer,
+  "userId" varchar(32),
+  "action" varchar(128) NOT NULL,
+  "resource" varchar(64),
+  "resourceId" varchar(64),
+  "ipAddress" varchar(45),
+  "userAgent" varchar(256),
+  "status" varchar(32) DEFAULT 'success',
+  "metadata" json,
+  "tenantId" integer,
   "createdAt" timestamp DEFAULT now() NOT NULL
 );
 CREATE TABLE IF NOT EXISTS "agents" (
@@ -201,15 +282,6 @@ async function expectTrpcCode(p: Promise<unknown>, code: string) {
   }
 }
 
-async function expectErrorMessage(p: Promise<unknown>, message: string) {
-  try {
-    await p;
-    throw new Error(`expected Error "${message}", but call succeeded`);
-  } catch (err) {
-    expect((err as Error).message).toBe(message);
-  }
-}
-
 async function loyaltyAccountById(id: number) {
   const db = (await getDb())!;
   const rows = await db.execute(
@@ -238,7 +310,20 @@ async function seed() {
     (1, 1, 101, 1000, 1000, 501, 'REF-AAA', NULL),
     (2, 1, 102, 0, 0, 502, 'REF-BBB', NULL),
     (3, 1, 103, 250, 250, 503, 'REF-CCC', NULL),
-    (4, 1, 104, 40, 40, 504, 'REF-DDD', 999)`);
+    (4, 1, 104, 40, 40, 504, 'REF-DDD', 999),
+    (5, 1, 105, 0, 0, 505, 'REF-EEE', NULL)`);
+
+  // ── Customers (2026-11-27, W32-B): session-binding targets ──────────
+  // keycloakSub = String(ctx.user.id) of the caller each leg uses:
+  //   501 ← referrerUser 950032 (self-referral leg)
+  //   502 ← plainUser 950031    (success/repeat/unknown-code/… legs)
+  //   505 ← crashUser 950035    (crash-atomicity leg; account 5 above)
+  // staffUser 950033 and noProfileUser 950034 deliberately have NO row
+  // (staff bypasses the profile; the orphan leg asserts FORBIDDEN).
+  await exec(`INSERT INTO "customers" ("id", "firstName", "lastName", "phone", "keycloakSub") VALUES
+    (501, 'Rita', 'Referrer', '08031000501', '950032'),
+    (502, 'Ray', 'Referee', '08031000502', '950031'),
+    (505, 'Cole', 'Crash', '08031000505', '950035')`);
 
   // ── Onboarding wizard domain ───────────────────────────────────────────
   // Agent 1 (AG-W31D-1): complete — KYC completed, float top-up, POS
@@ -299,10 +384,16 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
   // guard test re-fires the same claim against the now-referred account.
   // Vitest runs in-file tests sequentially, and the dependence is the
   // point (the second call can only fail BECAUSE the first persisted).
-  it("applyReferral persists referredBy and credits BOTH parties (round-trip)", async () => {
+  //
+  // 2026-11-27 (W32-B) HONEST-CONTRACT REWRITE: the ported procedure
+  // session-binds the referee (customers.keycloakSub = String(ctx.user.id))
+  // and answers with typed TRPCError codes. The legs below pass NO
+  // customerId unless the leg is specifically about the deprecated input.
+  it("applyReferral persists referredBy and credits BOTH parties (round-trip, session-bound referee)", async () => {
     const caller = promotionsRouter.createCaller(ctxFor(plainUser));
+    // 2026-11-27 (W32-B): no customerId — the referee is plainUser's own
+    // customer profile (502) resolved from the session.
     const res = await caller.applyReferral({
-      customerId: 502,
       referralCode: "REF-AAA",
     });
     expect(res).toEqual({
@@ -321,7 +412,8 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
     expect(referrer.lifetimePoints).toBe(1500);
     expect(referrer.referredBy).toBeNull(); // referrer himself un-referred
 
-    // Both referral ledger rows exist (referrer + referee).
+    // Both referral ledger rows exist (referrer + referee) — the
+    // portal-retained audit trail, now written inside the transaction.
     const db = (await getDb())!;
     const tx = await db.execute(
       `SELECT "accountId", "points", "type" FROM "loyalty_transactions" WHERE "type" = 'referral' ORDER BY "accountId"` as never
@@ -333,6 +425,13 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
       { accountId: 2, points: 500, type: "referral" },
     ]);
 
+    // 2026-11-27 (W32-B): the ported procedure writes a real audit row.
+    const audit = await db.execute(
+      `SELECT "action", "resourceId" FROM "audit_log" WHERE "action" = 'LOYALTY_REFERRAL_APPLIED'` as never
+    );
+    expect((audit as unknown as { rows: Record<string, unknown>[] }).rows)
+      .toEqual([{ action: "LOYALTY_REFERRAL_APPLIED", resourceId: "502" }]);
+
     // Never-referred decoy untouched.
     const decoy = await loyaltyAccountById(3);
     expect(decoy.referredBy).toBeNull();
@@ -341,9 +440,11 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
 
   it("applyReferral is a one-time claim: a repeat call fails closed with no double grant", async () => {
     const caller = promotionsRouter.createCaller(ctxFor(plainUser));
-    await expectErrorMessage(
-      caller.applyReferral({ customerId: 502, referralCode: "REF-AAA" }),
-      "Customer has already been referred"
+    // 2026-11-27 (W32-B): was an untyped Error (→ INTERNAL_SERVER_ERROR);
+    // the ported procedure fails closed with a typed CONFLICT.
+    await expectTrpcCode(
+      caller.applyReferral({ referralCode: "REF-AAA" }),
+      "CONFLICT"
     );
     // No double grant: points identical to the post-success state.
     const referrer = await loyaltyAccountById(1);
@@ -353,11 +454,16 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
     expect(referee.referredBy).toBe(501);
   });
 
-  it("applyReferral preserves an existing referrer (already-referred decoy)", async () => {
-    const caller = promotionsRouter.createCaller(ctxFor(plainUser));
-    await expectErrorMessage(
+  it("applyReferral preserves an existing referrer (already-referred decoy, staff caller)", async () => {
+    // 2026-11-27 (W32-B): account 4 belongs to customer 504, which is NOT
+    // the caller's profile — only a staff (role=admin) caller may pass a
+    // different customerId. This leg is also the staff-bypass proof: the
+    // call reaches the guarded claim and fails there with CONFLICT (not
+    // FORBIDDEN), preserving the original referrer.
+    const caller = promotionsRouter.createCaller(ctxFor(staffUser));
+    await expectTrpcCode(
       caller.applyReferral({ customerId: 504, referralCode: "REF-AAA" }),
-      "Customer has already been referred"
+      "CONFLICT"
     );
     const decoy = await loyaltyAccountById(4);
     expect(decoy.referredBy).toBe(999); // original referrer preserved
@@ -367,10 +473,12 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
   });
 
   it("applyReferral rejects self-referral before any write", async () => {
-    const caller = promotionsRouter.createCaller(ctxFor(plainUser));
-    await expectErrorMessage(
-      caller.applyReferral({ customerId: 501, referralCode: "REF-AAA" }),
-      "Cannot refer yourself"
+    // 2026-11-27 (W32-B): referrerUser's session resolves to customer 501
+    // — the owner of REF-AAA — so the self-referral guard fires.
+    const caller = promotionsRouter.createCaller(ctxFor(referrerUser));
+    await expectTrpcCode(
+      caller.applyReferral({ referralCode: "REF-AAA" }),
+      "BAD_REQUEST"
     );
     const self = await loyaltyAccountById(1);
     expect(self.referredBy).toBeNull();
@@ -379,24 +487,120 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
 
   it("applyReferral rejects an unknown referral code", async () => {
     const caller = promotionsRouter.createCaller(ctxFor(plainUser));
-    await expectErrorMessage(
-      caller.applyReferral({ customerId: 503, referralCode: "REF-NOPE" }),
-      "Invalid referral code"
+    // 2026-11-27 (W32-B): typed NOT_FOUND instead of an untyped Error.
+    await expectTrpcCode(
+      caller.applyReferral({ referralCode: "REF-NOPE" }),
+      "NOT_FOUND"
     );
     const decoy = await loyaltyAccountById(3);
     expect(decoy.referredBy).toBeNull();
     expect(decoy.points).toBe(250);
   });
 
+  it("applyReferral FORBIDDEN: non-staff caller passing someone else's customerId", async () => {
+    // 2026-11-27 (W32-B) NEW EDGE LEG: the pre-port procedure trusted the
+    // client-supplied customerId outright — any authenticated caller could
+    // apply a referral to an arbitrary account. The ported session binding
+    // rejects a mismatched non-staff customerId BEFORE any write.
+    const caller = promotionsRouter.createCaller(ctxFor(plainUser));
+    await expectTrpcCode(
+      caller.applyReferral({ customerId: 503, referralCode: "REF-AAA" }),
+      "FORBIDDEN"
+    );
+    const decoy = await loyaltyAccountById(3);
+    expect(decoy.referredBy).toBeNull();
+    expect(decoy.points).toBe(250);
+  });
+
+  it("applyReferral FORBIDDEN: authenticated caller with no customer profile", async () => {
+    // 2026-11-27 (W32-B) NEW EDGE LEG: session binding is unresolvable for
+    // this caller class — a clear FORBIDDEN, never an INTERNAL_SERVER_ERROR.
+    const caller = promotionsRouter.createCaller(ctxFor(noProfileUser));
+    await expectTrpcCode(
+      caller.applyReferral({ referralCode: "REF-AAA" }),
+      "FORBIDDEN"
+    );
+    // Nothing written anywhere.
+    const db = (await getDb())!;
+    const c = await db.execute(
+      `SELECT count(*)::int AS c FROM "loyalty_accounts" WHERE "referredBy" = 501` as never
+    );
+    expect((c as unknown as { rows: { c: number }[] }).rows[0].c).toBe(1); // only account 2
+  });
+
   it("applyReferral gates unauthenticated callers (UNAUTHORIZED)", async () => {
     await expectTrpcCode(
       promotionsRouter
         .createCaller(ctxFor(null))
-        .applyReferral({ customerId: 503, referralCode: "REF-AAA" }),
+        .applyReferral({ referralCode: "REF-AAA" }),
       "UNAUTHORIZED"
     );
     const decoy = await loyaltyAccountById(3);
     expect(decoy.referredBy).toBeNull(); // nothing written
+  });
+
+  it("applyReferral is crash-atomic: a mid-transaction failure leaves no locked-unpaid state", async () => {
+    // 2026-11-27 (W32-B) NEW CRASH-ATOMICITY LEG. The pre-port procedure
+    // ran claim → credits → ledger OUTSIDE any transaction: a crash after
+    // the claim set referredBy with no bonuses, and the one-time guard
+    // then blocked every retry (permanently locked-unpaid). Here a real
+    // Postgres trigger aborts the REFERRER credit — the statement that
+    // runs AFTER the guarded claim inside the new transaction — so the
+    // whole transaction must roll back: no referredBy, no points, no
+    // ledger rows. This is DB-layer failure injection against the real
+    // procedure, not a mock of the production path.
+    await exec(`
+      CREATE OR REPLACE FUNCTION w32b_abort_referrer_credit() RETURNS trigger AS $fn$
+      BEGIN
+        RAISE EXCEPTION 'w32b injected crash: referrer credit failed';
+      END;
+      $fn$ LANGUAGE plpgsql
+    `);
+    await exec(`
+      CREATE TRIGGER w32b_abort_referrer_credit
+      BEFORE UPDATE OF points ON "loyalty_accounts"
+      FOR EACH ROW WHEN (OLD.id = 1)
+      EXECUTE FUNCTION w32b_abort_referrer_credit()
+    `);
+    try {
+      const caller = promotionsRouter.createCaller(ctxFor(crashUser));
+      // The trigger's RAISE is not a TRPCError → surfaces as
+      // INTERNAL_SERVER_ERROR; the failure mode that matters is the
+      // rollback asserted below.
+      await expectTrpcCode(
+        caller.applyReferral({ referralCode: "REF-AAA" }),
+        "INTERNAL_SERVER_ERROR"
+      );
+    } finally {
+      await exec(
+        `DROP TRIGGER IF EXISTS w32b_abort_referrer_credit ON "loyalty_accounts"`
+      );
+      await exec(`DROP FUNCTION IF EXISTS w32b_abort_referrer_credit()`);
+    }
+    // The claim on account 5 (customer 505) must have ROLLED BACK with the
+    // aborted credit — no locked-unpaid state.
+    const refugee = await loyaltyAccountById(5);
+    expect(refugee.referredBy).toBeNull();
+    expect(refugee.points).toBe(0);
+    expect(refugee.lifetimePoints).toBe(0);
+    // Referrer not credited either; ledger still holds exactly the two
+    // rows from the earlier success leg.
+    const referrer = await loyaltyAccountById(1);
+    expect(referrer.points).toBe(1500);
+    const db = (await getDb())!;
+    const c = await db.execute(
+      `SELECT count(*)::int AS c FROM "loyalty_transactions" WHERE "type" = 'referral'` as never
+    );
+    expect((c as unknown as { rows: { c: number }[] }).rows[0].c).toBe(2);
+    // And the retry the old code would have blocked now succeeds —
+    // proving no permanent lock-out after a crash.
+    const retry = await promotionsRouter
+      .createCaller(ctxFor(crashUser))
+      .applyReferral({ referralCode: "REF-AAA" });
+    expect(retry.success).toBe(true);
+    const recovered = await loyaltyAccountById(5);
+    expect(recovered.referredBy).toBe(501);
+    expect(recovered.points).toBe(500);
   });
 
   // ── agentOnboardingWizard.getProgress — posTerminals (ex-serviceNodes) ──
