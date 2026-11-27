@@ -544,29 +544,48 @@ describe("W31-D: loyalty referredBy + onboarding wizard serviceNodes fixes (real
     // ran claim → credits → ledger OUTSIDE any transaction: a crash after
     // the claim set referredBy with no bonuses, and the one-time guard
     // then blocked every retry (permanently locked-unpaid). Here a real
-    // Postgres trigger aborts the REFERRER credit — the statement that
-    // runs AFTER the guarded claim inside the new transaction — so the
+    // Postgres trigger forces the procedure's transaction to fail, so the
     // whole transaction must roll back: no referredBy, no points, no
     // ledger rows. This is DB-layer failure injection against the real
     // procedure, not a mock of the production path.
+    //
+    // 2026-11-27 (W32-B, PR #347 CI fix): the trigger is a DEFERRED
+    // CONSTRAINT TRIGGER — the RAISE surfaces at COMMIT time, failing the
+    // commit and rolling the whole transaction back. The first version of
+    // this leg used an IMMEDIATE `BEFORE UPDATE OF points` trigger whose
+    // RAISE fired mid-statement inside the active transaction; over the
+    // extended query protocol that is exactly the documented PGlite-socket
+    // 0.2.11 desync quirk (W31-A D13 investigation): the mid-transaction
+    // statement error desyncs the wire protocol and later surfaces as an
+    // uncaught "Received unexpected commandComplete message from backend"
+    // during client teardown — 348/348 tests passing but vitest exiting 1
+    // (deterministic in CI, racy-clean locally). The deferred form keeps
+    // the crash-atomicity semantics identical (commit fails ⇒ full
+    // rollback; the retry after DROP TRIGGER succeeds) while the COMMIT
+    // statement's own error response is a legal, protocol-aligned reply.
+    // Event note: the trigger is AFTER UPDATE (not INSERT) because
+    // applyReferral performs no INSERT into loyalty_accounts — accounts
+    // pre-exist; an INSERT trigger would never fire and no crash would be
+    // injected. Do NOT "simplify" this back to an immediate trigger.
     await exec(`
       CREATE OR REPLACE FUNCTION w32b_abort_referrer_credit() RETURNS trigger AS $fn$
       BEGIN
-        RAISE EXCEPTION 'w32b injected crash: referrer credit failed';
+        RAISE EXCEPTION 'w32b injected crash: referrer credit failed at commit';
       END;
       $fn$ LANGUAGE plpgsql
     `);
     await exec(`
-      CREATE TRIGGER w32b_abort_referrer_credit
-      BEFORE UPDATE OF points ON "loyalty_accounts"
+      CREATE CONSTRAINT TRIGGER w32b_abort_referrer_credit
+      AFTER UPDATE ON "loyalty_accounts"
+      DEFERRABLE INITIALLY DEFERRED
       FOR EACH ROW WHEN (OLD.id = 1)
       EXECUTE FUNCTION w32b_abort_referrer_credit()
     `);
     try {
       const caller = promotionsRouter.createCaller(ctxFor(crashUser));
-      // The trigger's RAISE is not a TRPCError → surfaces as
-      // INTERNAL_SERVER_ERROR; the failure mode that matters is the
-      // rollback asserted below.
+      // The deferred trigger's RAISE fails the COMMIT; a pg error is not a
+      // TRPCError → surfaces as INTERNAL_SERVER_ERROR. The failure mode
+      // that matters is the rollback asserted below.
       await expectTrpcCode(
         caller.applyReferral({ referralCode: "REF-AAA" }),
         "INTERNAL_SERVER_ERROR"
