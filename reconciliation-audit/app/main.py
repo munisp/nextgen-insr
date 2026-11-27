@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Database connection
-DB_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+DB_URL = os.environ.get("DATABASE_URL", "postgresql://insuretech:insuretech@localhost:5432/insuretech")
 
 db_pool = None
 
@@ -35,9 +35,9 @@ async def get_db():
     conn = psycopg2.connect(
         host=os.environ.get("PGHOST", "localhost"),
         port=int(os.environ.get("PGPORT", "5432")),
-        user=os.environ.get("PGUSER", "ngapp"),
-        password=os.environ.get("PGPASSWORD", "ngapp"),
-        dbname=os.environ.get("PGDATABASE", "ngapp"),
+        user=os.environ.get("PGUSER", "insuretech"),
+        password=os.environ.get("PGPASSWORD", "insuretech"),
+        dbname=os.environ.get("PGDATABASE", "insuretech"),
     )
     return conn
 

@@ -10,7 +10,7 @@ import { Client as PgClient } from "pg";
  */
 
 const DATABASE_URL =
-  process.env.DATABASE_URL || "postgresql://ngapp:ngapp@localhost:5432/ngapp";
+  process.env.DATABASE_URL || "postgresql://insuretech:insuretech@localhost:5432/insuretech";
 const KAFKA_URL = process.env.KAFKA_REST_URL || "http://localhost:8082";
 
 let db: PgClient;

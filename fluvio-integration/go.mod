@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/fluvio-integration
+module github.com/munisp/insuretech/fluvio-integration
 
 go 1.23
 

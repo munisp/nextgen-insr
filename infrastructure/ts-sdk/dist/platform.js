@@ -17,7 +17,7 @@ const opensearch_1 = require("./opensearch");
 const fluvio_1 = require("./fluvio");
 const dapr_1 = require("./dapr");
 exports.defaultConfig = {
-    postgresUrl: 'postgresql://localhost:5432/ngapp',
+    postgresUrl: 'postgresql://localhost:5432/insuretech',
     redisAddr: 'localhost:6379',
     kafkaBrokers: ['localhost:9092'],
     tigerbeetleAddr: 'localhost:3000',
@@ -25,11 +25,11 @@ exports.defaultConfig = {
     apisixAdminUrl: 'http://localhost:9180',
     keycloakRealmUrl: 'http://localhost:8080/realms/insurance',
     keycloakAdminUrl: 'http://localhost:8080',
-    keycloakClientId: 'ngapp-platform',
+    keycloakClientId: 'insuretech-platform',
     keycloakClientSecret: '',
     openappsecUrl: 'http://localhost:8090',
     permifyUrl: 'http://localhost:3476',
-    permifyTenantId: 'ngapp',
+    permifyTenantId: 'insuretech',
     opensearchUrl: 'http://localhost:9200',
     fluvioEndpoint: 'localhost:9003',
     daprHttpPort: 3500,

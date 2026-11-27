@@ -6,7 +6,7 @@ Testing is **shell-based only** (curl + node test scripts). No browser recording
 
 ## Environment
 - Server: `localhost:5002` (node server.cjs)
-- DB: PostgreSQL ngapp@localhost:5432
+- DB: PostgreSQL insuretech@localhost:5432
 - Demo creds: `demo@insureportal.ng` / `demo123`
 
 ---

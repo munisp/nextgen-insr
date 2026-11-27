@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/ecommerce-catalog
+module github.com/munisp/insuretech/ecommerce-catalog
 
 go 1.22.4
 

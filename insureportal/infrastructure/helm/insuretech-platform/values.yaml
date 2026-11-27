@@ -1,4 +1,4 @@
-# NGApp Platform - Production Values
+# InsureTech Platform - Production Values
 # Override per environment: values-staging.yaml, values-production.yaml
 
 global:
@@ -6,7 +6,7 @@ global:
   imagePullSecrets: []
   storageClass: ""
   environment: production
-  domain: ngapp.example.com
+  domain: insuretech.example.com
   tls:
     enabled: true
     issuer: letsencrypt-prod
@@ -15,9 +15,9 @@ global:
 postgresql:
   enabled: true
   auth:
-    database: ngapp
-    username: ngapp
-    existingSecret: ngapp-db-credentials
+    database: insuretech
+    username: insuretech
+    existingSecret: insuretech-db-credentials
   primary:
     persistence:
       size: 50Gi
@@ -32,7 +32,7 @@ postgresql:
 redis:
   enabled: true
   auth:
-    existingSecret: ngapp-redis-credentials
+    existingSecret: insuretech-redis-credentials
   master:
     persistence:
       size: 10Gi
@@ -62,7 +62,7 @@ keycloak:
   enabled: true
   auth:
     adminUser: admin
-    existingSecret: ngapp-keycloak-credentials
+    existingSecret: insuretech-keycloak-credentials
   postgresql:
     enabled: false
   externalDatabase:
@@ -101,7 +101,7 @@ frontend:
   enabled: true
   replicaCount: 3
   image:
-    repository: ngapp/customer-portal
+    repository: insuretech/customer-portal
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -115,14 +115,14 @@ frontend:
       nginx.ingress.kubernetes.io/rate-limit: "100"
       nginx.ingress.kubernetes.io/rate-limit-window: "1m"
     hosts:
-      - host: portal.ngapp.example.com
+      - host: portal.insuretech.example.com
         paths:
           - path: /
             pathType: Prefix
     tls:
-      - secretName: ngapp-portal-tls
+      - secretName: insuretech-portal-tls
         hosts:
-          - portal.ngapp.example.com
+          - portal.insuretech.example.com
   resources:
     requests:
       memory: 128Mi

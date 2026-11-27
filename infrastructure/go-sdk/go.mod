@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/infrastructure/go-sdk
+module github.com/munisp/insuretech/infrastructure/go-sdk
 
 go 1.22.4
 

@@ -6,12 +6,12 @@ description: Test that in-memory state persists to PostgreSQL and survives serve
 # Testing State Persistence (Kill/Restart Cycles)
 
 ## Prerequisites
-- PostgreSQL running locally (`ngapp@localhost:5432`, database `ngapp`)
+- PostgreSQL running locally (`insuretech@localhost:5432`, database `insuretech`)
 - Node.js available (v18+)
 - `psql` CLI available for direct DB queries
 
 ## Devin Secrets Needed
-- None — uses local PostgreSQL with `ngapp`/`ngapp` credentials (configured in server.cjs)
+- None — uses local PostgreSQL with `insuretech`/`insuretech` credentials (configured in server.cjs)
 
 ## Setup
 1. Start the server:
@@ -47,7 +47,7 @@ TOKEN=$(curl -s -X POST http://localhost:5002/api/trpc/auth.login \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['data']['token'])")
 
 # Verify session in DB
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "SELECT COUNT(*) FROM user_sessions WHERE token = '$TOKEN'"
 # Expect: 1
 
@@ -82,7 +82,7 @@ curl -s -X POST http://localhost:5002/api/trpc/auth.logout \
   -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{}'
 
 # Verify blacklisted in DB
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "SELECT COUNT(*) FROM token_blacklist WHERE token = '$TOKEN_A'"
 # Expect: 1
 
@@ -95,7 +95,7 @@ PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
 for i in $(seq 1 5); do curl -s -o /dev/null http://localhost:5002/health; done
 
 # Check DB
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "SELECT key, hits FROM rate_limits LIMIT 3"
 # Expect: at least 1 row with hits array
 
@@ -108,7 +108,7 @@ PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
 for i in $(seq 1 10); do curl -s -o /dev/null http://localhost:5002/health; done
 sleep 15
 
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "SELECT requests FROM request_metrics WHERE id = 1"
 # Expect: requests >= 10
 
@@ -124,22 +124,22 @@ curl -s -X POST http://localhost:5002/api/trpc/currency.convert \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['data']['rate'])"
 
 # Mutate DB
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "UPDATE fx_rates SET rate = 9999.99 WHERE from_currency = 'USD' AND to_currency = 'NGN'"
 
 # Re-query — rate should change (proves DB-driven, not hardcoded)
 # IMPORTANT: Restore original rate after test!
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c \
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c \
   "UPDATE fx_rates SET rate = 1550 WHERE from_currency = 'USD' AND to_currency = 'NGN'"
 ```
 
 ### 6. Combined Integration (T6)
 ```bash
 # Snapshot before kill
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -t -c "SELECT COUNT(*) FROM user_sessions WHERE expires_at > NOW()"
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -t -c "SELECT COUNT(*) FROM rate_limits"
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -t -c "SELECT requests FROM request_metrics WHERE id = 1"
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -t -c "SELECT COUNT(*) FROM token_blacklist WHERE expires_at > NOW()"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -t -c "SELECT COUNT(*) FROM user_sessions WHERE expires_at > NOW()"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -t -c "SELECT COUNT(*) FROM rate_limits"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -t -c "SELECT requests FROM request_metrics WHERE id = 1"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -t -c "SELECT COUNT(*) FROM token_blacklist WHERE expires_at > NOW()"
 
 # Kill/restart, re-query — all values should be >= pre-kill values
 ```

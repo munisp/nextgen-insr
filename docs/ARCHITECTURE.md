@@ -1,8 +1,8 @@
-# NGApp Platform Architecture
+# InsureTech Platform Architecture
 
 ## Overview
 
-NGApp is a polyglot microservices platform for the Nigerian insurance industry. It comprises:
+InsureTech is a polyglot microservices platform for the Nigerian insurance industry. It comprises:
 
 - **Frontend**: React + Vite PWA (533 pages, offline-capable)
 - **API Layer**: tRPC server with 454 routers providing type-safe RPC

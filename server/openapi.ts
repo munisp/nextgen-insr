@@ -1,5 +1,5 @@
 /**
- * OpenAPI 3.1 Documentation Generator for NGApp tRPC API
+ * OpenAPI 3.1 Documentation Generator for InsureTech tRPC API
  *
  * Generates OpenAPI spec from tRPC router metadata.
  * Accessible at GET /api/docs (JSON) and GET /api/docs/ui (Swagger UI).
@@ -9,13 +9,13 @@ import { type Express } from "express";
 const OPENAPI_SPEC = {
   openapi: "3.1.0",
   info: {
-    title: "NGApp Insurance Platform API",
+    title: "InsureTech Insurance Platform API",
     version: "1.0.0",
     description:
       "Comprehensive Nigerian insurance platform API covering 7 domains: Core Insurance, Digital Channels, AI/ML, Compliance, Agent Network, Infrastructure, and Governance.",
     contact: {
-      name: "NGApp Platform Team",
-      email: "api@ngapp.io",
+      name: "InsureTech Platform Team",
+      email: "api@insuretech.io",
     },
     license: {
       name: "Proprietary",
@@ -27,7 +27,7 @@ const OPENAPI_SPEC = {
       description: "Platform API",
       variables: {
         protocol: { default: "https", enum: ["https", "http"] },
-        host: { default: "api.ngapp.io" },
+        host: { default: "api.insuretech.io" },
       },
     },
   ],
@@ -315,7 +315,7 @@ export function registerOpenApiDocs(app: Express) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>NGApp API Documentation</title>
+  <title>InsureTech API Documentation</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
 </head>
 <body>

@@ -67,7 +67,7 @@ class ServingConfig:
 
     # Redis (for distributed)
     redis_url: str | None = None
-    redis_prefix: str = "ngapp:features:"
+    redis_prefix: str = "insuretech:features:"
     redis_ttl_seconds: int = 3600
 
     # Offline store
@@ -150,7 +150,7 @@ class LRUCache:
 class RedisFeatureStore:
     """Redis-backed distributed feature store for production deployments."""
 
-    def __init__(self, redis_url: str, prefix: str = "ngapp:features:", ttl: int = 3600) -> None:
+    def __init__(self, redis_url: str, prefix: str = "insuretech:features:", ttl: int = 3600) -> None:
         self._redis_url = redis_url
         self._prefix = prefix
         self._ttl = ttl

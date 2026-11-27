@@ -8,7 +8,7 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.tigerbeetle")
+logger = logging.getLogger("insuretech.infra.tigerbeetle")
 
 KYC_TRANSFER_LIMITS = {
     0: 500_000,       # Level 0: NGN 5,000 (in kobo)

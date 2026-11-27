@@ -1,6 +1,6 @@
 version: "3.9"
 
-# NGApp Staging Environment
+# InsureTech Staging Environment
 # All microservices, middleware, and supporting infrastructure
 # Usage: docker compose -f deploy/staging/docker-compose.staging.yml up -d
 
@@ -12,22 +12,22 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ngapp
+      POSTGRES_USER: insuretech
       POSTGRES_PASSWORD: ${DB_PASSWORD:-staging_password}
-      POSTGRES_DB: ngapp_staging
+      POSTGRES_DB: insuretech_staging
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ../../infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      test: ["CMD-SHELL", "pg_isready -U insuretech"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   redis:
     image: redis:7-alpine
@@ -42,7 +42,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                   MESSAGE BROKERS & QUEUES                   ║
@@ -70,7 +70,7 @@ services:
       retries: 10
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # Zookeeper dependency for Kafka (legacy mode) or use KRaft
   zookeeper:
@@ -89,7 +89,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                   WORKFLOW & AUTHENTICATION                  ║
@@ -100,7 +100,7 @@ services:
     environment:
       DB: postgresql
       DB_PORT: "5432"
-      POSTGRES_USER: ngapp
+      POSTGRES_USER: insuretech
       POSTGRES_PWD: ${DB_PASSWORD:-staging_password}
       POSTGRES_SEEDS: postgres
       TEMPORAL_MAX_QPS: "1000"
@@ -116,7 +116,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   temporal-ui:
     image: temporalio/ui:2.19.1
@@ -129,7 +129,7 @@ services:
       temporal:
         condition: service_healthy
     networks:
-      - ngapp-net
+      - insuretech-net
 
   keycloak:
     image: quay.io/keycloak/keycloak:23.0
@@ -138,8 +138,8 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/ngapp_staging
-      KC_DB_USERNAME: ngapp
+      KC_DB_URL: jdbc:postgresql://postgres:5432/insuretech_staging
+      KC_DB_USERNAME: insuretech
       KC_DB_PASSWORD: ${DB_PASSWORD:-staging_password}
       KC_PROXY_HEADERS: xforwarded
     ports:
@@ -156,7 +156,7 @@ services:
       retries: 10
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                 SEARCH & ANALYTICS ENGINE                    ║
@@ -181,11 +181,11 @@ services:
       retries: 10
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   permify:
     image: permify/permify:latest
-    command: serve --port 3476 --postgres-url "postgresql://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging?sslmode=disable"
+    command: serve --port 3476 --postgres-url "postgresql://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging?sslmode=disable"
     ports:
       - "3476:3476"
     depends_on:
@@ -198,7 +198,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                    PAYMENT & LEDGER                          ║
@@ -218,7 +218,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                  API GATEWAY (APISIX)                        ║
@@ -242,7 +242,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                   MOJALOOP DFS                               ║
@@ -256,7 +256,7 @@ services:
     depends_on:
       - postgres
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ╔══════════════════════════════════════════════════════════════╗
   # ║                 CORE APPLICATION SERVICES                    ║
@@ -273,7 +273,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8090
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - TEMPORAL_ADDRESS=temporal:7233
@@ -294,7 +294,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   fraud-detection-go:
     build:
@@ -302,7 +302,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8102
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - OPENSEARCH_URL=http://opensearch:9200
@@ -322,7 +322,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   ussd-gateway:
     build:
@@ -330,7 +330,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8093
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -349,7 +349,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   enhanced-kyc-kyb:
     build:
@@ -357,7 +357,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8101
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - OPENSEARCH_URL=http://opensearch:9200
@@ -377,7 +377,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   enterprise-mdm:
     build:
@@ -385,7 +385,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8094
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -404,7 +404,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   disaster-recovery-module:
     build:
@@ -412,7 +412,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8091
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -431,7 +431,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   naicom-compliance-module:
     build:
@@ -439,7 +439,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8092
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -458,7 +458,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   notification-service:
     build:
@@ -466,7 +466,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8122
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - SMTP_HOST=smtp.gmail.com
@@ -487,7 +487,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   policy-workflow-go:
     build:
@@ -495,7 +495,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8106
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - TEMPORAL_ADDRESS=temporal:7233
@@ -517,7 +517,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   takaful-module:
     build:
@@ -525,7 +525,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8128
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -544,7 +544,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   premium-collection-service:
     build:
@@ -552,7 +552,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8135
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -571,7 +571,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   premium-finance-service:
     build:
@@ -579,7 +579,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8108
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -598,7 +598,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   reinsurance-service:
     build:
@@ -606,7 +606,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8109
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -625,7 +625,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   microinsurance-engine:
     build:
@@ -633,7 +633,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8105
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -652,7 +652,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   ndpr-compliance:
     build:
@@ -660,7 +660,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8120
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -679,7 +679,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   gamification-service:
     build:
@@ -687,7 +687,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8103
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -706,7 +706,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   agent-commission-management:
     build:
@@ -714,7 +714,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8098
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -733,7 +733,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ── Supporting Services ──
   api-marketplace:
@@ -742,7 +742,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8095
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -761,7 +761,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   communication-service:
     build:
@@ -769,7 +769,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8100
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -788,7 +788,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   reconciliation-engine:
     build:
@@ -796,7 +796,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8121
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -815,7 +815,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ── Additional Microservices ──
   instant-payout-service:
@@ -824,7 +824,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8104
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -843,7 +843,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   mobile-money-service:
     build:
@@ -851,7 +851,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8124
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -870,7 +870,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   multi-currency-service:
     build:
@@ -878,7 +878,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8118
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -897,7 +897,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   customer-360-service:
     build:
@@ -905,7 +905,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8113
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - OPENSEARCH_URL=http://opensearch:9200
@@ -927,7 +927,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   batch-processing-engine:
     build:
@@ -935,7 +935,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8112
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -954,7 +954,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   gdpr-compliance:
     build:
@@ -962,7 +962,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8116
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -981,7 +981,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   dr-ha-service:
     build:
@@ -989,7 +989,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8115
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1008,7 +1008,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   multi-tenant-platform:
     build:
@@ -1016,7 +1016,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8119
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1035,7 +1035,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   group-life-admin:
     build:
@@ -1043,7 +1043,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8117
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1062,7 +1062,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   blockchain-transparency:
     build:
@@ -1070,7 +1070,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8099
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1089,7 +1089,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   it-governance-itsm:
     build:
@@ -1097,7 +1097,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8096
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1116,7 +1116,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   agent-network-platform:
     build:
@@ -1124,7 +1124,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8097
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1143,7 +1143,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   usage-based-insurance:
     build:
@@ -1151,7 +1151,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8111
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1170,7 +1170,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   security-operations:
     build:
@@ -1178,7 +1178,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8130
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1197,7 +1197,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   zero-trust-network:
     build:
@@ -1205,7 +1205,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8131
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1224,7 +1224,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   risk-scoring-engine:
     build:
@@ -1232,7 +1232,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8142
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1251,7 +1251,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   actuarial-calculator:
     build:
@@ -1259,7 +1259,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8143
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
@@ -1278,7 +1278,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   ifrs17-engine:
     build:
@@ -1286,7 +1286,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8140
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - OPENSEARCH_URL=http://opensearch:9200
@@ -1308,7 +1308,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   mlops-governance:
     build:
@@ -1316,7 +1316,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8141
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - DATABASE_URL=postgres://insuretech:${DB_PASSWORD:-staging_password}@postgres:5432/insuretech_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
       - OPENSEARCH_URL=http://opensearch:9200
@@ -1338,7 +1338,7 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ── Monitoring Infrastructure ──
   prometheus:
@@ -1358,7 +1358,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - ngapp-net
+      - insuretech-net
 
   grafana:
     image: grafana/grafana:latest
@@ -1378,7 +1378,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - ngapp-net
+      - insuretech-net
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -1394,7 +1394,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - ngapp-net
+      - insuretech-net
 
   # ── Logging & Tracing ──
   otel-collector:
@@ -1414,7 +1414,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - ngapp-net
+      - insuretech-net
 
 volumes:
   pgdata:
@@ -1428,5 +1428,5 @@ volumes:
   grafanadata:
 
 networks:
-  ngapp-net:
+  insuretech-net:
     driver: bridge

@@ -9,7 +9,7 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.mojaloop")
+logger = logging.getLogger("insuretech.infra.mojaloop")
 
 KYC_TRANSFER_LIMITS = {0: 5000, 1: 50000, 2: 500000, 3: 10000000}
 
@@ -28,7 +28,7 @@ def payment_scoped_key(prefix: str, entity_id: str, amount: str, currency: str,
 
 
 class MojaloopClient:
-    def __init__(self, base_url: str, fsp_id: str = "ngapp-insurance"):
+    def __init__(self, base_url: str, fsp_id: str = "insuretech-insurance"):
         self._base_url = base_url
         self._fsp_id = fsp_id
         self._http = httpx.AsyncClient(timeout=15.0)

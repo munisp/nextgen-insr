@@ -16,11 +16,11 @@ export class PostgresClient {
 
   async query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
     // In production, use pg Pool. This provides the interface contract.
-    throw new Error('Use @ngapp/infra-sdk with pg Pool adapter');
+    throw new Error('Use @insuretech/infra-sdk with pg Pool adapter');
   }
 
   async execute(sql: string, params: unknown[] = []): Promise<void> {
-    throw new Error('Use @ngapp/infra-sdk with pg Pool adapter');
+    throw new Error('Use @insuretech/infra-sdk with pg Pool adapter');
   }
 
   async migrate(statements: string[]): Promise<void> {

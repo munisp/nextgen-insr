@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.dapr")
+logger = logging.getLogger("insuretech.infra.dapr")
 
 DAPR_STATE_STORE = "statestore"
 DAPR_PUBSUB = "pubsub"

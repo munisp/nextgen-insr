@@ -1,13 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Alertmanager Configuration — NGApp Platform
+# Alertmanager Configuration — InsureTech Platform
 # Covers all insurance microservices, middleware, and infrastructure
 # ─────────────────────────────────────────────────────────────────────────────
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: "smtp.ngapp.example.com:587"
-  smtp_from: "alerts@ngapp.example.com"
-  smtp_auth_username: "alerts@ngapp.example.com"
+  smtp_smarthost: "smtp.insuretech.example.com:587"
+  smtp_from: "alerts@insuretech.example.com"
+  smtp_auth_username: "alerts@insuretech.example.com"
   smtp_auth_password: "${SMTP_PASSWORD}"
   smtp_require_tls: true
 
@@ -88,10 +88,10 @@ receivers:
   - name: "slack-critical"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_CRITICAL}"
-        channel: "#ngapp-critical"
+        channel: "#insuretech-critical"
         send_resolved: true
         icon_emoji: ":rotating_light:"
-        username: "NGApp Alertmanager"
+        username: "InsureTech Alertmanager"
         title: '{{ template "slack.default.title" . }}'
         text: |
           {{ range .Alerts }}
@@ -107,10 +107,10 @@ receivers:
   - name: "slack-warning"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_WARNING}"
-        channel: "#ngapp-warnings"
+        channel: "#insuretech-warnings"
         send_resolved: true
         icon_emoji: ":warning:"
-        username: "NGApp Alertmanager"
+        username: "InsureTech Alertmanager"
         title: '{{ template "slack.default.title" . }}'
         text: |
           {{ range .Alerts }}
@@ -125,11 +125,11 @@ receivers:
   - name: "slack-fraud"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_FRAUD}"
-        channel: "#ngapp-fraud-alerts"
+        channel: "#insuretech-fraud-alerts"
         send_resolved: true
         icon_emoji: ":shield:"
-        username: "NGApp Fraud Monitor"
-        title: ":shield: Fraud Alert — NGApp Platform"
+        username: "InsureTech Fraud Monitor"
+        title: ":shield: Fraud Alert — InsureTech Platform"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
@@ -142,11 +142,11 @@ receivers:
   - name: "slack-compliance"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_COMPLIANCE}"
-        channel: "#ngapp-compliance"
+        channel: "#insuretech-compliance"
         send_resolved: true
         icon_emoji: ":closed_lock_with_key:"
-        username: "NGApp Compliance Monitor"
-        title: ":closed_lock_with_key: Compliance Alert — NGApp"
+        username: "InsureTech Compliance Monitor"
+        title: ":closed_lock_with_key: Compliance Alert — InsureTech"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
@@ -159,11 +159,11 @@ receivers:
   - name: "slack-finance"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_FINANCE}"
-        channel: "#ngapp-finance"
+        channel: "#insuretech-finance"
         send_resolved: true
         icon_emoji: ":moneybag:"
-        username: "NGApp Finance Monitor"
-        title: ":moneybag: Finance Alert — NGApp"
+        username: "InsureTech Finance Monitor"
+        title: ":moneybag: Finance Alert — InsureTech"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
@@ -176,11 +176,11 @@ receivers:
   - name: "slack-network"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_NETWORK}"
-        channel: "#ngapp-network"
+        channel: "#insuretech-network"
         send_resolved: true
         icon_emoji: ":signal_strength:"
-        username: "NGApp Network Monitor"
-        title: ":signal_strength: Network Alert — NGApp"
+        username: "InsureTech Network Monitor"
+        title: ":signal_strength: Network Alert — InsureTech"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
@@ -193,10 +193,10 @@ receivers:
   - name: "slack-info"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_INFO}"
-        channel: "#ngapp-alerts"
+        channel: "#insuretech-alerts"
         send_resolved: true
         icon_emoji: ":information_source:"
-        username: "NGApp Alertmanager"
+        username: "InsureTech Alertmanager"
         title: '{{ template "slack.default.title" . }}'
         text: '{{ template "slack.default.text" . }}'
 

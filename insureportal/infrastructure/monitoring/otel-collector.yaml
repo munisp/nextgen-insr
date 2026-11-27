@@ -1,11 +1,11 @@
-# OpenTelemetry Collector configuration for NGApp Platform
+# OpenTelemetry Collector configuration for InsureTech Platform
 # Deploys as DaemonSet to collect traces, metrics, and logs from all services
 
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otel-collector-config
-  namespace: ngapp
+  namespace: insuretech
 data:
   config.yaml: |
     receivers:
@@ -18,7 +18,7 @@ data:
       prometheus:
         config:
           scrape_configs:
-            - job_name: 'ngapp-services'
+            - job_name: 'insuretech-services'
               kubernetes_sd_configs:
                 - role: pod
               relabel_configs:
@@ -31,7 +31,7 @@ data:
                   regex: (.+)
       filelog:
         include:
-          - /var/log/pods/ngapp_*/*/*.log
+          - /var/log/pods/insuretech_*/*/*.log
         operators:
           - type: json_parser
             timestamp:
@@ -52,12 +52,12 @@ data:
             value: production
             action: upsert
           - key: platform
-            value: ngapp
+            value: insuretech
             action: upsert
       resource:
         attributes:
           - key: service.namespace
-            value: ngapp
+            value: insuretech
             action: upsert
 
     exporters:
@@ -67,12 +67,12 @@ data:
           insecure: true
       prometheus:
         endpoint: 0.0.0.0:8889
-        namespace: ngapp
+        namespace: insuretech
       opensearch:
         http:
           endpoint: http://opensearch:9200
-        logs_index: ngapp-logs
-        traces_index: ngapp-traces
+        logs_index: insuretech-logs
+        traces_index: insuretech-traces
 
     extensions:
       health_check:
@@ -100,7 +100,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: otel-collector
-  namespace: ngapp
+  namespace: insuretech
 spec:
   selector:
     matchLabels:
@@ -153,7 +153,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: otel-collector
-  namespace: ngapp
+  namespace: insuretech
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -178,13 +178,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: otel-collector
-    namespace: ngapp
+    namespace: insuretech
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: otel-collector
-  namespace: ngapp
+  namespace: insuretech
 spec:
   type: ClusterIP
   ports:

@@ -1,9 +1,9 @@
 {{- /*
-  pdb.yaml - PodDisruptionBudgets for all NGApp services
+  pdb.yaml - PodDisruptionBudgets for all InsureTech services
   Ensures minimum availability during voluntary disruptions (upgrades, scaling).
 */ -}}
 
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 
 {{- if .Values.podDisruptionBudget.enabled }}
 {{- range $name, $config := .Values.services }}
@@ -12,9 +12,9 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
 spec:
   {{- if $config.pdb.minAvailable }}
   minAvailable: {{ $config.pdb.minAvailable }}
@@ -26,7 +26,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
 {{- end }}
 
 {{- /* Frontend PDB */ -}}
@@ -36,14 +36,14 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ $fullName }}-frontend
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 spec:
   minAvailable: {{ .Values.frontend.pdbMinAvailable | default 1 }}
   selector:
     matchLabels:
-      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" "frontend") | nindent 6 }}
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" "frontend") | nindent 6 }}
 {{- end }}
 
 {{- /* APISIX PDB */ -}}
@@ -53,13 +53,13 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ $fullName }}-apisix
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" "apisix") | nindent 6 }}
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" "apisix") | nindent 6 }}
 {{- end }}
 {{- end }}

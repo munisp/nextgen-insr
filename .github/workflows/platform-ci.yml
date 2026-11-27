@@ -1,4 +1,4 @@
-name: NGApp Platform CI/CD
+name: InsureTech Platform CI/CD
 
 # LEGACY: superseded by ci.yml / security.yml / integration.yml assurance gates.
 # Red since before 2026-08-16 (pre-existing go vet / ruff / golangci-lint debt
@@ -63,9 +63,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: ngapp
+          POSTGRES_USER: insuretech
           POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: ngapp_test
+          POSTGRES_DB: insuretech_test
         ports:
           - 5432:5432
         options: >-
@@ -105,7 +105,7 @@ jobs:
       - name: go test
         working-directory: ${{ matrix.service }}
         env:
-          DATABASE_URL: postgres://ngapp:test_password@localhost:5432/ngapp_test?sslmode=disable
+          DATABASE_URL: postgres://insuretech:test_password@localhost:5432/insuretech_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
         run: go test -race -coverprofile=coverage.out -covermode=atomic -timeout=5m ./...
 

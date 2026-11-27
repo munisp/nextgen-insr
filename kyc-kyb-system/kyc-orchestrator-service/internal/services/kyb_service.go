@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/models"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/models"
 )
 
 type KYBService struct {

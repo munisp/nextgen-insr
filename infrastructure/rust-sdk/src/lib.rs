@@ -1,4 +1,4 @@
-//! NGApp Infrastructure SDK — unified async clients for all 12 platform components.
+//! InsureTech Infrastructure SDK — unified async clients for all 12 platform components.
 
 pub mod postgres;
 pub mod redis;

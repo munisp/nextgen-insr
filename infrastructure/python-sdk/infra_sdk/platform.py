@@ -20,12 +20,12 @@ from infra_sdk.opensearch_client import OpenSearchClient
 from infra_sdk.fluvio_client import FluvioClient
 from infra_sdk.dapr_client import DaprClient
 
-logger = logging.getLogger("ngapp.infra")
+logger = logging.getLogger("insuretech.infra")
 
 
 @dataclass
 class PlatformConfig:
-    postgres_url: str = "postgresql://localhost:5432/ngapp"
+    postgres_url: str = "postgresql://localhost:5432/insuretech"
     redis_addr: str = "localhost:6379"
     kafka_brokers: list[str] = field(default_factory=lambda: ["localhost:9092"])
     tigerbeetle_addr: str = "localhost:3000"
@@ -33,11 +33,11 @@ class PlatformConfig:
     apisix_admin_url: str = "http://localhost:9180"
     keycloak_realm_url: str = "http://localhost:8080/realms/insurance"
     keycloak_admin_url: str = "http://localhost:8080"
-    keycloak_client_id: str = "ngapp-platform"
+    keycloak_client_id: str = "insuretech-platform"
     keycloak_client_secret: str = ""
     openappsec_url: str = "http://localhost:8090"
     permify_url: str = "http://localhost:3476"
-    permify_tenant_id: str = "ngapp"
+    permify_tenant_id: str = "insuretech"
     opensearch_url: str = "http://localhost:9200"
     fluvio_endpoint: str = "localhost:9003"
     dapr_http_port: int = 3500

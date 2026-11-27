@@ -16,10 +16,10 @@ class PostgresClient {
     }
     async query(sql, params = []) {
         // In production, use pg Pool. This provides the interface contract.
-        throw new Error('Use @ngapp/infra-sdk with pg Pool adapter');
+        throw new Error('Use @insuretech/infra-sdk with pg Pool adapter');
     }
     async execute(sql, params = []) {
-        throw new Error('Use @ngapp/infra-sdk with pg Pool adapter');
+        throw new Error('Use @insuretech/infra-sdk with pg Pool adapter');
     }
     async migrate(statements) {
         for (const stmt of statements) {

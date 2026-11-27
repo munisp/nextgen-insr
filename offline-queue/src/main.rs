@@ -2,7 +2,7 @@ use std::env;
 
 fn database_url() -> String {
     env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://ngapp:ngapp@localhost:5432/ngapp".to_string())
+        .unwrap_or_else(|_| "postgresql://insuretech:insuretech@localhost:5432/insuretech".to_string())
 }
 
 /*

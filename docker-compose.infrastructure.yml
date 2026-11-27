@@ -1,6 +1,6 @@
 version: '3.9'
 
-# NGApp Platform Infrastructure Stack
+# InsureTech Platform Infrastructure Stack
 # Usage: docker compose -f docker-compose.infrastructure.yml up -d
 
 services:
@@ -8,15 +8,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ngapp
-      POSTGRES_PASSWORD: ngapp_dev_2026
-      POSTGRES_DB: ngapp
+      POSTGRES_USER: insuretech
+      POSTGRES_PASSWORD: insuretech_dev_2026
+      POSTGRES_DB: insuretech
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      test: ["CMD-SHELL", "pg_isready -U insuretech"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,9 +72,9 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
-      KC_DB_URL_DATABASE: ngapp
-      KC_DB_USERNAME: ngapp
-      KC_DB_PASSWORD: ngapp_dev_2026
+      KC_DB_URL_DATABASE: insuretech
+      KC_DB_USERNAME: insuretech
+      KC_DB_PASSWORD: insuretech_dev_2026
     ports:
       - "8080:8080"
     volumes:
@@ -122,8 +122,8 @@ services:
     environment:
       - DB=postgresql
       - DB_PORT=5432
-      - POSTGRES_USER=ngapp
-      - POSTGRES_PWD=ngapp_dev_2026
+      - POSTGRES_USER=insuretech
+      - POSTGRES_PWD=insuretech_dev_2026
       - POSTGRES_SEEDS=postgres
     ports:
       - "7233:7233"

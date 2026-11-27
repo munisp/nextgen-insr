@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/munisp/NGApp/gdpr-compliance/internal/handlers"
-	"github.com/munisp/NGApp/gdpr-compliance/internal/repository"
-	"github.com/munisp/NGApp/gdpr-compliance/internal/service"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/handlers"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/repository"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/service"
 
 	"database/sql"
 
@@ -27,7 +27,7 @@ var db *sql.DB
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dsn = "postgresql://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	db, err = sql.Open("postgres", dsn)

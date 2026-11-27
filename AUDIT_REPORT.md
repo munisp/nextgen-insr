@@ -33,8 +33,8 @@
 
 **Exposed credentials**:
 ```
-DATABASE_URL=postgres://ubuntu:ubuntu@localhost:5432/ngapp
-POSTGRES_URL=postgres://ubuntu:ubuntu@localhost:5432/ngapp
+DATABASE_URL=postgres://ubuntu:ubuntu@localhost:5432/insuretech
+POSTGRES_URL=postgres://ubuntu:ubuntu@localhost:5432/insuretech
 JWT_SECRET=dev-secret-key-for-local-testing-only
 KEYCLOAK_CLIENT_SECRET=dev-secret
 DEV_AUTH_BYPASS=true
@@ -161,7 +161,7 @@ Any UI change can silently break the entire application.
 
 | File | Claims | Reality |
 |------|--------|---------|
-| `README.md` | NGApp (Nigerian Insurance Platform) | Matches |
+| `README.md` | InsureTech (Nigerian Insurance Platform) | Matches |
 | `ARCHITECTURE.md` | InsurePortal Insurance Platform | Mismatch |
 | `package.json` | InsurePortal Insurance POS | Mismatch |
 

@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/munisp/ngapp/services/fraud-detection/internal/scoring"
-	"github.com/munisp/ngapp/services/fraud-detection/internal/store"
+	"github.com/munisp/insuretech/services/fraud-detection/internal/scoring"
+	"github.com/munisp/insuretech/services/fraud-detection/internal/store"
 )
 
 type Handler struct {

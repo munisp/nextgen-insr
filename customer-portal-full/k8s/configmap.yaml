@@ -8,7 +8,7 @@ data:
   PORT: "5002"
   PGHOST: "postgres-primary.insureportal.svc.cluster.local"
   PGPORT: "5432"
-  PGDATABASE: "ngapp"
+  PGDATABASE: "insuretech"
   REDIS_HOST: "redis.insureportal.svc.cluster.local"
   REDIS_PORT: "6379"
   CORS_ORIGINS: "https://insureportal.ng,https://www.insureportal.ng"

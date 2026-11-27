@@ -83,7 +83,7 @@ export class ChatEngine {
             faqMatch.answer +=
               `\n\nCurrent ${productType} products from our live catalog: ` +
               names.join(", ") +
-              ". See the NGApp app for exact prices and coverage.";
+              ". See the InsureTech app for exact prices and coverage.";
           }
         } catch (err) {
           // Loud log, honest reply — nothing fabricated.
@@ -131,13 +131,13 @@ export class ChatEngine {
 
   private getGreeting(lang: SupportedLanguage): string {
     const greetings: Record<SupportedLanguage, string> = {
-      en: "Hello! I'm your NGApp insurance assistant. How can I help you today?",
-      ha: "Sannu! Ni ne mataimakin inshorar NGApp. Yaya zan taimaka muku yau?",
-      yo: "Pele o! Mo je iranlowo iṣeduro NGApp rẹ. Bawo ni mo ṣe le ran ọ lọwọ loni?",
-      ig: "Ndewo! Abu m onye enyemaka mkpuchi NGApp gi. Kedu ka m ga-esi nyere gi aka taa?",
-      pcm: "How far! I be your NGApp insurance helper. Wetin I fit help you with today?",
-      fr: "Bonjour! Je suis votre assistant assurance NGApp. Comment puis-je vous aider?",
-      ar: "مرحبا! أنا مساعد التأمين NGApp الخاص بك. كيف يمكنني مساعدتك اليوم؟",
+      en: "Hello! I'm your InsureTech insurance assistant. How can I help you today?",
+      ha: "Sannu! Ni ne mataimakin inshorar InsureTech. Yaya zan taimaka muku yau?",
+      yo: "Pele o! Mo je iranlowo iṣeduro InsureTech rẹ. Bawo ni mo ṣe le ran ọ lọwọ loni?",
+      ig: "Ndewo! Abu m onye enyemaka mkpuchi InsureTech gi. Kedu ka m ga-esi nyere gi aka taa?",
+      pcm: "How far! I be your InsureTech insurance helper. Wetin I fit help you with today?",
+      fr: "Bonjour! Je suis votre assistant assurance InsureTech. Comment puis-je vous aider?",
+      ar: "مرحبا! أنا مساعد التأمين InsureTech الخاص بك. كيف يمكنني مساعدتك اليوم؟",
     };
     return greetings[lang] || greetings.en;
   }

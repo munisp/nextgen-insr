@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/gdpr-compliance
+module github.com/munisp/insuretech/gdpr-compliance
 
 go 1.22.0
 

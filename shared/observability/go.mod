@@ -1,4 +1,4 @@
-module github.com/ngapp/shared/observability
+module github.com/insuretech/shared/observability
 
 go 1.22
 

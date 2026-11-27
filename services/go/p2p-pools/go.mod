@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/p2p-pools
+module github.com/munisp/insuretech/services/p2p-pools
 
 go 1.22
 

@@ -8,12 +8,12 @@ set -euo pipefail
 BACKUP_DIR="${BACKUP_DIR:-/backups/insureportal}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/ngapp_${TIMESTAMP}.sql.gz"
+BACKUP_FILE="${BACKUP_DIR}/insuretech_${TIMESTAMP}.sql.gz"
 
 PGHOST="${PGHOST:-localhost}"
 PGPORT="${PGPORT:-5432}"
-PGDATABASE="${PGDATABASE:-ngapp}"
-PGUSER="${PGUSER:-ngapp}"
+PGDATABASE="${PGDATABASE:-insuretech}"
+PGUSER="${PGUSER:-insuretech}"
 
 mkdir -p "${BACKUP_DIR}"
 
@@ -46,8 +46,8 @@ echo "[$(date)] Backup complete: ${BACKUP_FILE} (${BACKUP_SIZE})"
 
 # Rotate old backups
 echo "[$(date)] Removing backups older than ${RETENTION_DAYS} days"
-find "${BACKUP_DIR}" -name "ngapp_*.sql*" -mtime +${RETENTION_DAYS} -delete -print
-REMAINING=$(ls -1 "${BACKUP_DIR}"/ngapp_*.sql* 2>/dev/null | wc -l)
+find "${BACKUP_DIR}" -name "insuretech_*.sql*" -mtime +${RETENTION_DAYS} -delete -print
+REMAINING=$(ls -1 "${BACKUP_DIR}"/insuretech_*.sql* 2>/dev/null | wc -l)
 echo "[$(date)] ${REMAINING} backup(s) remaining after rotation"
 
 # WAL archiving hint

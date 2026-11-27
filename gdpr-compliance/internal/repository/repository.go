@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/munisp/NGApp/gdpr-compliance/internal/models"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/models"
 	"gorm.io/gorm"
 )
 

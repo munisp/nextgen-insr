@@ -9,7 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"github.com/munisp/NGApp/kyc-kyb-system/kyc-orchestrator-service/internal/models"
+	"github.com/munisp/insuretech/kyc-kyb-system/kyc-orchestrator-service/internal/models"
 )
 
 type RedisCache struct {

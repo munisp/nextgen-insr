@@ -86,4 +86,4 @@ export function parseInbound(text: string): InboundCommand {
 }
 
 export const HELP_TEXT =
-  "NGApp Insurance SMS commands: BALANCE - check balance; STATUS <ref> - transaction status; STOP - opt out; HELP - this message. Funds cannot be moved by SMS; dial *384*100# for transactions.";
+  "InsureTech Insurance SMS commands: BALANCE - check balance; STATUS <ref> - transaction status; STOP - opt out; HELP - this message. Funds cannot be moved by SMS; dial *384*100# for transactions.";

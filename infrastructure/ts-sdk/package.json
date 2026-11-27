@@ -1,7 +1,7 @@
 {
-  "name": "@ngapp/infra-sdk",
+  "name": "@insuretech/infra-sdk",
   "version": "1.0.0",
-  "description": "NGApp Infrastructure SDK — unified clients for all 12 platform components",
+  "description": "InsureTech Infrastructure SDK — unified clients for all 12 platform components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

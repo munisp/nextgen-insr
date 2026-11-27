@@ -66,7 +66,7 @@ def create_continuous_training_app(
     """Create the continuous training management API."""
     config = pipeline_config or PipelineConfig()
     app = FastAPI(
-        title="NGApp Continuous Training API",
+        title="InsureTech Continuous Training API",
         description="Manage model retraining, drift detection, versioning, and scheduling",
         version="1.0.0",
     )

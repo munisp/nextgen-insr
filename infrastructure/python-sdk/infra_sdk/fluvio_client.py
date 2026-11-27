@@ -7,7 +7,7 @@ import time
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.fluvio")
+logger = logging.getLogger("insuretech.infra.fluvio")
 
 FLUVIO_TOPICS = [
     "kyc-verification-events", "kyc-gate-events", "kyc-risk-alerts",

@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/infrastructure/docker/cmd/financial
+module github.com/munisp/insuretech/infrastructure/docker/cmd/financial
 
 go 1.22.4
 

@@ -8,7 +8,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/munisp/ngapp/services/fraud-detection/internal/store"
+	"github.com/munisp/insuretech/services/fraud-detection/internal/store"
 )
 
 // FraudScore represents the fraud assessment result for a claim

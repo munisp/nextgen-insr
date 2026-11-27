@@ -5,16 +5,16 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ngapp
-      POSTGRES_USER: ${PGUSER:-ngapp}
-      POSTGRES_PASSWORD: ${PGPASSWORD:-ngapp}
+      POSTGRES_DB: insuretech
+      POSTGRES_USER: ${PGUSER:-insuretech}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-insuretech}
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ../seed-all-tables.sql:/docker-entrypoint-initdb.d/01-seed.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      test: ["CMD-SHELL", "pg_isready -U insuretech"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -114,9 +114,9 @@ services:
     command: start-dev --import-realm
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/ngapp
-      KC_DB_USERNAME: ${PGUSER:-ngapp}
-      KC_DB_PASSWORD: ${PGPASSWORD:-ngapp}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/insuretech
+      KC_DB_USERNAME: ${PGUSER:-insuretech}
+      KC_DB_PASSWORD: ${PGPASSWORD:-insuretech}
       KC_DB_SCHEMA: keycloak
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -152,9 +152,9 @@ services:
     environment:
       - PGHOST=postgres
       - PGPORT=5432
-      - PGDATABASE=ngapp
-      - PGUSER=${PGUSER:-ngapp}
-      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - PGDATABASE=insuretech
+      - PGUSER=${PGUSER:-insuretech}
+      - PGPASSWORD=${PGPASSWORD:-insuretech}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OPENSEARCH_URL=http://opensearch:9200
@@ -180,9 +180,9 @@ services:
     environment:
       - PGHOST=postgres
       - PGPORT=5432
-      - PGDATABASE=ngapp
-      - PGUSER=${PGUSER:-ngapp}
-      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - PGDATABASE=insuretech
+      - PGUSER=${PGUSER:-insuretech}
+      - PGPASSWORD=${PGPASSWORD:-insuretech}
       - JWT_SECRET=${JWT_SECRET}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -200,9 +200,9 @@ services:
     environment:
       - PGHOST=postgres
       - PGPORT=5432
-      - PGDATABASE=ngapp
-      - PGUSER=${PGUSER:-ngapp}
-      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - PGDATABASE=insuretech
+      - PGUSER=${PGUSER:-insuretech}
+      - PGPASSWORD=${PGPASSWORD:-insuretech}
       - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY}
       - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY}
     depends_on:
@@ -217,9 +217,9 @@ services:
     environment:
       - PGHOST=postgres
       - PGPORT=5432
-      - PGDATABASE=ngapp
-      - PGUSER=${PGUSER:-ngapp}
-      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - PGDATABASE=insuretech
+      - PGUSER=${PGUSER:-insuretech}
+      - PGPASSWORD=${PGPASSWORD:-insuretech}
     depends_on:
       postgres:
         condition: service_healthy

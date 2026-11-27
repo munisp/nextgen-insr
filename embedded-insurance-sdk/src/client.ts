@@ -10,7 +10,7 @@ import {
   PaymentRequest,
 } from "./types";
 
-export class NGAppInsurance {
+export class InsureTechInsurance {
   private http: AxiosInstance;
   private config: EmbeddedConfig;
 
@@ -19,8 +19,8 @@ export class NGAppInsurance {
     const baseUrl =
       config.baseUrl ||
       (config.environment === "production"
-        ? "https://api.ngapp.ng/v1"
-        : "https://sandbox.ngapp.ng/v1");
+        ? "https://api.insuretech.ng/v1"
+        : "https://sandbox.insuretech.ng/v1");
 
     this.http = axios.create({
       baseURL: baseUrl,

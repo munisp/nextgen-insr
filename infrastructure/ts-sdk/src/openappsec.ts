@@ -23,7 +23,7 @@ export class OpenAppSecClient {
 
   async applyPlatformPolicy(): Promise<void> {
     await this.applyPolicy({
-      name: 'ngapp-insurance-waf', mode: 'prevent',
+      name: 'insuretech-insurance-waf', mode: 'prevent',
       rules: [
         { name: 'block-sqli', type: 'sql-injection', action: 'block', severity: 'critical' },
         { name: 'block-xss', type: 'cross-site-scripting', action: 'block', severity: 'high' },

@@ -6,7 +6,7 @@ import logging
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.permify")
+logger = logging.getLogger("insuretech.infra.permify")
 
 PLATFORM_SCHEMA = """entity user {}
 
@@ -77,7 +77,7 @@ entity document {
 
 
 class PermifyClient:
-    def __init__(self, base_url: str, tenant_id: str = "ngapp"):
+    def __init__(self, base_url: str, tenant_id: str = "insuretech"):
         self._base_url = base_url
         self._tenant_id = tenant_id
         self._http = httpx.AsyncClient(timeout=5.0)

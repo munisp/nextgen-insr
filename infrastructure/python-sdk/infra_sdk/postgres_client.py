@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import asyncpg
 
-logger = logging.getLogger("ngapp.infra.postgres")
+logger = logging.getLogger("insuretech.infra.postgres")
 
 PLATFORM_MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS policies (

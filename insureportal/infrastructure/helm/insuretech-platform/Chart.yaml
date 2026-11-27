@@ -1,6 +1,6 @@
 apiVersion: v2
-name: ngapp-platform
-description: NGApp Insurance Platform - Complete Helm chart for all microservices
+name: insuretech-platform
+description: InsureTech Insurance Platform - Complete Helm chart for all microservices
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -10,7 +10,7 @@ keywords:
   - nigerian-insurance
   - naicom
 maintainers:
-  - name: NGApp Team
+  - name: InsureTech Team
 dependencies:
   - name: postgresql
     version: "15.x"

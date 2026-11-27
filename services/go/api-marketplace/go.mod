@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/api-marketplace
+module github.com/munisp/insuretech/services/api-marketplace
 
 go 1.22
 

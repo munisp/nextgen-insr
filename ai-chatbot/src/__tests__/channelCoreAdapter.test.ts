@@ -180,7 +180,7 @@ describe("W8-B4 honest reply templates (no invented contacts)", () => {
       supportContactLine(replyConfig({ SUPPORT_PHONE: "+234-1-REAL" } as NodeJS.ProcessEnv))
     ).toContain("+234-1-REAL");
     const line = supportContactLine(replyConfig({} as NodeJS.ProcessEnv));
-    expect(line).toContain("NGApp app");
+    expect(line).toContain("InsureTech app");
     expect(line).not.toMatch(/\+234/); // never the old fabricated number
   });
 

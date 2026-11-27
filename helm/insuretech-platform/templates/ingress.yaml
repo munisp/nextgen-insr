@@ -1,17 +1,17 @@
 {{- /*
-  ingress.yaml - API Ingress for NGApp platform
+  ingress.yaml - API Ingress for InsureTech platform
   Routes all microservice traffic through a single ingress with TLS.
 */ -}}
 
 {{- if .Values.apiIngress.enabled -}}
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}-api
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
   annotations:
     {{- with .Values.apiIngress.annotations }}
     {{- toYaml . | nindent 4 }}
@@ -47,14 +47,14 @@ spec:
 ---
 {{- /* Frontend Ingress */ -}}
 {{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled -}}
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}-frontend
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
   annotations:
     {{- with .Values.frontend.ingress.annotations }}
     {{- toYaml . | nindent 4 }}

@@ -1,4 +1,4 @@
-module github.com/munisp/ngapp/services/fraud-detection
+module github.com/munisp/insuretech/services/fraud-detection
 
 go 1.22
 

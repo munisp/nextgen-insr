@@ -18,7 +18,7 @@ resources:
     memory: 256Mi
 
 env:
-  DATABASE_URL: postgres://ngapp:ngapp@postgres:5432/ngapp?sslmode=disable
+  DATABASE_URL: postgres://insuretech:insuretech@postgres:5432/insuretech?sslmode=disable
   KAFKA_REST_URL: http://kafka-rest:8082
 
 livenessProbe:

@@ -1,9 +1,9 @@
 {{- /*
-  hpa.yaml - HorizontalPodAutoscalers for all NGApp services
+  hpa.yaml - HorizontalPodAutoscalers for all InsureTech services
   Auto-scales based on CPU and memory utilization.
 */ -}}
 
-{{- $fullName := include "ngapp.fullname" . -}}
+{{- $fullName := include "insuretech.fullname" . -}}
 
 {{- range $name, $config := .Values.services }}
 {{- $defaults := $.Values.serviceDefaults }}
@@ -13,9 +13,9 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -50,9 +50,9 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ $fullName }}-frontend
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -76,9 +76,9 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ $fullName }}-apisix
-  namespace: {{ include "ngapp.namespace" . }}
+  namespace: {{ include "insuretech.namespace" . }}
   labels:
-    {{- include "ngapp.labels" . | nindent 4 }}
+    {{- include "insuretech.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

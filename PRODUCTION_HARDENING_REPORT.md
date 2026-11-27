@@ -1,4 +1,4 @@
-# Production Hardening Report — NGApp Nigerian Insurance Platform
+# Production Hardening Report — InsureTech Nigerian Insurance Platform
 
 **Date:** 2026-07-04  
 **Repository:** `munisp/nextgen-insr`  
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The NGApp codebase underwent comprehensive production hardening across **all major service categories**. The codebase was transformed from a repository with numerous stub implementations, incomplete infrastructure, and silent failure patterns into a **fully production-grade system** with:
+The InsureTech codebase underwent comprehensive production hardening across **all major service categories**. The codebase was transformed from a repository with numerous stub implementations, incomplete infrastructure, and silent failure patterns into a **fully production-grade system** with:
 
 | Metric | Before | After |
 |--------|--------|-------|
@@ -438,7 +438,7 @@ def test_content_types(): ...
 
 ## Conclusion
 
-The NGApp Nigerian Insurance Platform has been systematically hardened across all service layers:
+The InsureTech Nigerian Insurance Platform has been systematically hardened across all service layers:
 
 - ✅ **Go microservices**: 4 stub services → 4 production-grade services (~6,300 lines)
 - ✅ **TypeScript/tRPC**: Silent NoopDB → production-aware DatabaseError with fail-fast

@@ -1,4 +1,4 @@
-# NGApp Platform - Production Values
+# InsureTech Platform - Production Values
 # Override per environment: values-staging.yaml, values-production.yaml
 
 global:
@@ -6,22 +6,22 @@ global:
   imagePullSecrets: []
   storageClass: ""
   environment: production
-  domain: ngapp.example.com
+  domain: insuretech.example.com
   tls:
     enabled: true
     issuer: letsencrypt-prod
   # Common labels applied to all resources
   commonLabels:
-    app.kubernetes.io/platform: ngapp
+    app.kubernetes.io/platform: insuretech
     app.kubernetes.io/version: "{{ .Chart.AppVersion }}"
 
 # Middleware dependencies
 postgresql:
   enabled: true
   auth:
-    database: ngapp
-    username: ngapp
-    existingSecret: ngapp-db-credentials
+    database: insuretech
+    username: insuretech
+    existingSecret: insuretech-db-credentials
   primary:
     persistence:
       size: 50Gi
@@ -36,7 +36,7 @@ postgresql:
 redis:
   enabled: true
   auth:
-    existingSecret: ngapp-redis-credentials
+    existingSecret: insuretech-redis-credentials
   master:
     persistence:
       size: 10Gi
@@ -66,7 +66,7 @@ keycloak:
   enabled: true
   auth:
     adminUser: admin
-    existingSecret: ngapp-keycloak-credentials
+    existingSecret: insuretech-keycloak-credentials
   postgresql:
     enabled: false
   externalDatabase:
@@ -458,7 +458,7 @@ frontend:
   enabled: true
   replicaCount: 3
   image:
-    repository: ngapp/customer-portal
+    repository: insuretech/customer-portal
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -472,14 +472,14 @@ frontend:
       nginx.ingress.kubernetes.io/rate-limit: "100"
       nginx.ingress.kubernetes.io/rate-limit-window: "1m"
     hosts:
-      - host: portal.ngapp.example.com
+      - host: portal.insuretech.example.com
         paths:
           - path: /
             pathType: Prefix
     tls:
-      - secretName: ngapp-portal-tls
+      - secretName: insuretech-portal-tls
         hosts:
-          - portal.ngapp.example.com
+          - portal.insuretech.example.com
   resources:
     requests:
       memory: 128Mi
@@ -522,7 +522,7 @@ apiIngress:
       more_set_headers "X-Content-Type-Options: nosniff";
       more_set_headers "X-XSS-Protection: 1; mode=block";
   hosts:
-    - host: api.ngapp.example.com
+    - host: api.insuretech.example.com
       paths:
         # Core insurance services
         - path: /api/claims
@@ -602,15 +602,15 @@ apiIngress:
           service: mobile-money-service
           port: 8124
   tls:
-    - secretName: ngapp-api-tls
+    - secretName: insuretech-api-tls
       hosts:
-        - api.ngapp.example.com
+        - api.insuretech.example.com
 
 # Common configmap data for environment-wide settings
 commonConfig:
   LOG_LEVEL: "info"
   OTEL_ENABLED: "true"
-  OTEL_SERVICE_NAME: "ngapp-platform"
+  OTEL_SERVICE_NAME: "insuretech-platform"
   TRACING_ENABLED: "true"
 
 # Common secret references

@@ -40,7 +40,7 @@ from lakehouse.storage.object_store import create_store, StorageConfig
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="NGApp Lakehouse Feature Store API",
+    title="InsureTech Lakehouse Feature Store API",
     description="Production-grade feature store with Delta Lake, streaming ingestion, and online serving",
     version="1.0.0",
 )

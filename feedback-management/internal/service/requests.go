@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/munisp/NGApp/feedback-management/internal/models"
+	"github.com/munisp/insuretech/feedback-management/internal/models"
 
 	"github.com/google/uuid"
 )

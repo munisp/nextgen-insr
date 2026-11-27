@@ -49,7 +49,7 @@ app.add_middleware(
 PORT = int(os.getenv("PORT", "8101"))
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/6")
-POSTGRES_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+POSTGRES_URL = os.getenv("DATABASE_URL", "postgresql://insuretech:insuretech@localhost:5432/insuretech")
 TEMPORAL_URL = os.getenv("TEMPORAL_URL", "http://localhost:7233")
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
 PERMIFY_URL = os.getenv("PERMIFY_URL", "http://localhost:3476")

@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- NGApp Platform — PostgreSQL Initialisation (all microservices)
+-- InsureTech Platform — PostgreSQL Initialisation (all microservices)
 -- Runs on first container start (docker-entrypoint-initdb.d)
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 
 -- Create application schemas for microservices
-CREATE SCHEMA IF NOT EXISTS ngapp_core;       -- Core platform entities
+CREATE SCHEMA IF NOT EXISTS insuretech_core;       -- Core platform entities
 CREATE SCHEMA IF NOT EXISTS claims;           -- Claims adjudication
 CREATE SCHEMA IF NOT EXISTS fraud;            -- Fraud detection
 CREATE SCHEMA IF NOT EXISTS kyc;              -- KYC/KYB verification
@@ -23,28 +23,28 @@ CREATE SCHEMA IF NOT EXISTS temporal;         -- Temporal workflow state
 -- Grant privileges
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ngapp') THEN
-        CREATE ROLE ngapp WITH LOGIN PASSWORD 'CHANGE_ME_IN_PRODUCTION';
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'insuretech') THEN
+        CREATE ROLE insuretech WITH LOGIN PASSWORD 'CHANGE_ME_IN_PRODUCTION';
     END IF;
 END $$;
 
-GRANT CONNECT ON DATABASE "ngapp_staging" TO ngapp;
-GRANT USAGE ON SCHEMA ngapp_core TO ngapp;
-GRANT USAGE ON SCHEMA claims TO ngapp;
-GRANT USAGE ON SCHEMA fraud TO ngapp;
-GRANT USAGE ON SCHEMA kyc TO ngapp;
-GRANT USAGE ON SCHEMA policies TO ngapp;
-GRANT USAGE ON SCHEMA payments TO ngapp;
-GRANT USAGE ON SCHEMA notifications TO ngapp;
-GRANT USAGE ON SCHEMA audit TO ngapp;
-GRANT USAGE ON SCHEMA temporal TO ngapp;
-GRANT CREATE ON SCHEMA ngapp_core TO ngapp;
-GRANT CREATE ON SCHEMA claims TO ngapp;
-GRANT CREATE ON SCHEMA fraud TO ngapp;
-GRANT CREATE ON SCHEMA kyc TO ngapp;
-GRANT CREATE ON SCHEMA policies TO ngapp;
-GRANT CREATE ON SCHEMA payments TO ngapp;
-GRANT CREATE ON SCHEMA notifications TO ngapp;
+GRANT CONNECT ON DATABASE "insuretech_staging" TO insuretech;
+GRANT USAGE ON SCHEMA insuretech_core TO insuretech;
+GRANT USAGE ON SCHEMA claims TO insuretech;
+GRANT USAGE ON SCHEMA fraud TO insuretech;
+GRANT USAGE ON SCHEMA kyc TO insuretech;
+GRANT USAGE ON SCHEMA policies TO insuretech;
+GRANT USAGE ON SCHEMA payments TO insuretech;
+GRANT USAGE ON SCHEMA notifications TO insuretech;
+GRANT USAGE ON SCHEMA audit TO insuretech;
+GRANT USAGE ON SCHEMA temporal TO insuretech;
+GRANT CREATE ON SCHEMA insuretech_core TO insuretech;
+GRANT CREATE ON SCHEMA claims TO insuretech;
+GRANT CREATE ON SCHEMA fraud TO insuretech;
+GRANT CREATE ON SCHEMA kyc TO insuretech;
+GRANT CREATE ON SCHEMA policies TO insuretech;
+GRANT CREATE ON SCHEMA payments TO insuretech;
+GRANT CREATE ON SCHEMA notifications TO insuretech;
 
 -- Performance settings
 ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';

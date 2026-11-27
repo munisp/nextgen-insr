@@ -895,7 +895,7 @@ var legacyDB *sql.DB
 func initDB() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		dbURL = "postgres://insuretech:insuretech@localhost:5432/insuretech?sslmode=disable"
 	}
 	var err error
 	legacyDB, err = sql.Open("postgres", dbURL)

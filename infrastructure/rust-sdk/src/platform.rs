@@ -29,18 +29,18 @@ pub struct PlatformConfig {
 impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
-            postgres_url: "postgresql://localhost:5432/ngapp".into(),
+            postgres_url: "postgresql://localhost:5432/insuretech".into(),
             redis_addr: "localhost:6379".into(),
             kafka_brokers: vec!["localhost:9092".into()],
             tigerbeetle_addr: "localhost:3000".into(),
             mojaloop_url: "http://localhost:4000".into(),
             apisix_admin_url: "http://localhost:9180".into(),
             keycloak_realm_url: "http://localhost:8080/realms/insurance".into(),
-            keycloak_client_id: "ngapp-platform".into(),
+            keycloak_client_id: "insuretech-platform".into(),
             keycloak_client_secret: String::new(),
             openappsec_url: "http://localhost:8090".into(),
             permify_url: "http://localhost:3476".into(),
-            permify_tenant_id: "ngapp".into(),
+            permify_tenant_id: "insuretech".into(),
             opensearch_url: "http://localhost:9200".into(),
             fluvio_endpoint: "localhost:9003".into(),
             dapr_http_port: 3500,

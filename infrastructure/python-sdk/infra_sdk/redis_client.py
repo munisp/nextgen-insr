@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
-logger = logging.getLogger("ngapp.infra.redis")
+logger = logging.getLogger("insuretech.infra.redis")
 
 # Lua script for atomic rate limiting (no INCR/EXPIRE race condition)
 RATE_LIMIT_LUA = """

@@ -1,4 +1,4 @@
-export { NGAppInsurance } from "./client";
+export { InsureTechInsurance } from "./client";
 export { QuoteWidget } from "./widgets/quote";
 export { CheckoutFlow } from "./widgets/checkout";
 export {

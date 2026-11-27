@@ -1,7 +1,7 @@
 """
 Platform Data Ingestion Engine
 
-Pulls real data from the NGApp platform services for model retraining:
+Pulls real data from the InsureTech platform services for model retraining:
 - PostgreSQL (claims, policies, customers)
 - Kafka/Fluvio event streams
 - REST API endpoints (KYC, fraud alerts)
@@ -28,8 +28,8 @@ class IngestionConfig:
     # PostgreSQL
     pg_host: str = "localhost"
     pg_port: int = 5432
-    pg_database: str = "ngapp"
-    pg_user: str = "ngapp"
+    pg_database: str = "insuretech"
+    pg_user: str = "insuretech"
     pg_password: str = ""
 
     # Kafka / Event Streams
@@ -75,7 +75,7 @@ class IngestionResult:
 
 
 class PlatformDataIngester:
-    """Ingests data from the NGApp platform for continuous training."""
+    """Ingests data from the InsureTech platform for continuous training."""
 
     def __init__(self, config: IngestionConfig | None = None) -> None:
         self.config = config or IngestionConfig()

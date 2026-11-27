@@ -1,1 +1,1 @@
-"""PyTorch model definitions for the NGApp AI/ML platform."""
+"""PyTorch model definitions for the InsureTech AI/ML platform."""

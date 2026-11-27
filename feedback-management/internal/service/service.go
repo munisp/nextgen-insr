@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/munisp/NGApp/feedback-management/internal/models"
-	"github.com/munisp/NGApp/feedback-management/internal/repository"
+	"github.com/munisp/insuretech/feedback-management/internal/models"
+	"github.com/munisp/insuretech/feedback-management/internal/repository"
 	"math"
 	"strings"
 	"time"

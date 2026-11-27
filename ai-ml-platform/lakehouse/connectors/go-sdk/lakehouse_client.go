@@ -1,5 +1,5 @@
 // Package lakehouse provides a Go SDK for microservices to emit events
-// into the NGApp Lakehouse Feature Store pipeline.
+// into the InsureTech Lakehouse Feature Store pipeline.
 //
 // Usage:
 //

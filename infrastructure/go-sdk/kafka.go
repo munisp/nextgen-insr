@@ -89,7 +89,7 @@ func (c *KafkaClient) Publish(ctx context.Context, topic string, key string, pay
 		Value:     sarama.ByteEncoder(data),
 		Timestamp: time.Now(),
 		Headers: []sarama.RecordHeader{
-			{Key: []byte("source"), Value: []byte("ngapp-platform")},
+			{Key: []byte("source"), Value: []byte("insuretech-platform")},
 			{Key: []byte("version"), Value: []byte("1.0")},
 		},
 	}

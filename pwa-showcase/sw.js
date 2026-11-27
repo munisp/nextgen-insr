@@ -1,5 +1,5 @@
-const CACHE_NAME = 'ngapp-showcase-v2';
-const API_CACHE = 'ngapp-api-v1';
+const CACHE_NAME = 'insuretech-showcase-v2';
+const API_CACHE = 'insuretech-api-v1';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 const API_ROUTES = ['/api/v1/products', '/api/v1/policies', '/api/v1/notifications'];
 
@@ -69,7 +69,7 @@ async function syncOfflineMutations() {
 
 function openSyncDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ngapp-sync', 1);
+    const req = indexedDB.open('insuretech-sync', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('pending', { keyPath: 'id', autoIncrement: true });
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

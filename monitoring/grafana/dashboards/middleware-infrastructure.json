@@ -1,9 +1,9 @@
 {
   "dashboard": {
     "id": null,
-    "uid": "ngapp-middleware-infra",
-    "title": "NGApp Platform - Middleware Infrastructure",
-    "tags": ["ngapp", "middleware", "infrastructure"],
+    "uid": "insuretech-middleware-infra",
+    "title": "InsureTech Platform - Middleware Infrastructure",
+    "tags": ["insuretech", "middleware", "infrastructure"],
     "timezone": "UTC",
     "schemaVersion": 30,
     "version": 1,
@@ -16,9 +16,9 @@
         "datasource": "Prometheus",
         "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
         "targets": [
-          {"expr": "pg_stat_activity_count{datname=~\"ngapp.*\"}", "legendFormat": "{{ state }}"},
-          {"expr": "rate(pg_stat_database_xact_commit{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Commits/s"},
-          {"expr": "rate(pg_stat_database_xact_rollback{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Rollbacks/s"}
+          {"expr": "pg_stat_activity_count{datname=~\"insuretech.*\"}", "legendFormat": "{{ state }}"},
+          {"expr": "rate(pg_stat_database_xact_commit{datname=~\"insuretech.*\"}[5m])", "legendFormat": "Commits/s"},
+          {"expr": "rate(pg_stat_database_xact_rollback{datname=~\"insuretech.*\"}[5m])", "legendFormat": "Rollbacks/s"}
         ]
       },
       {
@@ -38,8 +38,8 @@
         "datasource": "Prometheus",
         "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
         "targets": [
-          {"expr": "rate(pg_stat_database_deadlocks{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Deadlocks/s"},
-          {"expr": "rate(pg_stat_database_temp_bytes{datname=~\"ngapp.*\"}[5m]) / 1024 / 1024", "legendFormat": "Temp MB/s"}
+          {"expr": "rate(pg_stat_database_deadlocks{datname=~\"insuretech.*\"}[5m])", "legendFormat": "Deadlocks/s"},
+          {"expr": "rate(pg_stat_database_temp_bytes{datname=~\"insuretech.*\"}[5m]) / 1024 / 1024", "legendFormat": "Temp MB/s"}
         ]
       },
       {
@@ -82,7 +82,7 @@
         "datasource": "Prometheus",
         "gridPos": {"h": 8, "w": 12, "x": 6, "y": 16},
         "targets": [
-          {"expr": "sum(rate(kafka_topic_partition_current_offset{topic=~\"ngapp.*\"}[5m])) by (topic)", "legendFormat": "{{ topic }} offset/s"}
+          {"expr": "sum(rate(kafka_topic_partition_current_offset{topic=~\"insuretech.*\"}[5m])) by (topic)", "legendFormat": "{{ topic }} offset/s"}
         ]
       },
       {
@@ -92,7 +92,7 @@
         "datasource": "Prometheus",
         "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
         "targets": [
-          {"expr": "kafka_consumer_lag_sum{topic=~\"ngapp.*\"}", "legendFormat": "{{ consumer_group }} - {{ topic }}"}
+          {"expr": "kafka_consumer_lag_sum{topic=~\"insuretech.*\"}", "legendFormat": "{{ consumer_group }} - {{ topic }}"}
         ]
       },
       {

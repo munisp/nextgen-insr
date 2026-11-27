@@ -6,7 +6,7 @@ description: Test the 20 flow-of-funds scenarios (atomicity, idempotency, double
 # Testing Fund Flow Scenarios
 
 ## Prerequisites
-- PostgreSQL running on localhost:5432 (database: ngapp, user: ngapp, password: ngapp)
+- PostgreSQL running on localhost:5432 (database: insuretech, user: insuretech, password: insuretech)
 - Node.js available
 
 ## Devin Secrets Needed
@@ -41,7 +41,7 @@ Run from `customer-portal-full/` directory. Server must be running.
 ### Atomicity Verification
 Count DB rows in 6 tables before/after a fund flow call. All must increase atomically:
 ```bash
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -t -A -c "
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -t -A -c "
 SELECT 'premium_collections', COUNT(*) FROM premium_collections
 UNION ALL SELECT 'financial_transactions', COUNT(*) FROM financial_transactions
 UNION ALL SELECT 'general_ledger', COUNT(*) FROM general_ledger
@@ -80,7 +80,7 @@ UNION ALL SELECT 'audit_trail', COUNT(*) FROM audit_trail;"
 ## Clearing State Between Test Runs
 ```bash
 # Clear idempotency cache (allows re-running same test keys)
-PGPASSWORD=ngapp psql -h localhost -U ngapp -d ngapp -c "DELETE FROM idempotency_keys;"
+PGPASSWORD=insuretech psql -h localhost -U insuretech -d insuretech -c "DELETE FROM idempotency_keys;"
 ```
 Alternatively, use unique `idempotencyKey` values per run (e.g., append timestamp).
 

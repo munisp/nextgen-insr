@@ -1,20 +1,20 @@
-import { NGAppInsurance } from "../client";
+import { InsureTechInsurance } from "../client";
 import { Quote, PaymentMethod, EmbeddedConfig } from "../types";
 
 export class CheckoutFlow {
-  private client: NGAppInsurance;
+  private client: InsureTechInsurance;
   private config: EmbeddedConfig;
 
   constructor(config: EmbeddedConfig) {
     this.config = config;
-    this.client = new NGAppInsurance(config);
+    this.client = new InsureTechInsurance(config);
   }
 
   generateCheckoutHTML(quote: Quote): string {
     const primaryColor = this.config.theme?.primaryColor || "#1a73e8";
 
     return `
-      <div id="ngapp-checkout" style="
+      <div id="insuretech-checkout" style="
         font-family: system-ui, sans-serif;
         max-width: 480px;
         border: 1px solid #e0e0e0;

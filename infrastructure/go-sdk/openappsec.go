@@ -58,7 +58,7 @@ func (c *OpenAppSecClient) Ping(ctx context.Context) error {
 // PlatformWAFPolicy returns the default WAF policy for the insurance platform.
 func PlatformWAFPolicy() WAFPolicy {
 	return WAFPolicy{
-		Name:          "ngapp-insurance-waf",
+		Name:          "insuretech-insurance-waf",
 		Mode:          "prevent",
 		SecurityLevel: "high",
 		TrustedSources: []string{

@@ -1,5 +1,5 @@
 // Package observability provides shared Prometheus metrics and OpenTelemetry
-// tracing instrumentation for all NGApp microservices.
+// tracing instrumentation for all InsureTech microservices.
 package observability
 
 import (
@@ -14,7 +14,7 @@ import (
 var (
 	HTTPRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "http_requests_total",
 			Help:      "Total number of HTTP requests processed",
 		},
@@ -23,7 +23,7 @@ var (
 
 	HTTPRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "http_request_duration_seconds",
 			Help:      "HTTP request latency in seconds",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
@@ -33,7 +33,7 @@ var (
 
 	HTTPConnectionsActive = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "http_connections_active",
 			Help:      "Number of active HTTP connections",
 		},
@@ -42,7 +42,7 @@ var (
 
 	DBPoolActive = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "db_pool_active",
 			Help:      "Number of active database connections",
 		},
@@ -51,7 +51,7 @@ var (
 
 	DBPoolIdle = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "db_pool_idle",
 			Help:      "Number of idle database connections",
 		},
@@ -60,7 +60,7 @@ var (
 
 	DBQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "db_query_duration_seconds",
 			Help:      "Database query duration in seconds",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 5},
@@ -70,7 +70,7 @@ var (
 
 	KafkaMessagesPublished = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "kafka_messages_published_total",
 			Help:      "Total Kafka messages published",
 		},
@@ -79,7 +79,7 @@ var (
 
 	KafkaMessagesConsumed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "kafka_messages_consumed_total",
 			Help:      "Total Kafka messages consumed",
 		},
@@ -87,32 +87,32 @@ var (
 	)
 
 	ClaimsSubmitted = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "ngapp",
+		Namespace: "insuretech",
 		Name:      "claims_submitted_total",
 		Help:      "Total claims submitted",
 	})
 
 	ClaimsApproved = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "ngapp",
+		Namespace: "insuretech",
 		Name:      "claims_approved_total",
 		Help:      "Total claims approved",
 	})
 
 	ClaimsRejected = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "ngapp",
+		Namespace: "insuretech",
 		Name:      "claims_rejected_total",
 		Help:      "Total claims rejected",
 	})
 
 	ClaimsEscalated = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "ngapp",
+		Namespace: "insuretech",
 		Name:      "claims_escalated_total",
 		Help:      "Total claims escalated to manual review",
 	})
 
 	PoliciesIssued = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "ngapp",
+			Namespace: "insuretech",
 			Name:      "policies_issued_total",
 			Help:      "Total policies issued",
 		},

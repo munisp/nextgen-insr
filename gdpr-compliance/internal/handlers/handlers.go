@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/munisp/NGApp/gdpr-compliance/internal/service"
+	"github.com/munisp/insuretech/gdpr-compliance/internal/service"
 )
 
 type GDPRHandler struct{ svc *service.GDPRService }

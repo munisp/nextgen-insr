@@ -51,7 +51,7 @@ class StorageConfig:
 
     # S3/MinIO
     endpoint_url: str | None = None
-    bucket: str = "ngapp-lakehouse"
+    bucket: str = "insuretech-lakehouse"
     region: str = "af-south-1"
     access_key: str | None = None
     secret_key: str | None = None
@@ -69,7 +69,7 @@ class StorageConfig:
             backend=backend,
             base_path=os.environ.get("LAKEHOUSE_BASE_PATH", "lakehouse_store"),
             endpoint_url=os.environ.get("LAKEHOUSE_ENDPOINT_URL"),
-            bucket=os.environ.get("LAKEHOUSE_BUCKET", "ngapp-lakehouse"),
+            bucket=os.environ.get("LAKEHOUSE_BUCKET", "insuretech-lakehouse"),
             region=os.environ.get("LAKEHOUSE_REGION", "af-south-1"),
             access_key=os.environ.get("LAKEHOUSE_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID"),
             secret_key=os.environ.get("LAKEHOUSE_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY"),
@@ -330,7 +330,7 @@ class MinIOStore(S3Store):
             config = StorageConfig(
                 backend="minio",
                 endpoint_url=os.environ.get("MINIO_ENDPOINT", "http://localhost:9000"),
-                bucket=os.environ.get("MINIO_BUCKET", "ngapp-lakehouse"),
+                bucket=os.environ.get("MINIO_BUCKET", "insuretech-lakehouse"),
                 access_key=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
                 secret_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
                 region="us-east-1",

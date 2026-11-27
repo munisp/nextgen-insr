@@ -1,5 +1,5 @@
 {
-  "name": "@ngapp/embedded-insurance-sdk",
+  "name": "@insuretech/embedded-insurance-sdk",
   "version": "1.0.0",
   "description": "Embedded insurance SDK for B2B2C partner integrations",
   "main": "dist/index.js",

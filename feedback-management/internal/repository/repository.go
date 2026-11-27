@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"github.com/munisp/NGApp/feedback-management/internal/models"
+	"github.com/munisp/insuretech/feedback-management/internal/models"
 	"time"
 
 	"github.com/google/uuid"

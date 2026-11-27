@@ -28,7 +28,7 @@ import (
 	miniredis "github.com/alicebob/miniredis/v2"
 	"go.uber.org/zap"
 
-	infra "github.com/munisp/NGApp/infrastructure/go-sdk"
+	infra "github.com/munisp/insuretech/infrastructure/go-sdk"
 )
 
 // ─── Benchmark helpers ────────────────────────────────────────────────────────

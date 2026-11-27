@@ -80,7 +80,7 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:14.746696",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/fraud_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/fraud_features"
   },
   "churn_features": {
     "description": "Customer churn prediction features",
@@ -159,7 +159,7 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:14.808419",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/churn_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/churn_features"
   },
   "claims_features": {
     "description": "Claims adjudication features with outcomes",
@@ -228,7 +228,7 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:14.867752",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/claims_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/claims_features"
   },
   "credit_features": {
     "description": "Telco + financial credit scoring features",
@@ -311,7 +311,7 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:14.939140",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/credit_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/credit_features"
   },
   "anomaly_features": {
     "description": "Transaction anomaly detection features",
@@ -358,7 +358,7 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:15.022000",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/anomaly_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/anomaly_features"
   },
   "risk_features": {
     "description": "Actuarial risk modeling features",
@@ -405,6 +405,6 @@
     },
     "version": 0,
     "created_at": "2026-05-25T12:09:15.057096",
-    "path": "/home/ubuntu/repos/NGApp/ai-ml-platform/lakehouse_store/risk_features"
+    "path": "/home/ubuntu/repos/InsureTech/ai-ml-platform/lakehouse_store/risk_features"
   }
 }

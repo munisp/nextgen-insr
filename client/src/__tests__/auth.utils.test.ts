@@ -28,11 +28,11 @@ describe("Auth Utilities", () => {
   describe("URL construction", () => {
     it("should build a valid authorization URL", () => {
       const baseUrl = "https://auth.test.insureportal.io";
-      const realm = "ngapp";
+      const realm = "insuretech";
       const clientId = "insurance-portal";
 
       const authUrl = `${baseUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&response_type=code`;
-      expect(authUrl).toContain("realms/ngapp");
+      expect(authUrl).toContain("realms/insuretech");
       expect(authUrl).toContain("client_id=insurance-portal");
     });
 

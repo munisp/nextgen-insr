@@ -7,10 +7,10 @@ from typing import Optional
 
 import httpx
 
-logger = logging.getLogger("ngapp.infra.openappsec")
+logger = logging.getLogger("insuretech.infra.openappsec")
 
 PLATFORM_WAF_POLICY = {
-    "name": "ngapp-insurance-waf",
+    "name": "insuretech-insurance-waf",
     "mode": "prevent",
     "security_level": "high",
     "trusted_sources": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],

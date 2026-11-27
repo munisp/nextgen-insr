@@ -20,15 +20,15 @@ type OpenSearchClient struct {
 
 // Platform-wide index names
 const (
-	IndexAuditTrail = "ngapp-audit-trail"
-	IndexKYCEvents  = "ngapp-kyc-events"
-	IndexCompliance = "ngapp-compliance"
-	IndexMetrics    = "ngapp-metrics"
-	IndexPolicies   = "ngapp-policies"
-	IndexClaims     = "ngapp-claims"
-	IndexPayments   = "ngapp-payments"
-	IndexFraud      = "ngapp-fraud-alerts"
-	IndexSecurity   = "ngapp-security-events"
+	IndexAuditTrail = "insuretech-audit-trail"
+	IndexKYCEvents  = "insuretech-kyc-events"
+	IndexCompliance = "insuretech-compliance"
+	IndexMetrics    = "insuretech-metrics"
+	IndexPolicies   = "insuretech-policies"
+	IndexClaims     = "insuretech-claims"
+	IndexPayments   = "insuretech-payments"
+	IndexFraud      = "insuretech-fraud-alerts"
+	IndexSecurity   = "insuretech-security-events"
 )
 
 type AuditEntry struct {
@@ -127,7 +127,7 @@ func (c *OpenSearchClient) createIndexIfNotExists(ctx context.Context, index str
 func (c *OpenSearchClient) setupILMPolicy(ctx context.Context) error {
 	policy := map[string]interface{}{
 		"policy": map[string]interface{}{
-			"description":   "NGApp platform index lifecycle",
+			"description":   "InsureTech platform index lifecycle",
 			"default_state": "hot",
 			"states": []map[string]interface{}{
 				{
@@ -156,7 +156,7 @@ func (c *OpenSearchClient) setupILMPolicy(ctx context.Context) error {
 		},
 	}
 	data, _ := json.Marshal(policy)
-	req, err := http.NewRequestWithContext(ctx, "PUT", c.baseURL+"/_plugins/_ism/policies/ngapp-lifecycle", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "PUT", c.baseURL+"/_plugins/_ism/policies/insuretech-lifecycle", bytes.NewReader(data))
 	if err != nil {
 		return err
 	}

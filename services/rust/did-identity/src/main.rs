@@ -325,7 +325,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let port = env::var("PORT").unwrap_or_else(|_| "8113".to_string());
-    let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://ngapp:ngapp@localhost:5432/ngapp".to_string());
+    let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://insuretech:insuretech@localhost:5432/insuretech".to_string());
 
     // DD-LEGACY (F2 #24): the hardcoded public fallback seed let anyone with
     // repo access derive the VC signing key and forge credentials. The seed

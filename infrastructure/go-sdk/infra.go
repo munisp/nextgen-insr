@@ -44,14 +44,14 @@ type Config struct {
 // DefaultConfig returns a Config with sensible local defaults.
 func DefaultConfig() Config {
 	return Config{
-		PostgresURL:      "postgres://localhost:5432/ngapp?sslmode=disable",
+		PostgresURL:      "postgres://localhost:5432/insuretech?sslmode=disable",
 		RedisAddr:        "localhost:6379",
 		KafkaBrokers:     []string{"localhost:9092"},
 		TigerBeetleAddr:  "localhost:3000",
 		MojaloopURL:      "http://localhost:4000",
 		APISixAdminURL:   "http://localhost:9180",
 		KeycloakRealmURL: "http://localhost:8180/realms/insurance",
-		KeycloakClientID: "ngapp-service",
+		KeycloakClientID: "insuretech-service",
 		KeycloakAdminURL: "http://localhost:8180",
 		OpenAppSecURL:    "http://localhost:9180",
 		PermifyURL:       "http://localhost:3476",

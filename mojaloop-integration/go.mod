@@ -1,4 +1,4 @@
-module github.com/munisp/NGApp/mojaloop-integration
+module github.com/munisp/insuretech/mojaloop-integration
 
 go 1.23
 
