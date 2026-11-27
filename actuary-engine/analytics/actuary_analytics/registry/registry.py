@@ -23,7 +23,22 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-MODEL_TYPES = ("freq_glm", "sev_glm", "freq_sev_glm", "mortality", "capital", "fraud_link")
+# F1 additions: agg_dist (aggregate-loss distribution / distortion-pricing
+# artefacts from the adopted aggregate library, actuary_analytics.aggdist)
+# and tweedie_dist (standalone Tweedie density model artefacts,
+# actuary_analytics.freqsev.tweedie_tools). Both follow the same register/
+# stage/round-trip flow as the existing types so Go/TS layers can discover
+# them through the same registry surface.
+MODEL_TYPES = (
+    "freq_glm",
+    "sev_glm",
+    "freq_sev_glm",
+    "mortality",
+    "capital",
+    "fraud_link",
+    "agg_dist",
+    "tweedie_dist",
+)
 STAGES = ("candidate", "approved", "retired")
 
 

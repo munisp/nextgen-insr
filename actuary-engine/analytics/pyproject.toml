@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "actuary-analytics"
 version = "0.1.0"
-description = "Offline actuarial analytics: reserving (chainladder), life (lifelines), freq-sev GLMs (statsmodels), capital adapter, model registry, assumption sets, batch jobs."
+description = "Offline actuarial analytics: reserving (chainladder), life (lifelines), freq-sev GLMs (statsmodels), capital adapter, model registry, assumption sets, batch jobs, analytic aggregate-loss distributions (aggregate), standalone Tweedie tools (tweedie), model-validation charts."
 requires-python = ">=3.11"
 dependencies = [
     "chainladder>=0.10.1,<0.11",
     "lifelines>=0.30.3,<0.31",
-    "statsmodels>=0.14.5,<0.15",
+    "statsmodels>=0.15,<0.16",
     "scikit-learn>=1.5,<1.8",
     "pandas>=2.2,<2.4",
     "numpy>=1.26,<2.4",
@@ -20,6 +20,9 @@ dependencies = [
     "minio>=7.2,<8",
     "httpx>=0.27,<0.29",
     "uvicorn>=0.30,<0.36",
+    "aggregate>=2.1,<2.2",
+    "tweedie>=0.0.9,<0.1",
+    "matplotlib>=3.10,<3.12",
 ]
 
 [project.optional-dependencies]
