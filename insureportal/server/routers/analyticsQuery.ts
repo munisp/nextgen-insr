@@ -46,9 +46,13 @@ export const analyticsQueryRouter = router({
         const db = (await getDb())!;
         const since = new Date(Date.now() - input.days * 86400000);
 
-        // Try OpenSearch first
+        // Try OpenSearch first.
+        // W32-C (2026-11-27): track_total_hits:true so hits.total is the
+        // EXACT match count (not the 10k-capped default) — this is the real
+        // OpenSearch aggregate that backs the opensearch arm's totalCount.
         const osResult = await queryOpenSearch("transactions", {
           size: 0,
+          track_total_hits: true,
           query: { range: { timestamp: { gte: since.toISOString() } } },
           aggs: {
             total_volume: { sum: { field: "amount" } },
@@ -62,6 +66,26 @@ export const analyticsQueryRouter = router({
         });
 
         if (osResult?.aggregations) {
+          // W32-C (2026-11-27): expose the REAL total hit count from
+          // OpenSearch (hits.total with track_total_hits:true). Handles both
+          // the modern { value, relation } shape and the legacy numeric
+          // shape. `null` when OpenSearch genuinely cannot report a count —
+          // never a fabricated zero; the client falls back to the (real)
+          // timeSeries count sum for that case.
+          const osTotal = osResult.hits?.total;
+          const totalCount =
+            typeof osTotal === "number"
+              ? osTotal
+              : typeof osTotal?.value === "number"
+                ? osTotal.value
+                : null;
+          // recentEntries is deliberately ABSENT on this arm: the
+          // opensearch transaction documents (transactionId/tenantId/
+          // currency/status/invoiceId/amount/timestamp) do not carry the
+          // ledger shape (grossAmount/createdAt/…) the dashboard's Recent
+          // Ledger Entries table renders, so the section is DB-only. The
+          // client narrows on source === "database" and renders the section
+          // honestly-empty for this arm.
           return {
             source: "opensearch" as const,
             totalVolume: osResult.aggregations.total_volume.value,
@@ -72,6 +96,7 @@ export const analyticsQueryRouter = router({
               volume: b.daily_volume.value,
               count: b.doc_count,
             })),
+            totalCount,
           };
         }
 

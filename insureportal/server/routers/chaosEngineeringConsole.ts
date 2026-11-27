@@ -121,6 +121,62 @@ export const chaosEngineeringConsoleRouter = router({
       };
     }),
 
+  // ── 1b. Fleet-style stats for the console header (W32-C, 2026-11-27) ──────
+  // Contract ported from main's chaosEngineeringConsole.getStats — same
+  // response shape { total, active, recent, lastUpdated } that main's
+  // identical ChaosEngineeringConsole client renders. Documented portal
+  // delta: main's body is a health-check stub that returns hardcoded zeros
+  // even when the DB is reachable; this portal router deliberately replaces
+  // the stub with a REAL chaos implementation (see file header), so the
+  // numbers here are real aggregates over the same CHAOS_% audit-log read
+  // model used by `list` / `getResilienceScorecard` / `getRecentActivity`:
+  //   - total  = count of CHAOS_% audit rows (bounded by the same 200-row
+  //              window the scorecard uses),
+  //   - active = rows whose experiment status (metadata.status, the same
+  //              field `list` reports) is "running" or "pending",
+  //   - recent = CHAOS_% rows in the trailing 7 days (getRecentActivity's
+  //              default window),
+  //   - lastUpdated = createdAt of the newest CHAOS_% row (ISO), or now()
+  //              when none exist.
+  // Null-db arm returns the zero-count shape (fail-closed-empty, house
+  // pattern cf. W29 taxCollection). Authz: adminProcedure, consistent with
+  // every other procedure in this router (main used protectedProcedure —
+  // the portal's stricter admin gate is deliberate).
+  getStats: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+
+    const since = new Date(Date.now() - 7 * 86400000);
+    const rows = await db
+      .select({
+        metadata: auditLog.metadata,
+        createdAt: auditLog.createdAt,
+      })
+      .from(auditLog)
+      .where(sql`${auditLog.action} LIKE 'CHAOS_%'`)
+      .orderBy(desc(auditLog.createdAt))
+      .limit(200);
+
+    const active = rows.filter(r => {
+      const status = (r.metadata as any)?.status ?? "unknown";
+      return status === "running" || status === "pending";
+    }).length;
+    const recent = rows.filter(r => r.createdAt >= since).length;
+
+    return {
+      total: rows.length,
+      active,
+      recent,
+      lastUpdated: (rows[0]?.createdAt ?? new Date()).toISOString(),
+    };
+  }),
+
   // ── 2. Start a chaos experiment ───────────────────────────────────────────
   startExperiment: adminProcedure
     .input(z.object({
