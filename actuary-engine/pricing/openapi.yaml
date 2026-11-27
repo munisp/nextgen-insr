@@ -1,0 +1,550 @@
+openapi: 3.0.3
+info:
+  title: actuary-pricing
+  description: >-
+    Leg B pricing microservice (design Appendix D): rating through the real
+    Rust actuary kernels via cgo, exposure/accumulation/referral de-risking
+    controls (fail-closed), rate-version lifecycle, capital/reserving read
+    models. Monetary fields are integer kobo unless suffixed otherwise.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:7080
+tags:
+  - name: rating
+  - name: lifecycle
+  - name: controls
+  - name: read-models
+paths:
+  /v1/rate:
+    post:
+      tags: [rating]
+      summary: Rate a quote through the approved GLM artefact + cgo premium kernel
+      description: >-
+        Appendix I control flow: validation (400) → approved rate version
+        (503 fail-closed) → exposure limits (decline) → accumulation check
+        (refer) → referral rules (refer|decline) → GLM resolve + kernel
+        compose (error → refer, never accept) → atomic accumulation apply →
+        decomposition + rateVersion stamp.
+      operationId: rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateRequest'
+      responses:
+        "200":
+          description: Decision made (accept | refer | decline)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateResponse'
+        "400":
+          description: Invalid input / unknown product line
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "503":
+          description: >-
+            Fail-closed: managed line without an approved rate version (or
+            boot/reload not complete). Never a fabricated premium.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/rate/versions:
+    get:
+      tags: [lifecycle]
+      summary: List rate versions (optionally filtered by line)
+      parameters:
+        - name: line
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Versions in id order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RateVersionSummary'
+  /v1/rate/versions/{id}/activate:
+    post:
+      tags: [lifecycle]
+      summary: >-
+        Activate a rate version (requires actuary_admin role claim);
+        enforces single-active-per-line transactionally and hot-reloads the
+        rating snapshot (atomic swap)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activated
+        "401":
+          description: Missing role claims
+        "403":
+          description: Insufficient role
+        "404":
+          description: Version not found
+        "409":
+          description: Version not in filing status (already approved/retired)
+  /v1/accumulation/{line}/{geoCell}:
+    get:
+      tags: [read-models]
+      summary: Current geo-cell aggregate exposure (portal heatmap)
+      parameters:
+        - name: line
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: geoCell
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cell state (aggregate in NGN major units)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccumulationCell'
+  /v1/exposure/check:
+    post:
+      tags: [controls]
+      summary: Early-warning limit check without full rating
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExposureCheckRequest'
+      responses:
+        "200":
+          description: Breach report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExposureCheckResponse'
+  /v1/referrals:
+    get:
+      tags: [controls]
+      summary: Underwriter referral worklist
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, accepted, declined]
+      responses:
+        "200":
+          description: Referral cases, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReferralCase'
+  /v1/referrals/{id}/decide:
+    post:
+      tags: [controls]
+      summary: >-
+        Decide an open referral (requires underwriter or actuary role
+        claim); accepted referrals release nothing automatically — the
+        quote is re-rated through POST /v1/rate by the caller
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [accepted, declined]
+                underwriterId:
+                  type: integer
+      responses:
+        "200":
+          description: Decided
+        "401":
+          description: Missing role claims
+        "403":
+          description: Insufficient role
+        "404":
+          description: Referral not found
+        "409":
+          description: Already decided
+  /v1/capital/summary:
+    post:
+      tags: [read-models]
+      summary: >-
+        Latest approved act_capital_runs (naicomRbc + internal_ec). Compute
+        happens in the Python batch; this service is the cached read model.
+      responses:
+        "200":
+          description: Latest approved runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapitalSummary'
+        "404":
+          description: No approved capital run exists
+  /v1/reinsurance/evaluate:
+    post:
+      tags: [controls]
+      summary: >-
+        Retained-risk impact of a proposed treaty structure through the
+        real Monte Carlo kernel (quota-share: exact quantile scaling;
+        excess-of-loss: LEV-transformed severity re-simulation)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReinsuranceRequest'
+      responses:
+        "200":
+          description: Evaluation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReinsuranceEvaluation'
+        "422":
+          description: Unsimulatable structure / kernel domain error
+  /v1/adequacy/evaluate:
+    post:
+      tags: [controls]
+      summary: >-
+        Priced-LR vs live-LR evaluator (Leg B extension endpoint): the
+        Python adequacy job's callback target. Amber ±5 pts, red ±10 pts
+        with credibility widening for lines under ₦50m earned premium;
+        breaches persist to act_adequacy_alerts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdequacyRequest'
+      responses:
+        "200":
+          description: Classification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdequacyResponse'
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Alive
+  /readyz:
+    get:
+      summary: >-
+        Readiness probe: PG reachable, rating snapshot loaded, accumulation
+        store reachable, cdylib linked
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Not ready (failing checks named in the body)
+  /metrics:
+    get:
+      summary: >-
+        Prometheus metrics (Appendix G): rating_latency_seconds,
+        referral_total{reason}, accumulation_breach_total,
+        kernel_error_total
+      responses:
+        "200":
+          description: Text exposition format
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    RateRequest:
+      type: object
+      required: [productLine, variables, sumInsured, exposures]
+      properties:
+        productLine:
+          type: string
+          example: motor
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            age_band: "2"
+            ncd: "3"
+            vehicle_class: sedan
+            territory: lagos_mainland
+            fraud_score: "0.20"
+        sumInsured:
+          type: number
+          description: NGN major units (converted to kobo at the boundary)
+          example: 20000000
+        exposures:
+          type: number
+          description: Exposure units (e.g. vehicle-years)
+          example: 1
+        geoCell:
+          type: string
+          example: lagos_mainland
+        quoteRef:
+          type: string
+    RateResponse:
+      type: object
+      properties:
+        purePremium:
+          type: integer
+          description: kobo
+        loadings:
+          type: object
+          properties:
+            expense:
+              type: integer
+            commission:
+              type: integer
+            profit:
+              type: integer
+          description: >-
+            kobo; components sum exactly to the kernel's combined
+            loadings_kobo (residual assigned to profit)
+        taxes:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              amountKobo:
+                type: integer
+          description: components sum exactly to the kernel's tax_kobo
+        totalPremiumKobo:
+          type: integer
+        rateVersion:
+          type: string
+        decision:
+          type: string
+          enum: [accept, refer, decline]
+        reasonCodes:
+          type: array
+          items:
+            type: string
+          example: [ACCUM_GEO]
+        accumulationDelta:
+          type: integer
+          description: kobo recorded on accept (0 otherwise)
+    RateVersionSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        productLine:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+          enum: [draft, filing, approved, retired]
+        effectiveFrom:
+          type: string
+          format: date-time
+        naicomFilingRef:
+          type: string
+    AccumulationCell:
+      type: object
+      properties:
+        line:
+          type: string
+        geoCell:
+          type: string
+        aggregateExposure:
+          type: number
+          description: NGN major units
+        limit:
+          type: number
+          nullable: true
+          description: NGN major units; null when no geo ceiling configured
+        breach:
+          type: boolean
+    ExposureCheckRequest:
+      type: object
+      required: [productLine, sumInsured]
+      properties:
+        productLine:
+          type: string
+        sumInsured:
+          type: number
+        premium:
+          type: number
+        geoCell:
+          type: string
+    ExposureCheckResponse:
+      type: object
+      properties:
+        withinLimits:
+          type: boolean
+        breaches:
+          type: array
+          items:
+            type: string
+          example: [LIMIT_SUM_INSURED]
+    ReferralCase:
+      type: object
+      properties:
+        id:
+          type: integer
+        quoteRef:
+          type: string
+        productLine:
+          type: string
+        reasonCodes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [open, accepted, declined]
+        createdAt:
+          type: string
+          format: date-time
+    CapitalSummary:
+      type: object
+      properties:
+        naicomRbc:
+          type: object
+          properties:
+            required:
+              type: number
+            available:
+              type: number
+            ratio:
+              type: number
+        ec:
+          type: object
+          properties:
+            var995:
+              type: number
+            tvar99:
+              type: number
+            perLine:
+              type: array
+              items:
+                type: object
+                properties:
+                  line:
+                    type: string
+                  tvar99:
+                    type: number
+        asOf:
+          type: string
+          format: date-time
+        status:
+          type: string
+    ReinsuranceRequest:
+      type: object
+      required: [lines, paths, treaty]
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              freqDist:
+                type: integer
+                description: 0=Poisson (p1=lambda), 1=NegBin (p1=mean, p2=size)
+              freqP1:
+                type: number
+              freqP2:
+                type: number
+              sevDist:
+                type: integer
+                description: 2=Gamma (p1=mean, p2=cv), 3=Lognormal (p1=mu, p2=sigma), 4=Tweedie (p1=mean, p2=phi/sd, p3=power)
+              sevP1:
+                type: number
+              sevP2:
+                type: number
+              sevP3:
+                type: number
+        correlation:
+          type: array
+          items:
+            type: number
+          description: row-major n×n; omit for independence
+        paths:
+          type: integer
+        seed:
+          type: integer
+        treaty:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [quota_share, excess_of_loss]
+            cededShare:
+              type: number
+            attachment:
+              type: number
+            limit:
+              type: number
+    ReinsuranceEvaluation:
+      type: object
+      properties:
+        retainedVar995:
+          type: number
+        retainedTvar99:
+          type: number
+        cededCostKobo:
+          type: integer
+        deltaVar995:
+          type: number
+        deltaTvar99:
+          type: number
+    AdequacyRequest:
+      type: object
+      required: [productLine, period, pricedLossRatio, actualLossRatio, earnedPremiumKobo]
+      properties:
+        productLine:
+          type: string
+        period:
+          type: string
+          description: YYYY-MM
+        pricedLossRatio:
+          type: number
+        actualLossRatio:
+          type: number
+        earnedPremiumKobo:
+          type: integer
+    AdequacyResponse:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: ["", amber, red]
+        delta:
+          type: number
+        bandAmber:
+          type: number
+        bandRed:
+          type: number
+        persisted:
+          type: boolean
