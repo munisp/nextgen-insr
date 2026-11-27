@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   promotions,
   loyaltyAccounts,
   loyaltyTransactions,
   couponRedemptions,
+  customers,
   transactions,
 } from "../../drizzle/insurance-extended-schema";
 import { eq, and, sql, lte, gte, count, isNull } from "drizzle-orm";
@@ -414,16 +415,57 @@ export const promotionsRouter = router({
       };
     }),
 
+  // 2026-11-27 (W32-B): ported byte-exact from main
+  // server/routers/promotions.ts applyReferral (I-wave AB-13 session
+  // binding + I2-wave 2026-02 transaction wrapping). The pre-port portal
+  // variant trusted a client-supplied customerId (any authenticated caller
+  // could apply a referral to an arbitrary customer account) and ran the
+  // one-time claim + both bonus credits + both ledger inserts OUTSIDE any
+  // transaction — a crash after the claim permanently locked the referral
+  // unpaid (referredBy set, guard blocks retry, bonuses never granted).
+  // Documented portal deltas from main's version:
+  //   1. Portal KEEPS the two referral loyalty_transactions ledger rows
+  //      (main's variant writes none). The portal ledger is the audit
+  //      trail the W31-D contract pins, and the portal
+  //      loyalty_transactions schema requires tenantId NOT NULL (main's
+  //      table shape differs). The rows are moved INSIDE the transaction
+  //      so they commit or roll back with the claim/credits; the guarded
+  //      claim therefore also returns tenantId.
+  //   2. writeAuditLog is the portal db.ts variant (status is a required
+  //      field of its parameter type; main's is optional). Same call
+  //      shape otherwise.
   applyReferral: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
+        /** DEPRECATED as a trust input (I-wave AB-13): session-derived. */
+        customerId: z.number().optional(),
         referralCode: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // I-wave AB-13: the referee identity is session-derived (same
+      // discipline as H2/AB-12) — never a client-supplied customerId.
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        if (!isStaff) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Cannot apply a referral for a different customer" });
+        }
+        customerId = input.customerId;
+      } else {
+        if (!callerCustomer) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "No customer profile for the authenticated account" });
+        }
+        customerId = callerCustomer.id;
+      }
 
       const [referrer] = await database
         .select()
@@ -431,60 +473,82 @@ export const promotionsRouter = router({
         .where(eq(loyaltyAccounts.referralCode, input.referralCode))
         .limit(1);
 
-      if (!referrer) throw new Error("Invalid referral code");
-      if (referrer.customerId === input.customerId)
-        throw new Error("Cannot refer yourself");
+      if (!referrer) throw new TRPCError({ code: "NOT_FOUND", message: "Invalid referral code" });
+      if (referrer.customerId === customerId)
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot refer yourself" });
 
-      // AB-13: one-time guard — set referredBy only if never referred before.
-      // The guarded UPDATE makes concurrent repeat calls safe: only the first
-      // transitions and returns a row.
-      const [refereeAccount] = await database
-        .update(loyaltyAccounts)
-        .set({ referredBy: referrer.customerId })
-        .where(
-          and(
-            eq(loyaltyAccounts.customerId, input.customerId),
-            isNull(loyaltyAccounts.referredBy)
-          )
-        )
-        .returning();
-      if (!refereeAccount) {
-        throw new Error("Customer has already been referred");
-      }
-
-      // Grant referral bonus to BOTH parties (the referee bonus was previously
-      // advertised but never credited).
+      // I-wave AB-13: ONE-TIME per referee identity. The old code granted
+      // +500 pts to the referrer on EVERY call (unbounded farming). The
+      // guarded UPDATE (referredBy IS NULL) is the atomic claim: only the
+      // first application wins; every re-call fails CLOSED.
+      // I2-wave 2026-02: the response advertises a REFEREE bonus — credit it
+      // for real. Claim + both credits happen in ONE transaction so a partial
+      // grant can never persist; the one-time guarded claim still gates it.
       const referralBonus = 500; // 500 points each
+      await database.transaction(async (tx) => {
+        const claimed = await tx
+          .update(loyaltyAccounts)
+          .set({ referredBy: referrer.customerId })
+          .where(
+            and(
+              eq(loyaltyAccounts.customerId, customerId),
+              isNull(loyaltyAccounts.referredBy)
+            )
+          )
+          // Portal delta 1 (2026-11-27, W32-B): also return tenantId for
+          // the portal-retained referral ledger rows below.
+          .returning({ id: loyaltyAccounts.id, tenantId: loyaltyAccounts.tenantId });
+        if (!claimed[0]) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A referral has already been applied to this customer",
+          });
+        }
 
-      await database
-        .update(loyaltyAccounts)
-        .set({
-          points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
-          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
-        })
-        .where(eq(loyaltyAccounts.id, referrer.id));
+        // Referrer bonus (once, after a successful claim)…
+        await tx
+          .update(loyaltyAccounts)
+          .set({
+            points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
+            lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
+          })
+          .where(eq(loyaltyAccounts.id, referrer.id));
 
-      await database
-        .update(loyaltyAccounts)
-        .set({
-          points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
-          lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
-        })
-        .where(eq(loyaltyAccounts.id, refereeAccount.id));
+        // …and the referee bonus the API contract advertises.
+        await tx
+          .update(loyaltyAccounts)
+          .set({
+            points: sql`${loyaltyAccounts.points} + ${referralBonus}`,
+            lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
+          })
+          .where(eq(loyaltyAccounts.id, claimed[0].id));
 
-      await database.insert(loyaltyTransactions).values({
-        accountId: referrer.id,
-        points: referralBonus,
-        type: "referral",
-        tenantId: referrer.tenantId ?? 0,
-        description: `Referral bonus for customer ${input.customerId}`,
+        // Portal delta 1 (2026-11-27, W32-B): portal-retained referral
+        // ledger rows (audit trail pinned by the W31-D contract), now
+        // written INSIDE the same transaction so they can never persist
+        // without the credits they describe.
+        await tx.insert(loyaltyTransactions).values({
+          accountId: referrer.id,
+          points: referralBonus,
+          type: "referral",
+          tenantId: referrer.tenantId ?? 0,
+          description: `Referral bonus for customer ${customerId}`,
+        });
+        await tx.insert(loyaltyTransactions).values({
+          accountId: claimed[0].id,
+          points: referralBonus,
+          type: "referral",
+          tenantId: claimed[0].tenantId ?? 0,
+          description: "Welcome referral bonus",
+        });
       });
-      await database.insert(loyaltyTransactions).values({
-        accountId: refereeAccount.id,
-        points: referralBonus,
-        type: "referral",
-        tenantId: refereeAccount.tenantId ?? 0,
-        description: "Welcome referral bonus",
+
+      await writeAuditLog({
+        action: "LOYALTY_REFERRAL_APPLIED",
+        resource: "loyalty_accounts",
+        resourceId: String(customerId),
+        status: "success",
+        metadata: { referrerCustomerId: referrer.customerId, bonus: referralBonus, refereeCredited: true, actor: String(ctx.user.id) },
       });
 
       return {
