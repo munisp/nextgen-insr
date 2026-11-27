@@ -26,10 +26,13 @@
 static int parse_doubles(char *s, double *out, int maxn) {
     int n = 0;
     if (s == NULL || *s == '\0' || *s == '\n') return 0;
-    char *tok = strtok(s, "|");
+    /* strtok_r (POSIX reentrant): no shared static buffer — safe alongside
+     * the CSV column split below (2026-11-28 semgrep insecure-use-strtok-fn). */
+    char *save = NULL;
+    char *tok = strtok_r(s, "|", &save);
     while (tok && n < maxn) {
         out[n++] = strtod(tok, NULL);
-        tok = strtok(NULL, "|");
+        tok = strtok_r(NULL, "|", &save);
     }
     return n;
 }
@@ -63,8 +66,10 @@ int main(int argc, char **argv) {
             *comma = '\0';
             cursor = comma + 1;
         }
-        /* Strip the trailing newline from the last column. */
-        cols[ncols - 1] = strtok(cols[ncols - 1], "\n");
+        /* Strip the trailing newline from the last column (strtok_r —
+         * reentrant, per the 2026-11-28 semgrep insecure-use-strtok-fn fix). */
+        char *nl_save = NULL;
+        cols[ncols - 1] = strtok_r(cols[ncols - 1], "\n", &nl_save);
         if (ncols != 9) { fprintf(stderr, "row with %d cols, want 9\n", ncols); return 2; }
 
         char *id = cols[0];

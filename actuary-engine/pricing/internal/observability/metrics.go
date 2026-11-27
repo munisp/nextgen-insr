@@ -128,6 +128,15 @@ func (r *Registry) Handler() http.Handler {
 		b.WriteString("# TYPE kernel_error_total counter\n")
 		fmt.Fprintf(&b, "kernel_error_total %d\n", atomic.LoadUint64(&r.kernelErrs))
 
+		// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
+		// Justification (2026-11-28, semgrep finding on PR #357): this is the
+		// GET /metrics endpoint serving the Prometheus text exposition format
+		// (Content-Type text/plain; version=0.0.4 set above) — not HTML, so
+		// the XSS rule does not apply. The written bytes are entirely
+		// server-generated metric names/values; no request-controlled or
+		// user-controlled input is reflected. Suppression is scoped to this
+		// single line; the emitted output is byte-identical to the flagged
+		// version (verified by the pinned metric-names handler test).
 		_, _ = w.Write([]byte(b.String()))
 	})
 }

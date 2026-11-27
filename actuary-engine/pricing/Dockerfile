@@ -35,4 +35,11 @@ COPY --from=gobuild /app/pricing-service ./pricing-service
 COPY --from=kernels /src/target/release/libactuary_kernels.so /usr/lib/libactuary_kernels.so
 ENV LD_LIBRARY_PATH=/usr/lib
 EXPOSE 7080
+# 2026-11-28 (semgrep dockerfile.security.missing-user-entrypoint): run as
+# the distroless `nonroot` user (uid/gid 65532). Numeric form avoids any
+# dependence on /etc/passwd in the minimal image. The runtime needs no
+# root: port 7080 is unprivileged (>1024), the service writes no files
+# (logs to stderr, PG/Redis over network, no state dir), and /app + /usr/lib
+# are only read at exec/load time — no chown needed.
+USER 65532:65532
 ENTRYPOINT ["/app/pricing-service"]
