@@ -453,6 +453,31 @@ services:
       limits:
         memory: 1Gi
 
+# ── Actuary Pricing Service (Go + Rust kernels cdylib — design Appendix G) ──
+# 2026-11-28 (W34-E): dedicated block (rendered by templates/pricing-service.yaml),
+# deliberately NOT part of the `services:` map above — the service's env
+# contract (PORT/DATABASE_URL/REDIS_ADDR/PRICING_HMAC_SECRET) and probes
+# (/healthz, /readyz) differ from the generic deployment template.
+actuaryPricing:
+  enabled: true
+  replicaCount: 2
+  port: 7080
+  # Image: repository/tag override wins; when omitted the shared
+  # insuretech.serviceImage convention applies (global.imageRegistry +
+  # insuretech/actuary-pricing:<chart appVersion>).
+  image:
+    repository: ""
+    tag: ""
+  # Unset = disabled (async TB reserve-shadow, off hot path).
+  tigerbeetleSidecarUrl: ""
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
 # ── Frontend ──
 frontend:
   enabled: true
@@ -627,3 +652,10 @@ commonSecrets:
   payment:
     paystackSecretKey: ""
     flutterwaveSecretKey: ""
+  # 2026-11-28 (W34-E): actuary pricing HMAC. Empty = trusted-gateway mode.
+  # NEVER commit a real secret — in production add PRICING_HMAC_SECRET to the
+  # <release>-secrets Secret (or the external secrets store) out of band; the
+  # deployment's secretKeyRef is marked optional so startup is unaffected
+  # when the key is absent.
+  pricing:
+    hmacSecret: ""

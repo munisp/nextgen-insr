@@ -1,0 +1,155 @@
+name: Actuary Engine CI
+
+# 2026-11-28 (W34-E): CI wiring for the actuary engine (design Appendix G).
+# Covers the three merged legs — Rust kernels (Leg A), Go pricing service
+# (Leg B), Python analytics (Leg C) — plus the pricing image build, mirroring
+# the conventions of services-ci.yml / insureportal-ci.yml (pinned runners,
+# pinned toolchains, hard gates, no allowed-failures).
+#
+# Trigger policy: paths-filtered on actuary-engine/** (and this workflow
+# itself) so the jobs only run when the engine changes — the same
+# path-filter convention as services-ci.yml.
+
+on:
+  push:
+    paths:
+      - 'actuary-engine/**'
+      - '.github/workflows/actuary-engine-ci.yml'
+  pull_request:
+    paths:
+      - 'actuary-engine/**'
+      - '.github/workflows/actuary-engine-ci.yml'
+
+jobs:
+  # ── Leg A: Rust kernels (cdylib + rlib) ──────────────────────────────────
+  cargo:
+    name: Rust kernels (build, test, clippy, fmt)
+    runs-on: ubuntu-24.04  # 2026-11-28 (W34-E): pinned, mirroring the W22 runner pinning in services-ci.yml; no apt-installed packages in this job, safe on noble
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        # Pinned to the same stable-branch HEAD commit services-ci.yml uses
+        # (dtolnay, 2026-11-15); toolchain pinned explicitly to 1.100.0 so the
+        # compiler version is deterministic (channel-rust-stable.toml,
+        # 2026-11-12). clippy + rustfmt components added for the gates below.
+        with:
+          toolchain: '1.100.0'
+          components: clippy, rustfmt
+
+      - name: Build (release — produces the cdylib consumed by the Go job)
+        working-directory: actuary-engine/kernels
+        run: cargo build --release
+
+      - name: Test
+        working-directory: actuary-engine/kernels
+        run: cargo test
+
+      - name: Clippy (deny warnings)
+        working-directory: actuary-engine/kernels
+        run: cargo clippy -- -D warnings
+
+      - name: fmt --check
+        working-directory: actuary-engine/kernels
+        run: cargo fmt --check
+
+      # Artifact sharing with the go job: the pricing service's cgo boundary
+      # (actuary-engine/pricing/internal/kernels) resolves
+      # ../../../kernels/target/release/libactuary_kernels.so relative to the
+      # package dir, so the cdylib built HERE is handed over instead of being
+      # rebuilt — one rust toolchain in the pipeline, single source of truth
+      # for the .so the Go tests link and load against.
+      - name: Upload cdylib for the go job
+        uses: actions/upload-artifact@v4
+        with:
+          name: actuary-kernels-cdylib
+          path: actuary-engine/kernels/target/release/libactuary_kernels.so
+          retention-days: 1
+
+  # ── Leg B: Go pricing service (cgo against the Leg-A cdylib) ─────────────
+  go:
+    name: Go pricing service (build, vet, test, race)
+    runs-on: ubuntu-24.04  # 2026-11-28 (W34-E): pinned, mirroring services-ci.yml
+    timeout-minutes: 20
+    needs: [cargo]
+    env:
+      # The test binaries dynamically load libactuary_kernels.so at runtime;
+      # #cgo CFLAGS/LDFLAGS (-I../../../kernels/include,
+      # -L../../../kernels/target/release -lactuary_kernels -lm) are baked
+      # into internal/kernels/kernels.go, so no extra CGO_* flags are needed
+      # — only the loader path has to point at the downloaded cdylib.
+      LD_LIBRARY_PATH: ${{ github.workspace }}/actuary-engine/kernels/target/release
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'  # go.mod (go 1.22) and the Dockerfile's golang:1.22-bookworm builder
+
+      - name: Download cdylib built by the cargo job
+        uses: actions/download-artifact@v4
+        with:
+          name: actuary-kernels-cdylib
+          path: actuary-engine/kernels/target/release
+
+      - name: Build
+        working-directory: actuary-engine/pricing
+        run: go build ./...
+
+      - name: Vet
+        working-directory: actuary-engine/pricing
+        run: go vet ./...
+
+      # Full suite, no skips: golden quotes through the real cdylib, miniredis
+      # accumulation, and the Appendix H latency gates (p99 < 1 ms kernel /
+      # < 5 ms handler) all run as-is.
+      - name: Test
+        working-directory: actuary-engine/pricing
+        run: go test ./...
+
+      - name: Race detector
+        working-directory: actuary-engine/pricing
+        run: go test -race ./...
+
+  # ── Leg C: Python analytics package ──────────────────────────────────────
+  python:
+    name: Python analytics (pytest)
+    runs-on: ubuntu-24.04  # 2026-11-28 (W34-E): pinned, mirroring services-ci.yml
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'  # pyproject requires-python >=3.11; matches services-ci.yml python jobs
+
+      - name: Install deps (pinned requirements + the package itself)
+        working-directory: actuary-engine/analytics
+        run: |
+          pip install -r requirements.txt
+          pip install .
+
+      - name: Pytest
+        working-directory: actuary-engine/analytics
+        run: python -m pytest
+
+  # ── Pricing image: build-only gate, mirroring services-ci.yml docker-build ─
+  docker:
+    name: Build actuary-pricing image
+    runs-on: ubuntu-24.04  # 2026-11-28 (W34-E): pinned, mirroring services-ci.yml
+    timeout-minutes: 30
+    needs: [go]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build-only — the existing convention (services-ci.yml docker-build)
+      # never pushes; ci-cd.yml gates push on vars.DEPLOY_ENABLED for the
+      # root image only. Build context MUST be the repo root: the Dockerfile
+      # consumes actuary-engine/kernels (cdylib stage) and
+      # actuary-engine/pricing (cgo stage).
+      - name: Build Docker image (no push)
+        run: |
+          docker build -f actuary-engine/pricing/Dockerfile \
+            -t insureportal/actuary-pricing:test .

@@ -105,3 +105,67 @@ docker run -e DATABASE_URL=... -e REDIS_ADDR=... -p 7080:7080 actuary-pricing
 
 Compose wiring (Appendix G): `actuary-postgres` on `insureportal`,
 `actuary-redis` accumulation, port `7080`.
+
+## Deployment (2026-11-28, W34-E)
+
+CI: `.github/workflows/actuary-engine-ci.yml` (cargo → go → python → docker
+build gates; the go job links the cdylib artifact uploaded by the cargo job —
+one rust toolchain, single `.so` source of truth).
+
+### docker-compose
+
+The `actuary-pricing` service is wired into both root stacks:
+
+- `docker-compose.yml` (dev): builds from the repo root, `PORT=7080`,
+  `DATABASE_URL` → `postgres:5432/insureportal`, `REDIS_ADDR=redis:6379`,
+  `depends_on` postgres+redis `service_healthy`, published `7080:7080`.
+- `docker-compose.final.yml` (final core): same wiring against the
+  `posinsureportal` DB, `PRICING_HMAC_SECRET` **required** (`:?` guard),
+  `expose 7080` only (behind the gateway).
+
+No compose `healthcheck` is declared: the distroless runtime image carries no
+shell/wget/curl to execute one. Probes are HTTP-only: `GET /healthz`
+(liveness) and `GET /readyz` (readiness).
+
+### Helm (`helm/insuretech-platform`)
+
+`templates/pricing-service.yaml` renders Deployment + Service + ServiceAccount
+from the `actuaryPricing:` values block (`enabled`, `replicaCount`, `port`,
+`image.repository/tag` — defaulting to the shared
+`insuretech.serviceImage` convention, `resources`, `tigerbeetleSidecarUrl`).
+The template is deliberately NOT part of the generic `.Values.services`
+loop: this service's env contract (`PORT`/`DATABASE_URL`/`REDIS_ADDR`) and
+probe paths (`/healthz`, `/readyz`) differ from the generic template's
+`SERVICE_PORT` + `/health` convention. Pod `securityContext` runs as
+uid/gid 65532, matching the image's `USER`.
+
+### Required env vars
+
+| env | required | source in deploy |
+|---|---|---|
+| `DATABASE_URL` | **yes** (boot fails without it) | helm: `<release>-secrets` `DB_USER`/`DB_PASSWORD` + postgresql host; compose: inline DSN |
+| `PORT` | no (default `7080`) | values/compose pin `7080` |
+| `REDIS_ADDR` | no (default `localhost:6379`) | helm: `<release>-redis-master:6379`; compose: `redis:6379` |
+| `PRICING_HMAC_SECRET` | no (unset = trusted gateway) | helm: optional `PRICING_HMAC_SECRET` key in `<release>-secrets` (values `commonSecrets.pricing.hmacSecret`; empty default = key not emitted — NEVER commit a real secret); compose.final: required env |
+| `TB_SIDECAR_URL` | no (unset = shadow writes disabled) | values `actuaryPricing.tigerbeetleSidecarUrl` / compose env |
+
+### Known wiring caveat — Redis auth
+
+`cmd/server/main.go` constructs the go-redis client with `Addr` **only** —
+no password. Both compose stacks and the bitnami redis subchart run redis
+with `requirepass`/`auth`. Until the service grows a `REDIS_PASSWORD` env
+(follow-up, outside W34-E wiring scope), the accumulation store is
+unreachable against an authenticated redis and every quote fails closed with
+`ACCUM_UNAVAILABLE` → **refer** (never accept) — safe, but rating throughput
+that depends on accumulation checks will not accept quotes. Point
+`REDIS_ADDR` at a passwordless redis (or sidecar proxy) for full function.
+
+### Database migration
+
+`insureportal/drizzle/0049_actuary_engine.sql` (12 `act_*` tables) runs in
+the production deploy path via `scripts/db-migrate-safe.sh` step 4c
+(invoked by `make -f Makefile.production db-migrate`): the
+`schema_migrations_ext` ledger applies insureportal hand-written files
+> 0048 exactly once; 0043-0048 are baseline-recorded as pre-existing (same
+model as the root series in step 4b). The file is idempotent
+(DO-block enums + `IF NOT EXISTS`), so re-application is safe.

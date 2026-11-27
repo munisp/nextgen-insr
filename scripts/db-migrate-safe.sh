@@ -200,6 +200,46 @@ done
 shopt -u nullglob
 log "  ✅ Hand-written migrations up to date"
 
+# ── Step 4c: InsurePortal hand-written migrations ledger ─────────────────────
+# 2026-11-28 (W34-E): the insureportal/ sub-app has its own hand-written,
+# append-only series (insureportal/drizzle/0043_*.sql … 0049_*.sql, W30–W34)
+# that step 4b does NOT cover (it globs the ROOT drizzle/ only). Same ledger
+# table, same exactly-once semantics, same baseline model: 0043-0048 are
+# pre-existing on existing environments (applied ad-hoc historically, exactly
+# like the root baseline in step 4b) and are seeded as already-applied;
+# 0049_actuary_engine.sql (act_* tables) and later are applied for real.
+# All files are idempotent (DO-block enums, IF NOT EXISTS), so re-runs are
+# safe. Filenames are unique across the two series (no PK collision).
+# Fresh-DB caveat is the same as step 4b: drizzle-kit push of the full
+# insureportal schema is the union and covers the baseline files
+# (MIGRATION_ROLLBACK.md §6).
+log "Step 4c: Applying insureportal hand-written migrations (ledger)..."
+INSUREPORTAL_HANDWRITTEN_BASELINE=48
+shopt -s nullglob
+for sql_file in "$INSUREPORTAL_DIR"/drizzle/0*.sql; do
+    fname="$(basename "$sql_file")"
+    num="${fname%%_*}"
+    # Skip drizzle-kit journal-managed files (0000-0042)
+    if [ "$((10#$num))" -le 42 ]; then continue; fi
+    already=$(psql "$DATABASE_URL" -t -A -c "SELECT 1 FROM schema_migrations_ext WHERE filename = '$fname'" 2>/dev/null || true)
+    if [ "$already" = "1" ]; then continue; fi
+    if [ "$((10#$num))" -le "$INSUREPORTAL_HANDWRITTEN_BASELINE" ]; then
+        # Baseline seed: pre-existing migrations assumed applied on existing DBs
+        psql "$DATABASE_URL" -q -c "INSERT INTO schema_migrations_ext (filename) VALUES ('$fname') ON CONFLICT DO NOTHING"
+        log "  baseline-recorded: $fname"
+        continue
+    fi
+    log "  applying: $fname (insureportal)"
+    if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$sql_file"; then
+        psql "$DATABASE_URL" -q -c "INSERT INTO schema_migrations_ext (filename) VALUES ('$fname')"
+        log "  ✅ applied: $fname"
+    else
+        fail "InsurePortal hand-written migration $fname failed — restore from backup: ${BACKUP_FILE:-none}"
+    fi
+done
+shopt -u nullglob
+log "  ✅ InsurePortal hand-written migrations up to date"
+
 # ── Step 5: Post-migration verification ──────────────────────────────────────
 log "Step 5: Post-migration verification..."
 POST_TABLE_COUNT=$(psql "$DATABASE_URL" -t -c "

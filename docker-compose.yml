@@ -490,6 +490,41 @@ services:
     networks:
       - insureportal
 
+  # ── Actuary Pricing Service (Go + Rust kernels cdylib — design Appendix G) ─
+  # 2026-11-28 (W34-E): wires the merged Leg-B service into the dev stack.
+  # Build context MUST be the repo root — the Dockerfile's multi-stage build
+  # consumes actuary-engine/kernels (rust cdylib) + actuary-engine/pricing.
+  # No healthcheck: the distroless runtime image has no shell/wget/curl to
+  # execute one with (readiness is served on GET /readyz, Appendix D probes).
+  actuary-pricing:
+    build:
+      context: .
+      dockerfile: actuary-engine/pricing/Dockerfile
+    container_name: insureportal-actuary-pricing
+    restart: unless-stopped
+    environment:
+      PORT: "7080"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      # 2026-11-28 (W34-E): go-redis client is constructed with Addr only
+      # (internal/accumulation, cmd/server/main.go) — no password support.
+      # REDIS_PASSWORD is therefore NOT consumable by this service yet; with
+      # the stack's requirepass redis it fails closed (ACCUM_UNAVAILABLE →
+      # refer, never accept). See README deploy section / w34e report.
+      REDIS_ADDR: redis:6379
+      # Dev placeholder only — set a real secret via env in non-dev stacks.
+      PRICING_HMAC_SECRET: ${PRICING_HMAC_SECRET:-actuary_pricing_dev}
+      # Async TB reserve-shadow, off hot path (2s timeout); unset = disabled.
+      TB_SIDECAR_URL: http://insureportal-tb-sidecar:7070
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "7080:7080"
+    networks:
+      - insureportal
+
   # ── Claims Adjudication AI (Python) ──────────────────────────────────────
   insureportal-claims-ai:
     build:
