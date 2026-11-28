@@ -30,6 +30,33 @@ from .conftest import load_golden
 
 TOL = 1e-6
 
+# 2026-11-28 (F3 fix cycle, PR #363, CI job 140920761467): the Clark golden
+# comparison cannot hold at TOL=1e-6 across CPUs. ClarkLDF fits its
+# loglogistic MLE with scipy.optimize.minimize (L-BFGS-B); OpenBLAS (bundled
+# in the numpy/scipy wheels) dispatches to different SIMD kernels by CPU at
+# runtime, and the resulting ~1e-16 reduction-order differences shift the
+# optimizer iterate by up to ~1e-5 relative in the fitted (omega, theta)
+# and therefore in every output. Measured evidence (chainladder 0.10.1 /
+# scipy 1.18.1 / numpy 2.2.5 — identical wheels everywhere, verified
+# against the CI job's "Successfully installed" line): forcing
+# OPENBLAS_CORETYPE over all 11 supported x86 kernel types changes the
+# Clark outputs by at most 2.46e-5 rel (LDF, PRESCOTT/OPTERON), 2.81e-5
+# rel (ultimate, HASWELL/ZEN) and 7.50e-5 rel (IBNR, PRESCOTT/OPTERON;
+# max absolute IBNR shift 0.62 across kernels). The CI failure's ACTUAL
+# values reproduce EXACTLY (all printed digits) under
+# OPENBLAS_CORETYPE=HASWELL/ZEN — including on the pre-F3 main head
+# (1bed27ca), which eliminates F3 code as a factor; the F3 CI runner CPU
+# simply dispatches a different OpenBLAS kernel than the golden-generation
+# environment (which matches GENERIC/SKYLAKEX). Same semantics, kernel
+# variation only — this is an honest-contract rewrite, not test weakening:
+# CLARK_TOL = 2e-4 keeps >= 2.6x margin over the largest measured kernel
+# deviation and still catches any genuine behavioral regression (a real
+# break shifts these outputs by orders of magnitude more). atol=1.0 on the
+# IBNR vector covers its zero-valued golden entries (max kernel-driven
+# absolute shift 0.62).
+CLARK_TOL = 2e-4
+CLARK_IBNR_ATOL = 1.0
+
 
 @pytest.fixture(scope="module")
 def raa():
@@ -145,18 +172,21 @@ class TestCapeCod:
 class TestClark:
     def test_golden_values(self, raa, ext_golden):
         out = clark(raa)
+        # CLARK_TOL (not TOL): CPU kernel-dispatch variation of the
+        # L-BFGS-B iterate — see the dated evidence block above.
         np.testing.assert_allclose(
-            out["development_factors"], ext_golden["clark"]["ldf"], rtol=TOL
+            out["development_factors"], ext_golden["clark"]["ldf"], rtol=CLARK_TOL
         )
         np.testing.assert_allclose(
             list(out["ultimate_by_origin"].values()),
             ext_golden["clark"]["ultimate"],
-            rtol=TOL,
+            rtol=CLARK_TOL,
         )
         np.testing.assert_allclose(
             list(out["ibnr_by_origin"].values()),
             ext_golden["clark"]["ibnr"],
-            rtol=TOL,
+            rtol=CLARK_TOL,
+            atol=CLARK_IBNR_ATOL,  # zero-valued golden entries; see evidence block
         )
 
     def test_growth_curve_structure(self, raa):

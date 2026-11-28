@@ -1,4 +1,6 @@
-"""Life engine: lifelines-based mortality analysis, annuity PV, profit testing.
+"""Life engine: lifelines-based mortality analysis, annuity PV, profit
+testing, and F3: Lee-Carter mortality model (SVD fit + random-walk
+forecast).
 
 Honest-labelling posture preserved and upgraded from actuarial-platform:
 every shipped mortality basis carries ``official: false`` plus the
@@ -7,6 +9,7 @@ loaded (schema-enforced default; see assumptions module).
 """
 
 from .annuity import annuity_pv, hand_annuity_pv
+from .leecarter import lee_carter_fit, lee_carter_forecast
 from .mortality import (
     DISCLAIMER,
     MortalityBasis,
@@ -27,6 +30,8 @@ __all__ = [
     "fit_weibull",
     "hand_annuity_pv",
     "illustrate_bases",
+    "lee_carter_fit",
+    "lee_carter_forecast",
     "profit_test",
     "simulate_cohort",
     "survival_from_qx",

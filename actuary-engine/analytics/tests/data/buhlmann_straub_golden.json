@@ -1,0 +1,63 @@
+{
+  "x_bar_A": 1.0,
+  "x_bar_B": 0.3333333333333333,
+  "collective_mean": 0.625,
+  "exposure_A": 7.0,
+  "exposure_B": 9.0,
+  "exposure_total": 16.0,
+  "epv": 0.36666666666666664,
+  "vhm": 0.17566137566137566,
+  "k": 2.0873493975903616,
+  "z_A": 0.7703016241299304,
+  "z_B": 0.8117359413202934,
+  "estimate_A": 0.9138631090487239,
+  "estimate_B": 0.3882436837815811,
+  "balanced_complement": 0.6579365079365079,
+  "balanced_A": 0.9214285714285714,
+  "balanced_B": 0.39444444444444443,
+  "citation": "Loss Data Analytics (open text, listed in genedan/actuarial-foss), Chapter 9 'Experience Rating Using Credibility Theory', section 'Nonparametric Estimation for B\u00fchlmann and B\u00fchlmann-Straub Models', Example 9.6.3 (dataset + published solution) and section 'Balancing Credibility Estimators', Example 9.6.6. URL: https://openacttexts.github.io/Loss-Data-Analytics/ChapCredibility.html (chapter author Gary Dean, Ball State University; retrieved 2026 for F3).",
+  "dataset": {
+    "A": {
+      "claims": [
+        0,
+        2,
+        2,
+        3
+      ],
+      "vehicles": [
+        1,
+        2,
+        2,
+        2
+      ]
+    },
+    "B": {
+      "claims": [
+        0,
+        0,
+        1,
+        2
+      ],
+      "vehicles": [
+        0,
+        2,
+        3,
+        4
+      ]
+    }
+  },
+  "published_rounded": {
+    "epv": 0.3667,
+    "vhm": 0.1757,
+    "k": 2.0871,
+    "z_A": 0.7703,
+    "z_B": 0.8118,
+    "estimate_A": 0.9139,
+    "estimate_B": 0.3882,
+    "balanced_complement": 0.6579,
+    "balanced_A": 0.9214,
+    "balanced_B": 0.3944,
+    "note": "Values printed in the textbook solutions (4 decimals). The textbook computes K from the rounded EPV/VHM (0.3667/0.1757 = 2.0871); the exact value is 693/332 = 2.08735. Tests assert agreement within 5e-4 absolute to absorb the textbook's intermediate rounding."
+  },
+  "independent_receipt": "Full-precision values recomputed independently with exact rational arithmetic (fractions.Fraction) in /tmp/f3scratch/bs_golden.py \u2014 a different computation path than the production float loops. Exact rationals: EPV=11/30, VHM=166/945, K=693/332, Z_A=332/431, Z_B=332/409, mu_A=3151/3448, mu_B=3811/9816, M_hat=829/1260, balanced_A=129/140, balanced_B=71/180. Production module reproduces these within rtol=1e-14; tests pin rtol=1e-12."
+}

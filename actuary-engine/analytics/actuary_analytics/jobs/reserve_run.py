@@ -31,6 +31,7 @@ from ..reserving.methods import (
     clark,
     mack,
 )
+from ..reserving.pcdm import pcdm
 from ..reserving.triangles import (
     cumulative_triangle_from_claims,
     legacy_cells_to_triangle_dict,
@@ -188,14 +189,18 @@ def run_monthly_reserve(
     """Run the monthly reserve job end to end and persist results.
 
     method: 'chainladder' | 'bf' | 'mack' | 'bootstrap_odp' | 'cape_cod' |
-    'clark'. BF requires apriori_ultimates (priced LR × earned premium per
-    origin — closes the price↔reserve loop). Cape Cod requires
+    'clark' | 'pcdm'. BF requires apriori_ultimates (priced LR × earned
+    premium per origin — closes the price↔reserve loop). Cape Cod requires
     earned_premium (per-origin exposure). Bootstrap ODP reports the
     bootstrap mean IBNR and standard error; Clark uses the loglogistic
-    growth-curve LDFs. Raises DataSourceUnavailableError when the claims
-    source is absent.
+    growth-curve LDFs. PCDM (F3) is the paid chain-ladder development
+    method on the Drizzle paid subset: its `total_ibnr` field carries the
+    paid-basis reserve (ultimate − paid-to-date = remaining payments).
+    Raises DataSourceUnavailableError when the claims source is absent.
     """
-    methods = ("chainladder", "bf", "mack", "bootstrap_odp", "cape_cod", "clark")
+    methods = (
+        "chainladder", "bf", "mack", "bootstrap_odp", "cape_cod", "clark", "pcdm"
+    )
     if method not in methods:
         raise ValueError(f"method must be {'|'.join(methods)}, got {method!r}")
     cfg = config or ClaimsSourceConfig.from_env()
@@ -224,6 +229,14 @@ def run_monthly_reserve(
         mack_sd = None
     elif method == "clark":
         result = clark(tri)
+        mack_sd = None
+    elif method == "pcdm":
+        pc = pcdm(tri)
+        result = {
+            "ultimate_by_origin": pc["ultimate_by_origin"],
+            "total_ibnr": pc["total_reserve"],
+            "pcdm": pc,
+        }
         mack_sd = None
     else:
         if apriori_ultimates is None:
