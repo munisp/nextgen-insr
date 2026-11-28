@@ -72,6 +72,36 @@ services:
     networks:
       - insureportal-final-core
 
+  # ── Actuary Pricing Service (Go + Rust kernels cdylib — design Appendix G) ─
+  # 2026-11-28 (W34-E): Leg-B pricing service in the final stack. Build
+  # context MUST be the repo root (kernels cdylib stage + pricing cgo stage).
+  # No healthcheck: the distroless image has no shell/wget/curl to run one;
+  # probes are served on GET /healthz + /readyz (Appendix D).
+  actuary-pricing:
+    build:
+      context: .
+      dockerfile: actuary-engine/pricing/Dockerfile
+    container_name: insureportal-core-actuary-pricing
+    restart: unless-stopped
+    environment:
+      PORT: "7080"
+      DATABASE_URL: postgresql://posadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/posinsureportal
+      # 2026-11-28 (W34-E): go-redis client uses Addr only — no password
+      # support; with requirepass redis it fails closed (ACCUM_UNAVAILABLE →
+      # refer). See README deploy section / w34e report.
+      REDIS_ADDR: redis:6379
+      PRICING_HMAC_SECRET: ${PRICING_HMAC_SECRET:?PRICING_HMAC_SECRET required}
+      TB_SIDECAR_URL: ${TB_SIDECAR_URL:-}
+    expose:
+      - "7080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - insureportal-final-core
+
   redis:
     image: redis:7.2-alpine
     container_name: insureportal-core-redis

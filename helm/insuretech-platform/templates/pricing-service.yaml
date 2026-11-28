@@ -1,0 +1,214 @@
+{{- /*
+  pricing-service.yaml - Actuary pricing service (design Appendix G, W34-E).
+  Dedicated template, NOT part of the .Values.services loop, because the
+  service's env contract (PORT / DATABASE_URL / REDIS_ADDR / PRICING_HMAC_SECRET)
+  and probe paths (/healthz, /readyz) differ from the generic template's
+  SERVICE_PORT + /health convention. Labels, ServiceAccount, securityContext
+  and image-resolution follow the chart's existing helpers/conventions, so
+  the allow-services-to-middleware NetworkPolicy (part-of:
+  insuretech-platform → egress to postgresql:5432 + redis:6379) covers this
+  deployment unchanged.
+*/ -}}
+{{- if .Values.actuaryPricing.enabled }}
+{{- $fullName := include "insuretech.fullname" . -}}
+{{- $name := "actuary-pricing" -}}
+{{- $config := .Values.actuaryPricing -}}
+{{- $defaults := $.Values.serviceDefaults }}
+{{- $replicas := $config.replicaCount | default $defaults.replicaCount }}
+{{- $port := $config.port | default 7080 }}
+{{- $memReq := (($config.resources).requests).memory | default (($defaults.resources).requests).memory }}
+{{- $cpuReq := (($config.resources).requests).cpu | default (($defaults.resources).requests).cpu }}
+{{- $memLim := (($config.resources).limits).memory | default (($defaults.resources).limits).memory }}
+{{- $cpuLim := (($config.resources).limits).cpu | default (($defaults.resources).limits).cpu }}
+{{- /* Image: per-service repository/tag override wins; otherwise the shared insuretech.serviceImage convention (registry + insuretech/<name>:<appVersion>). */ -}}
+{{- $img := include "insuretech.serviceImage" (dict "root" $ "serviceName" $name) -}}
+{{- if $config.image }}
+{{- $registry := $.Values.global.imageRegistry | default "" -}}
+{{- $repo := $config.image.repository | default (printf "insuretech/%s" $name) -}}
+{{- $tag := $config.image.tag | default $.Chart.AppVersion -}}
+{{- $img = ternary (printf "%s/%s:%s" $registry $repo $tag) (printf "%s:%s" $repo $tag) (ne $registry "") -}}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $fullName }}-{{ $name }}
+  namespace: {{ include "insuretech.namespace" . }}
+  labels:
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-{{ $name }}
+  namespace: {{ include "insuretech.namespace" . }}
+  labels:
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+  annotations:
+    # Force rolling restart when config changes (matches deployment.yaml)
+    checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum | quote }}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ $port }}"
+    prometheus.io/path: "/metrics"
+spec:
+  replicas: {{ $replicas }}
+  selector:
+    matchLabels:
+      {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum | quote }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ $port }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ $fullName }}-{{ $name }}
+      securityContext:
+        # 2026-11-28 (W34-E): the distroless image runs as uid/gid 65532
+        # (Dockerfile USER 65532:65532), not uid 1000 like the generic
+        # template — keep pod securityContext aligned with the image.
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ $img }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+              protocol: TCP
+          env:
+            - name: SERVICE_NAME
+              value: {{ $name }}
+            - name: ENVIRONMENT
+              value: {{ $.Values.global.environment | quote }}
+            # ── Service env contract (actuary-engine/pricing README) ──
+            - name: PORT
+              value: "{{ $port }}"
+            # DB_USER/DB_PASSWORD precede DATABASE_URL so k8s $(VAR)
+            # expansion resolves them (env entries expand in order).
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $fullName }}-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $fullName }}-secrets
+                  key: DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://$(DB_USER):$(DB_PASSWORD)@{{ $fullName }}-postgresql:5432/{{ $.Values.postgresql.auth.database }}"
+            # 2026-11-28 (W34-E): the go-redis client is constructed with
+            # Addr only (cmd/server/main.go) — no password. If the bitnami
+            # redis subchart enforces auth, the accumulation store fails
+            # closed (ACCUM_UNAVAILABLE → refer). See w34e report.
+            - name: REDIS_ADDR
+              value: "{{ $fullName }}-redis-master:6379"
+            # optional: unset key = trusted-gateway mode (README); when set,
+            # service-to-service HMAC per the Leg-D scheme. Operators add the
+            # key to the {{ $fullName }}-secrets Secret (see values
+            # commonSecrets.pricing.hmacSecret — NEVER commit a real secret).
+            - name: PRICING_HMAC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $fullName }}-secrets
+                  key: PRICING_HMAC_SECRET
+                  optional: true
+            - name: TB_SIDECAR_URL
+              value: {{ $config.tigerbeetleSidecarUrl | default "" | quote }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              memory: {{ $memReq }}
+              cpu: {{ $cpuReq }}
+            limits:
+              memory: {{ $memLim }}
+              cpu: {{ $cpuLim }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: certs
+          configMap:
+            name: {{ $fullName }}-tls-certs
+            optional: true
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 14 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullName }}-{{ $name }}
+  namespace: {{ include "insuretech.namespace" . }}
+  labels:
+    {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+  annotations:
+    # Prometheus service discovery — /metrics is served on the http port
+    # (observability.Registry; rating_latency_seconds, referral_total,
+    # accumulation_breach_total per Appendix G).
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ $port }}"
+    prometheus.io/path: "/metrics"
+spec:
+  type: {{ $config.serviceType | default "ClusterIP" }}
+  ports:
+    - port: {{ $port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "insuretech.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 4 }}
+{{- end }}
