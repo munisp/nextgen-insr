@@ -42,13 +42,14 @@ kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-k
 kyc-kyb-system/kyc-orchestrator-service/internal/gateway/apisix.go:generic-api-key:265
 server/lib/envValidation.ts:generic-api-key:300
 # Entry 10 (2026-11-28, C3 PR #364): server/routers/nigeriaPaymentRails.ts in
-# historical branch commit 768c4fb — literal placeholder sentinel
-# "sk_test_placeholder" (NOT a real credential) used as the fail-closed
-# unconfigured-marker for PAYSTACK_SECRET_KEY (:51 default + :594 comparison).
-# Matches gitleaks' stripe-access-token rule by prefix only. Sentinel renamed
-# to REPLACE_ME_PAYSTACK_SECRET in follow-up commit 8413a260 (working tree is
-# clean); branch history cannot be rewritten (squash-merge carries only the
-# clean final content to main). False positive, suppressed by exact fingerprint
-# per the established pattern above.
+# historical branch commit 768c4fb — literal vendor-prefixed test placeholder
+# sentinel (NOT a real credential; pattern: vendor prefix + "test" + suffix,
+# deliberately not reproduced here so this file stays scan-clean) used as the
+# fail-closed unconfigured-marker for PAYSTACK_SECRET_KEY (:51 default + :594
+# comparison). Matches gitleaks' stripe-access-token rule by prefix only.
+# Sentinel renamed to the REPLACE_ME_* form in follow-up commit 8413a260
+# (working tree is clean); branch history cannot be rewritten (squash-merge
+# carries only the clean final content to main). False positive, suppressed by
+# exact fingerprint per the established pattern above.
 768c4fb1798a696945996eb81d7d71ae5a1b7c4c:server/routers/nigeriaPaymentRails.ts:stripe-access-token:51
 768c4fb1798a696945996eb81d7d71ae5a1b7c4c:server/routers/nigeriaPaymentRails.ts:stripe-access-token:594
