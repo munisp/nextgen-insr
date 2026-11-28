@@ -45,7 +45,7 @@ spec:
     {{- end }}
 {{- end }}
 ---
-{{- /* Frontend Ingress */ -}}
+{{/* Frontend Ingress */ -}}
 {{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled -}}
 {{- $fullName := include "insuretech.fullname" . -}}
 apiVersion: networking.k8s.io/v1
