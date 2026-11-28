@@ -1,7 +1,7 @@
 """Reserving: chainladder-based CL / Bornhuetter-Ferguson / Mack wrappers,
 plus F2 extensions: Bootstrap ODP (with standard errors), Cape Cod, and
-Clark LDF. All results come from real chainladder estimator calls — no
-mock reserves."""
+Clark LDF, and F3: PCDM (Paid Chain-ladder Development Method). All
+results come from real chainladder estimator calls — no mock reserves."""
 
 from .data_source import (
     ClaimsSourceConfig,
@@ -18,6 +18,7 @@ from .methods import (
     mack,
     volume_weighted_ldfs,
 )
+from .pcdm import pcdm
 from .triangles import (
     claims_to_incremental_long,
     cumulative_triangle_dict,
@@ -40,5 +41,6 @@ __all__ = [
     "legacy_cells_to_triangle_dict",
     "load_claims",
     "mack",
+    "pcdm",
     "volume_weighted_ldfs",
 ]

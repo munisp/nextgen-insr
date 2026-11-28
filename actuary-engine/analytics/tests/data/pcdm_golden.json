@@ -1,0 +1,72 @@
+{
+  "fixture_triangle": {
+    "2019": [
+      1100.0,
+      1800.0,
+      2250.0,
+      2520.0,
+      2640.0
+    ],
+    "2020": [
+      1200.0,
+      1950.0,
+      2420.0,
+      2690.0
+    ],
+    "2021": [
+      1050.0,
+      1720.0,
+      2140.0
+    ],
+    "2022": [
+      1250.0,
+      2050.0
+    ],
+    "2023": [
+      1300.0
+    ]
+  },
+  "development_factors": [
+    1.6347826086956523,
+    1.2449725776965266,
+    1.1156316916488223,
+    1.0476190476190477
+  ],
+  "cdfs": [
+    2.378723829815284,
+    1.4550704278125408,
+    1.1687570102987663,
+    1.0476190476190477,
+    1.0
+  ],
+  "labels": [
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2023"
+  ],
+  "paid_to_date": [
+    2640.0,
+    2690.0,
+    2140.0,
+    2050.0,
+    1300.0
+  ],
+  "ultimate": [
+    2640.0,
+    2818.095238095238,
+    2501.14000203936,
+    2982.894377015709,
+    3092.3409787598694
+  ],
+  "reserve": [
+    0.0,
+    128.09523809523807,
+    361.14000203935984,
+    932.8943770157089,
+    1792.3409787598694
+  ],
+  "total_reserve": 3214.470595910176,
+  "provenance": "F3 PCDM golden. Independent recomputation: direct textbook numpy loop (volume-weighted LDF f_j = sum(C[:,j+1])/sum(C[:,j]) over rows with both cells observed; CDF_j = prod_{k>=j} f_k; ultimate_i = latest_i * CDF at the last observed dev; reserve_i = ultimate_i - paid-to-date) in scratch script /tmp/f3scratch/pcdm_golden.py \u2014 no chainladder, no production-module imports. Fixture: documented deterministic synthetic cumulative paid triangle (Drizzle paid-subset shape), 5 origins x 5 development periods. The production estimator (real chainladder calls) reproduces these values within rtol=1e-12; tests pin rtol=1e-9 to absorb library re-derivation noise. Note: chainladder cdf_ drops the trailing 1.0, so tests compare against cdfs[:-1]."
+}
