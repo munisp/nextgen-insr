@@ -3,7 +3,42 @@
  *
  * Full Stripe integration: checkout sessions, subscription management,
  * payment history, customer creation, and user linking.
+ *
+ * 2026-11-28 (insureportal→root merge): the plan called this a pure
+ * root-keep, but re-validation showed the ip W28 port carried real
+ * hardening beyond its "@schema" edit (D1). The money-relevant deltas are
+ * merged in (hardening-always-wins), and they are REQUIRED by the ported
+ * ip stripeRouter.test.ts (C3 §2.4 port list):
+ *   D2. Missing STRIPE_SECRET_KEY throws TRPCError PRECONDITION_FAILED
+ *       (explicit configuration error) instead of a bare Error. No
+ *       fabricated payment data is ever returned.
+ *   D3. Both checkout-session creations send a deterministic Stripe
+ *       Idempotency-Key (SHA-256 of kind|userId|itemId|origin|hour-bucket).
+ *       Double-clicks/retries inside the bucket reuse Stripe's cached
+ *       response instead of minting duplicate payable sessions; the origin
+ *       is part of the key so a same-user request with different
+ *       success/cancel URLs never collides with a cached key (Stripe
+ *       rejects same-key/different-params with a 400).
+ *   D4. getStripe() honours STRIPE_API_HOST / STRIPE_API_PORT /
+ *       STRIPE_API_PROTOCOL env overrides. These exist so tests can point
+ *       the real Stripe SDK at an in-process wire-protocol double; they are
+ *       never set in production, where the SDK targets api.stripe.com.
+ *   D5. Domain errors are TRPCError-coded (NOT_FOUND for unknown
+ *       plan/product, PRECONDITION_FAILED when the user has no Stripe
+ *       customer, FORBIDDEN on subscription ownership mismatch) instead of
+ *       bare Errors, so the client receives precise codes. No control-flow
+ *       change.
+ *   D6 (deliberate NON-divergence, ip W28): money-moving procedures are
+ *       NOT switched to financialProcedure — none of these move platform
+ *       funds (checkout happens on Stripe's page; funds land via the
+ *       fail-closed signed webhook in ./webhookHandler.ts), and the
+ *       self-service payer role ("user") has no financial-matrix entry, so
+ *       financialProcedure would fail-closed DENY every legitimate caller.
+ *       protectedProcedure (JWT + fail-closed Permify base-access) kept.
  */
+import crypto from "crypto";
+
+import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -19,12 +54,43 @@ function getStripe(): Stripe {
   if (!_stripe) {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key)
-      throw new Error("STRIPE_SECRET_KEY environment variable is required");
-    _stripe = new Stripe(key, {
+      // D2: explicit fail-closed configuration error (was a bare Error).
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Stripe is not configured: STRIPE_SECRET_KEY environment variable is required",
+      });
+    const opts: any = {
       apiVersion: "2025-04-30.basil" as any,
-    });
+    };
+    // D4: wire-protocol test-double override (never set in production).
+    const host = process.env.STRIPE_API_HOST;
+    if (host) {
+      opts.host = host;
+      if (process.env.STRIPE_API_PORT)
+        opts.port = Number(process.env.STRIPE_API_PORT);
+      opts.protocol = process.env.STRIPE_API_PROTOCOL ?? "http";
+    }
+    _stripe = new Stripe(key, opts);
   }
   return _stripe;
+}
+
+// D3: deterministic Stripe idempotency key for checkout-session creation.
+// Hourly bucket: repeated clicks/retries within the hour replay Stripe's
+// cached response (no duplicate payable sessions); after the bucket rolls a
+// fresh session is minted so an expired session never blocks a retry.
+function checkoutIdempotencyKey(
+  kind: "sub" | "onetime",
+  userId: number,
+  itemId: string,
+  origin: string
+): string {
+  const bucket = Math.floor(Date.now() / 3_600_000);
+  return crypto
+    .createHash("sha256")
+    .update(`insureportal|${kind}|${userId}|${itemId}|${origin}|${bucket}`)
+    .digest("hex");
 }
 
 // ── Helper: Get or create Stripe customer for a user ──────────────────────────
@@ -66,7 +132,8 @@ export const stripeRouter = router({
     .input(z.object({ planId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const plan = AGENT_PLANS.find(p => p.id === input.planId);
-      if (!plan) throw new Error("Plan not found");
+      if (!plan)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
 
       const origin = ctx.req?.headers?.origin || "http://localhost:3000";
       const customerId = await getOrCreateStripeCustomer(
@@ -101,7 +168,9 @@ export const stripeRouter = router({
           plan_id: plan.id,
           plan_name: plan.name,
         },
-      });
+      },
+        { idempotencyKey: checkoutIdempotencyKey("sub", ctx.user.id, plan.id, origin) } // D3
+      );
 
       return { url: session.url, sessionId: session.id };
     }),
@@ -111,7 +180,8 @@ export const stripeRouter = router({
     .input(z.object({ productId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const product = ONE_TIME_PRODUCTS.find(p => p.id === input.productId);
-      if (!product) throw new Error("Product not found");
+      if (!product)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
 
       const origin = ctx.req?.headers?.origin || "http://localhost:3000";
       const customerId = await getOrCreateStripeCustomer(
@@ -147,7 +217,9 @@ export const stripeRouter = router({
           product_id: product.id,
           product_name: product.name,
         },
-      });
+      },
+        { idempotencyKey: checkoutIdempotencyKey("onetime", ctx.user.id, product.id, origin) } // D3
+      );
 
       return { url: session.url, sessionId: session.id };
     }),
@@ -232,13 +304,22 @@ export const stripeRouter = router({
         .from(users)
         .where(eq(users.id, ctx.user.id))
         .limit(1);
-      if (!user?.stripeCustomerId) throw new Error("No Stripe customer found");
+      if (!user?.stripeCustomerId)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No Stripe customer found",
+        });
 
       const sub = await getStripe().subscriptions.retrieve(
         input.subscriptionId
       );
+      // Ownership check (fail-closed): a user can only cancel a subscription
+      // bound to their own Stripe customer.
       if ((sub as any).customer !== user.stripeCustomerId) {
-        throw new Error("Subscription does not belong to this user");
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Subscription does not belong to this user",
+        });
       }
 
       const cancelled = await getStripe().subscriptions.update(
@@ -283,9 +364,10 @@ export const stripeRouter = router({
       .where(eq(users.id, ctx.user.id))
       .limit(1);
     if (!user?.stripeCustomerId)
-      throw new Error(
-        "No Stripe customer found. Please make a purchase first."
-      );
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "No Stripe customer found. Please make a purchase first.",
+      });
 
     const origin = ctx.req?.headers?.origin || "http://localhost:3000";
     const portalSession = await getStripe().billingPortal.sessions.create({

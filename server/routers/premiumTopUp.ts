@@ -1,21 +1,30 @@
 /**
  * premiumTopUp.ts — Insurance Premium Top-Up Router
  * Handles premium payment top-ups with TigerBeetle atomicity.
+ *
+ * 2026-11-28 (insureportal→root merge, W32-C contract): the ip-only
+ * server/routers/floatTopUp.ts supervisor-approval workflow was CONSUMED
+ * into this router (one premiumTopUp namespace — submit/myRequests/
+ * supervisorPendingTopUps/supervisorApproveTopUp below). floatTopUp.ts is
+ * deliberately NOT ported as a second router (duplicate-namespace hazard,
+ * merge-plan R4).
  */
 import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { customers, transactions, policies, policyLifecycleStates, auditLog } from "../../drizzle/schema";
+import { customers, transactions, policies, policyLifecycleStates, auditLog, agents, premiumTopUpRequests, supervisorAgents } from "../../drizzle/schema";
 import { getOrInitLifecycle, validateReinstatement } from "../lib/policyLifecycle";
 import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { fluvioProduce } from "../fluvio";
+import { notifyOwner } from "../_core/notification";
+import { floatTopupRequestsTotal } from "../metrics";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";
@@ -71,6 +80,11 @@ async function assertCallerOwnsPolicy(
 
   throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 }
+
+// 2026-11-28 (merge, consumed from ip floatTopUp.ts — Phase 48): float
+// top-up requests above this amount require supervisor approval before an
+// admin can credit the agent's float.
+const SUPERVISOR_APPROVAL_THRESHOLD = 50_000;
 
 export const premiumTopUpRouter = router({
   topUp: financialProcedure
@@ -360,4 +374,334 @@ export const premiumTopUpRouter = router({
         overdueCount: Number(stats?.overdue ?? 0),
       };
     }),
+
+  // ── Submit a float top-up request (consumed from ip floatTopUp.ts, Phase 48) ─
+  // Agent-facing: creates a pending premiumTopUpRequests row; requests above
+  // SUPERVISOR_APPROVAL_THRESHOLD additionally require supervisor approval
+  // before admin credit. Pending-request uniqueness per agent is enforced
+  // (check-then-throw on the latest request — a duplicate pending request can
+  // never move funds by itself; the admin credit leg is separately gated).
+  submit: protectedProcedure
+    .input(
+      z.object({
+        amount: z.number().positive().max(10_000_000),
+        notes: z.string().max(256).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        // Check for existing pending request
+        const existing = await db
+          .select()
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.agentId, session.id))
+          .orderBy(desc(premiumTopUpRequests.createdAt))
+          .limit(1);
+        if (existing[0] && existing[0].status === "pending") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "You already have a pending top-up request. Please wait for approval.",
+          });
+        }
+
+        // Phase 48: determine if supervisor approval is required
+        const requiresSupervisor = input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
+
+        const result = await db
+          .insert(premiumTopUpRequests)
+          .values({
+            agentId: session.id,
+            requestedAmount: String(input.amount),
+            status: "pending",
+            notes: input.notes ?? null,
+            supervisorApprovalRequired: requiresSupervisor,
+          })
+          .returning();
+
+        await writeAuditLog({
+          agentId: session.id,
+          action: "FLOAT_TOPUP_REQUESTED",
+          resource: "float_topup",
+          resourceId: String(result[0]!.id),
+          status: "success",
+          metadata: { amount: input.amount, requiresSupervisor },
+        });
+
+        // Notify supervisor(s) assigned to this agent if threshold exceeded
+        if (requiresSupervisor) {
+          try {
+            await notifyOwner({
+              title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
+              content: `Agent ${session.agentId} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+            });
+          } catch {
+            // Non-critical — the durable request row is the source of truth.
+          }
+        }
+
+        floatTopupRequestsTotal.labels("submitted").inc();
+
+        return {
+          success: true,
+          requestId: result[0]!.id,
+          requiresSupervisorApproval: requiresSupervisor,
+          message: requiresSupervisor
+            ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
+            : "Top-up request submitted. Awaiting admin approval.",
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // ── List agent's own top-up requests (consumed from ip floatTopUp.ts) ────
+  myRequests: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
+        });
+      const db = await getDb();
+      if (!db) throw new Error("Database connection unavailable");
+      const rows = await db
+        .select()
+        .from(premiumTopUpRequests)
+        .where(eq(premiumTopUpRequests.agentId, session.id))
+        .orderBy(desc(premiumTopUpRequests.createdAt))
+        .limit(20);
+      return rows.map((r) => ({
+        ...r,
+        requestedAmount: Number(r.requestedAmount),
+      }));
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
+  // ── Supervisor: list pending large top-ups for assigned agents ────────────
+  // (consumed from ip floatTopUp.ts; supervisorAgents binding preserved —
+  // supervisors see ONLY their assigned agents' requests, admins see all.)
+  supervisorPendingTopUps: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
+        });
+      if (session.role !== "supervisor" && session.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Supervisor or admin privileges required",
+        });
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database connection unavailable");
+
+      // For supervisors: only show top-ups for their assigned agents
+      // For admins: show all supervisor-required top-ups
+      let agentIds: number[] = [];
+      if (session.role === "supervisor") {
+        const assignments = await db
+          .select({ agentId: supervisorAgents.agentId })
+          .from(supervisorAgents)
+          .where(eq(supervisorAgents.supervisorUserId, session.id));
+        agentIds = assignments.map((a) => a.agentId);
+        if (agentIds.length === 0) return [];
+      }
+
+      const rows = await db
+        .select({
+          id: premiumTopUpRequests.id,
+          agentId: premiumTopUpRequests.agentId,
+          requestedAmount: premiumTopUpRequests.requestedAmount,
+          status: premiumTopUpRequests.status,
+          supervisorApprovalRequired:
+            premiumTopUpRequests.supervisorApprovalRequired,
+          supervisorApprovedBy: premiumTopUpRequests.supervisorApprovedBy,
+          supervisorApprovedAt: premiumTopUpRequests.supervisorApprovedAt,
+          notes: premiumTopUpRequests.notes,
+          createdAt: premiumTopUpRequests.createdAt,
+          agentUserId: agents.agentId,
+          agentName: agents.name,
+          agentFloat: agents.premiumReserve,
+          agentTier: agents.tier,
+        })
+        .from(premiumTopUpRequests)
+        .leftJoin(agents, eq(premiumTopUpRequests.agentId, agents.id))
+        .where(
+          and(
+            eq(premiumTopUpRequests.supervisorApprovalRequired, true),
+            eq(premiumTopUpRequests.status, "pending")
+          )
+        )
+        .orderBy(desc(premiumTopUpRequests.createdAt));
+
+      // Filter by assigned agents for supervisors
+      const filtered =
+        session.role === "supervisor"
+          ? rows.filter(
+              (r) => r.agentId !== null && agentIds.includes(r.agentId)
+            )
+          : rows;
+
+      return filtered.map((r) => ({
+        ...r,
+        requestedAmount: Number(r.requestedAmount),
+        agentFloat: Number(r.agentFloat ?? 0),
+      }));
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
+  // ── Supervisor: approve a large top-up (consumed from ip floatTopUp.ts) ──
+  supervisorApproveTopUp: protectedProcedure
+    .input(
+      z.object({
+        requestId: z.number().int().positive(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+        if (session.role !== "supervisor" && session.role !== "admin") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Supervisor or admin privileges required",
+          });
+        }
+
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        const rows = await db
+          .select()
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.id, input.requestId))
+          .limit(1);
+        const req = rows[0];
+        if (!req)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Request not found",
+          });
+        if (req.status !== "pending") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Request already ${req.status}`,
+          });
+        }
+
+        // Verify supervisor is assigned to this agent (skip for admin)
+        if (session.role === "supervisor") {
+          const assignment = await db
+            .select()
+            .from(supervisorAgents)
+            .where(
+              and(
+                eq(supervisorAgents.supervisorUserId, session.id),
+                eq(supervisorAgents.agentId, req.agentId)
+              )
+            )
+            .limit(1);
+          if (!assignment[0]) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "You are not assigned as supervisor for this agent",
+            });
+          }
+        }
+
+        await db
+          .update(premiumTopUpRequests)
+          .set({
+            // 2026-11-28 (merge fix): ip wrote
+            // `supervisorApprovedBy: session.agentId` — the agent CODE — so
+            // the audit trail could not be joined back to the agents PK and
+            // could collide across tenants. The approver identity is the
+            // verified session's numeric agents PK
+            // (`supervisorApprovedBy: session.id`), stringified for the
+            // varchar(64) column.
+            supervisorApprovedBy: String(session.id),
+            supervisorApprovedAt: new Date(),
+            notes: input.notes
+              ? `${req.notes ?? ""}\nSupervisor note: ${input.notes}`.trim()
+              : req.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(premiumTopUpRequests.id, input.requestId));
+
+        await writeAuditLog({
+          agentId: session.id,
+          action: "FLOAT_TOPUP_SUPERVISOR_APPROVED",
+          resource: "float_topup",
+          resourceId: String(input.requestId),
+          status: "success",
+          metadata: {
+            amount: Number(req.requestedAmount),
+            targetAgentId: req.agentId,
+            notes: input.notes,
+          },
+        });
+
+        return {
+          success: true,
+          message:
+            "Supervisor approval recorded. Admin can now credit the float.",
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });
+
+
