@@ -47,14 +47,21 @@ import { logger } from "../_core/logger";
 import crypto from "crypto";
 
 // ── Environment Configuration ─────────────────────────────────────────────────
+// 2026-11-28 (C3 fix-cycle-2, CI gitleaks): the unconfigured SENTINELS were
+// renamed off vendor-key prefixes — the previous stripe-style test-key
+// sentinel tripped gitleaks' stripe-access-token rule and the other
+// vendor-prefixed forms risk matching custom rulesets. They are NOT real
+// secrets (fail-closed unconfigured markers only); the fail-closed sentinel
+// comparison below is updated in lockstep and the 503/401 semantics are
+// byte-identical otherwise.
 const PAYSTACK_SECRET_KEY =
-  process.env.PAYSTACK_SECRET_KEY ?? "sk_test_placeholder";
+  process.env.PAYSTACK_SECRET_KEY ?? "REPLACE_ME_PAYSTACK_SECRET";
 const PAYSTACK_PUBLIC_KEY =
-  process.env.PAYSTACK_PUBLIC_KEY ?? "pk_test_placeholder";
+  process.env.PAYSTACK_PUBLIC_KEY ?? "REPLACE_ME_PAYSTACK_PUBLIC";
 const FLUTTERWAVE_SECRET_KEY =
-  process.env.FLUTTERWAVE_SECRET_KEY ?? "FLWSECK_TEST-placeholder";
+  process.env.FLUTTERWAVE_SECRET_KEY ?? "REPLACE_ME_FLUTTERWAVE_SECRET";
 const FLUTTERWAVE_PUBLIC_KEY =
-  process.env.FLUTTERWAVE_PUBLIC_KEY ?? "FLWPUBK_TEST-placeholder";
+  process.env.FLUTTERWAVE_PUBLIC_KEY ?? "REPLACE_ME_FLUTTERWAVE_PUBLIC";
 const INTERSWITCH_CLIENT_ID =
   process.env.INTERSWITCH_CLIENT_ID ?? "IKIA-placeholder";
 const INTERSWITCH_CLIENT_SECRET =
@@ -591,7 +598,7 @@ export const nigeriaPaymentRailsRouter = router({
       // NG-18: fail-closed HMAC verification, ALWAYS. Mirrors
       // services/go/payment-gateway: no secret configured → 503; missing or
       // mismatched signature → 401. No skip path.
-      if (!PAYSTACK_SECRET_KEY || PAYSTACK_SECRET_KEY === "sk_test_placeholder") {
+      if (!PAYSTACK_SECRET_KEY || PAYSTACK_SECRET_KEY === "REPLACE_ME_PAYSTACK_SECRET") {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Paystack webhook not configured (PAYSTACK_SECRET_KEY missing); refusing to process",
