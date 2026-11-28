@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -7,7 +7,8 @@ import {
   agentGeofenceZones,
   deviceLocations,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 

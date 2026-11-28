@@ -132,8 +132,16 @@ export default function ManagementPortal() {
 
   const reviewKyc = trpc.management.kyc.review.useMutation({
     onSuccess: (_data, vars) => {
+      // W32-C (2026-11-27): `vars` is typed `void | {…}` by the portal's
+      // @trpc/react-query version (its mutation-variables type includes the
+      // void arm even for non-optional inputs). At runtime react-query
+      // always passes the exact variables object mutate() was called with,
+      // so the void arm never materialises — but it must be narrowed
+      // honestly. Under this tsconfig (strictNullChecks off) `?.` does NOT
+      // narrow void, so use a truthiness guard: `void` carries only
+      // falsy `undefined`, which `vars &&` excludes.
       toast.success(
-        vars.status === "completed" ? "KYC approved" : "KYC rejected"
+        vars && vars.status === "completed" ? "KYC approved" : "KYC rejected"
       );
       utils.management.kyc.list.invalidate();
     },

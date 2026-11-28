@@ -356,8 +356,8 @@ export default function CustomerPortal() {
                   >
                     <option value="all">All Types</option>
                     {[
-                      "Cash In",
-                      "Cash Out",
+                      "Premium Payment",
+                      "Claim Payout",
                       "Transfer",
                       "Airtime",
                       "Bills",

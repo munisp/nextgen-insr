@@ -8,7 +8,6 @@
  * - Paginated results with relevance scoring
  * - Search result highlighting
  */
-import { TRPCError } from "@trpc/server";
 import { ilike, or, sql, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -17,7 +16,8 @@ import {
   transactions,
   customers,
   disputes,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 

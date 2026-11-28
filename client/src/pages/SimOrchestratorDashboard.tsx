@@ -1,10 +1,4 @@
 import { useState } from "react";
-import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from "recharts";
-const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
-import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,9 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export default function SimOrchestratorDashboard() {
-  // No aggregate stats endpoint exists for these charts; render empty state.
-  const data: Record<string, number | undefined> = {};
-  const isMobile = useIsMobile();
   const [terminalId, setTerminalId] = useState("TERM-001");
   const [agentId, setAgentCode] = useState("AGT-001");
 
@@ -23,12 +14,12 @@ export default function SimOrchestratorDashboard() {
     { retry: false, enabled: !!terminalId }
   );
   const carrierQ = trpc.simOrchestrator.getCarrierSummary.useQuery(
+    // W32-C (2026-11-27): main's server contract is `agentCode` (the UI
+    // state var is named `agentId` but holds the agent CODE, see the
+    // "Agent Code" input label below) — byte-identical to main's page.
     { agentCode: agentId, hours: 24 },
     { retry: false, enabled: !!agentId }
   );
-
-  const simResults = [{ name: 'Passed', value: Number(data?.passed ?? 0) }, { name: 'Failed', value: Number(data?.failed ?? 0) }, { name: 'Pending', value: Number(data?.pending ?? 0) }].filter(d=>d.value>0);
-  const simHistory = Array.from({length:7},(_,i)=>{ const d=new Date(Date.now()-(6-i)*86400000); return { day: d.toLocaleDateString('en-NG',{weekday:'short'}), runs: Math.max(0,Number(data?.totalRuns??0)*(0.5+Math.random())) }; });
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -155,21 +146,6 @@ export default function SimOrchestratorDashboard() {
             )}
           </CardContent>
         </Card>
-
-        <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
-          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Simulation Results</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart><Pie data={simResults.length>0?simResults:[{name:"No data",value:1}]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ${value}`}>{(simResults.length>0?simResults:[{name:"No data",value:1}]).map((_,i)=><Cell key={i} fill={["#22c55e","#ef4444","#f59e0b"][i%3]}/>)}</Pie><Tooltip/></PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Simulation Run History</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={simHistory}><CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/><XAxis dataKey="day" tick={{fontSize:11,fill:"var(--text-secondary)"}}/><YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/><Tooltip/><Bar dataKey="runs" fill="#6366f1" radius={[4,4,0,0]} name="Runs"/></BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { eq, desc, sql, count, avg, and } from "drizzle-orm";
+import { eq, desc, count, avg } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -7,7 +7,8 @@ import {
   systemConfig,
   auditLog,
   transactions,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 

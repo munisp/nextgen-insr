@@ -1,11 +1,14 @@
-import { TRPCError } from "@trpc/server";
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
 
+import { auditLog } from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 /**
  * USSD Localization Router
- *
+ * 
  * Manages multi-language content for USSD menus across Nigeria's 36 states.
  * Supports: English, Hausa, Yoruba, Igbo, Pidgin.
  * State-to-language mapping for auto-detection based on carrier prefix.
@@ -13,11 +16,12 @@ import { protectedProcedure, router } from "../_core/trpc";
 export const ussdLocalizationRouter = router({
   list: protectedProcedure
     .input(z.object({ limit: z.number().default(20), offset: z.number().default(0), language: z.string().optional() }))
-    .query(async () => {
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "USSD localization management is not implemented yet",
-      });
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { data: [], total: 0 };
+      const results = await database.select().from(auditLog).orderBy(desc(auditLog.id)).limit(input.limit).offset(input.offset);
+      const [{ total }] = await database.select({ total: count() }).from(auditLog);
+      return { data: results, total: total ?? 0 };
     }),
   getTranslation: protectedProcedure
     .input(z.object({ key: z.string(), language: z.enum(["en", "ha", "yo", "ig", "pcm"]) }))

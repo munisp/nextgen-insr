@@ -1,10 +1,10 @@
-// @ts-check
 // Sprint 87: Double-entry validation, auto-balancing, reversal workflow
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, sql } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { gl_journal_entries } from "../../drizzle/schema";
+import { gl_journal_entries } from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
