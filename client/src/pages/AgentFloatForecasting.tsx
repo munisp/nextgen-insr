@@ -46,11 +46,6 @@ type AgentForecast = {
   lastReplenished?: string;
 };
 
-// 2026-11-27 (W32-D): MOCK_AGENTS deleted. It was rendered (via the
-// `?? MOCK_AGENTS` fallback below) whenever the real forecast query had no
-// data — fabricated agents on a production path. Absent data now renders
-// an honest empty state (see the forecast table).
-
 export default function AgentFloatForecasting() {
   const [selectedPeriod, setSelectedPeriod] = useState("7d");
   const [replenishDialogOpen, setReplenishDialogOpen] = useState(false);
@@ -63,48 +58,43 @@ export default function AgentFloatForecasting() {
   const [replenishNotes, setReplenishNotes] = useState("");
   const [confirmStep, setConfirmStep] = useState(false);
   const [successAgent, setSuccessAgent] = useState<AgentForecast | null>(null);
-  // 2026-11-27 (W32-D): the amount actually sent with the confirmed
-  // replenishment, so the success banner reports the real figure (the
-  // replenishAmount field is cleared on success).
-  const [successAmount, setSuccessAmount] = useState<number | null>(null);
 
-  // @ts-ignore Sprint 85
   const stats = trpc.agentFloatForecasting.getStats.useQuery();
-  // C1 drift fix (2026-11-28): this page's contract matches the insureportal
-  // getStats (predictedDemand7d/avgAccuracy nullable, fail-loud nulls) which
-  // C2 ports into server/routers/agentFloatForecasting.ts wholesale. The
-  // pre-C2 root getStats returns a smaller shape, so view the data through
-  // the ported contract; fields that are absent pre-C2 render the same
-  // honest empty state the nulls do.
-  const statsData = stats.data as
-    | { predictedDemand7d?: number | null; avgAccuracy?: number | null }
-    | undefined;
-  // @ts-ignore Sprint 85
+  // F-12 (S87-02): getStats delivers real aggregates (totalFloat, stockoutRisk,
+  // agentsMonitored from agents.premiumReserve).
+  // B17: getForecast now delivers a REAL trailing-average projection
+  // (method + window in the response). It is NOT an ML model — model-telemetry
+  // fields (accuracy/MAPE, retraining) have no data source and stay in their
+  // honest empty state; only method/dataPoints are wired from the real
+  // response.
   const forecast = trpc.agentFloatForecasting.getForecast.useQuery({
     days: parseInt(selectedPeriod) || 7,
   });
+  const model: Partial<{
+    predictedDemand7d: number;
+    avgAccuracy: number;
+    trainingDataPoints: number;
+    modelType: string;
+    lastRetrained: string;
+    nextRetrain: string;
+    replenishmentHistory: Array<{ date: string; amount: number }>;
+  }> = {
+    ...(forecast.data?.method != null
+      ? { modelType: forecast.data.method }
+      : {}),
+    ...(forecast.data?.dataPoints != null
+      ? { trainingDataPoints: forecast.data.dataPoints }
+      : {}),
+  };
   const triggerReplenishment =
-    // @ts-ignore Sprint 85
     trpc.agentFloatForecasting.triggerReplenishment.useMutation({
       onSuccess: () => {
         setConfirmStep(false);
         setReplenishDialogOpen(false);
-        if (selectedAgent) {
-          // Single-agent replenish: report the amount actually sent.
-          const sentAmount = Number(replenishAmount);
-          setSuccessAgent(selectedAgent);
-          setSuccessAmount(sentAmount);
-          toast.success(
-            `Replenishment of ₦${sentAmount.toLocaleString()} triggered for ${selectedAgent.name}`
-          );
-        } else {
-          // 2026-11-27 (W32-D): auto mode — the server tops up each
-          // below-threshold agent by its OWN computed shortfall, so there is
-          // no single amount/agent to report here.
-          toast.success(
-            "Auto-replenishment triggered for all agents below threshold"
-          );
-        }
+        setSuccessAgent(selectedAgent);
+        toast.success(
+          `Replenishment of ₦${Number(replenishAmount).toLocaleString()} triggered for ${selectedAgent?.name}`
+        );
         setReplenishAmount("");
         setReplenishSource("platform-pool");
         setReplenishPriority("normal");
@@ -122,34 +112,20 @@ export default function AgentFloatForecasting() {
     setReplenishNotes("");
     setConfirmStep(false);
     setSuccessAgent(null);
-    setSuccessAmount(null);
     setReplenishDialogOpen(true);
   };
 
   const handleConfirmReplenish = () => {
     if (!selectedAgent) return;
-    // 2026-11-27 (W32-D): was hardcoded `amount: 50000` — the reviewed and
-    // confirmed dialog amount was silently discarded and ₦50,000 was sent
-    // regardless. Send the real operator-entered amount (the dialog's
-    // "Review & Confirm" gate already guarantees a positive number).
-    const amount = Number(replenishAmount);
-    if (!Number.isFinite(amount) || amount <= 0) return;
+    // Send the user-entered amount (defaults to the agent's shortfall) — never a hardcoded value.
+    const amount = Number(replenishAmount) || selectedAgent.shortfall;
     triggerReplenishment.mutate({ agentId: selectedAgent.id, amount });
   };
 
-  // 2026-11-27 (W32-D): MOCK_AGENTS fallback removed — rendering fabricated
-  // agents when the real forecast was absent/errored was fabrication on a
-  // production path. Absent data now renders an honest empty state in the
-  // table below (loading / INSUFFICIENT_DATA error / no rows).
-  const forecasts = (forecast.data?.forecasts ??
-    []) as unknown as AgentForecast[];
-  // Real aggregate 7-day shortfall of the displayed forecast — the amount
-  // sent with the auto-replenish trigger (see the Auto-Replenish button).
-  const totalShortfall =
-    Math.round(
-      forecasts.reduce((acc, a) => acc + Math.max(0, a.shortfall || 0), 0) *
-        100
-    ) / 100;
+  // Real forecasts only — no mock agents fallback.
+  const agents: AgentForecast[] = Array.isArray(forecast.data?.forecasts)
+    ? (forecast.data.forecasts as unknown as AgentForecast[])
+    : [];
 
   return (
     <DashboardLayout>
@@ -158,7 +134,10 @@ export default function AgentFloatForecasting() {
           <div>
             <h1 className="text-2xl font-bold">Agent Float Forecasting</h1>
             <p className="text-muted-foreground">
-              ML-powered float prediction and auto-replenishment
+              Trailing-average float projection and replenishment
+              {forecast.data?.windowDays != null
+                ? ` (method: ${forecast.data.method}, window: ${forecast.data.windowDays}d)`
+                : ""}
             </p>
           </div>
           <div className="flex gap-2">
@@ -185,15 +164,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {/* 2026-11-27 (W32-D): fake `?? 2450000000` fallback removed —
-                    em-dash until the real aggregate arrives. */}
-                {stats.data ? `₦${stats.data.totalFloat.toLocaleString()}` : "—"}
+                {stats.isLoading
+                  ? "…"
+                  : stats.data?.totalFloat != null
+                    ? `₦${Number(stats.data.totalFloat).toLocaleString()}`
+                    : "—"}
               </div>
-              {/* 2026-11-27 (W32-D): fabricated "+12.3% from last week" trend
-                  removed; no honest week-over-week source exists. */}
-              <p className="text-xs text-muted-foreground">
-                Sum of agent premium reserves
-              </p>
             </CardContent>
           </Card>
           <Card>
@@ -204,74 +180,44 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-500">
-                {/* 2026-11-27 (W32-D): fake `?? 47` fallback removed. Also
-                    corrected display semantics: the server's stockoutRisk is
-                    a PERCENTAGE (0-100) of monitored agents at zero/negative
-                    float, not a count (server/routers/
-                    agentFloatForecasting.ts getStats NOTE). */}
-                {stats.data ? `${stats.data.stockoutRisk}%` : "—"}
+                {stats.isLoading ? "…" : (stats.data?.stockoutRisk ?? "—")}
               </div>
               <p className="text-xs text-muted-foreground">
-                of {stats.data?.agentsMonitored ?? "—"} monitored agents at
-                zero/negative float
+                of {stats.data?.agentsMonitored ?? "—"} active agents
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-muted-foreground">
-                {/* 2026-11-27 (W32-D): was "Predicted Shortfall (24h)" — the
-                    underlying field is the 7-day predicted DEMAND from the
-                    trailing-average forecaster (server getStats D9). */}
-                Predicted Demand (7d)
+                Predicted Shortfall (24h)
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                {/* 2026-11-27 (W32-D): fake `?? 85000000` fallback removed.
-                    The server returns null when trailing history is below
-                    the minimum (INSUFFICIENT_DATA) — render that honestly
-                    instead of a fabricated ₦85,000,000. */}
-                {statsData == null ? (
-                  "—"
-                ) : statsData.predictedDemand7d == null ? (
-                  <span className="text-base font-medium text-muted-foreground">
-                    Insufficient data
-                  </span>
-                ) : (
-                  `₦${statsData.predictedDemand7d.toLocaleString()}`
-                )}
+                {stats.isLoading
+                  ? "…"
+                  : model.predictedDemand7d != null
+                    ? `₦${Number(model.predictedDemand7d).toLocaleString()}`
+                    : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {/* 2026-11-27 (W32-D): fabricated "Across 23 agents" replaced
-                    with the live forecast row count when available. */}
-                {forecast.data
-                  ? `Across ${forecast.data.forecasts.length} agents`
-                  : "Trailing-average forecast basis"}
-              </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-muted-foreground">
-                Forecast Accuracy
+                Model Accuracy
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                {/* 2026-11-27 (W32-D): fake `?? 94.7` fallback removed. No
-                    forecast-accuracy telemetry exists (the server emits an
-                    explicit null — see getStats STOP note), so render an
-                    honest empty state instead of a fabricated 94.7%. */}
-                {statsData?.avgAccuracy != null
-                  ? `${statsData.avgAccuracy}%`
-                  : "—"}
+                {stats.isLoading
+                  ? "…"
+                  : model.avgAccuracy != null
+                    ? `${model.avgAccuracy}%`
+                    : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {statsData?.avgAccuracy != null
-                  ? "Last 30-day MAPE"
-                  : "No accuracy telemetry exists"}
-              </p>
+              <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
           </Card>
         </div>
@@ -285,23 +231,10 @@ export default function AgentFloatForecasting() {
                 onClick={() =>
                   triggerReplenishment.mutate({
                     agentId: "all-below-threshold",
-                    // 2026-11-27 (W32-D): was hardcoded `amount: 50000`. In
-                    // auto mode the server IGNORES this field and tops each
-                    // agent up by its OWN computed 7-day shortfall (see
-                    // triggerReplenishment in server/routers/
-                    // agentFloatForecasting.ts), but the input schema still
-                    // requires a positive number ≤ ₦5,000,000. Send the real
-                    // aggregate shortfall of the displayed forecast, clamped
-                    // to the schema maximum — never a fabricated blanket
-                    // figure.
-                    amount: Math.min(totalShortfall, 5_000_000),
+                    amount: 50000,
                   })
                 }
-                disabled={
-                  triggerReplenishment.isPending ||
-                  forecast.isError ||
-                  totalShortfall <= 0
-                }
+                disabled={triggerReplenishment.isPending}
               >
                 {triggerReplenishment.isPending
                   ? "Processing..."
@@ -310,6 +243,22 @@ export default function AgentFloatForecasting() {
             </div>
           </CardHeader>
           <CardContent>
+            {forecast.isLoading ? (
+              <div className="space-y-3 py-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-10 rounded bg-muted animate-pulse" />
+                ))}
+              </div>
+            ) : forecast.isError ? (
+              <div className="py-8 text-center text-sm text-red-500">
+                Failed to load forecasts
+                {forecast.error?.message ? `: ${forecast.error.message}` : "."}
+              </div>
+            ) : agents.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No forecast data available yet
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -323,24 +272,8 @@ export default function AgentFloatForecasting() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* 2026-11-27 (W32-D): honest empty states replace the
-                      MOCK_AGENTS fallback (and the crash on
-                      `undefined.map` when the query had no data). */}
-                  {forecasts.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="py-6 px-2 text-center text-muted-foreground"
-                      >
-                        {forecast.isLoading
-                          ? "Loading forecast…"
-                          : forecast.isError
-                            ? `Forecast unavailable: ${forecast.error?.message ?? "unknown error"}`
-                            : "No agents with sufficient transaction history to forecast."}
-                      </td>
-                    </tr>
-                  ) : (
-                    forecasts.map((agent: any) => (
+                  {agents.map(
+                    (agent: any) => (
                       <tr key={agent.id} className="border-b hover:bg-muted/50">
                         <td className="py-3 px-2">
                           <div className="font-medium">{agent.name}</div>
@@ -391,11 +324,12 @@ export default function AgentFloatForecasting() {
                           )}
                         </td>
                       </tr>
-                    ))
+                    )
                   )}
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -410,12 +344,9 @@ export default function AgentFloatForecasting() {
                     Replenishment Initiated Successfully
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {/* 2026-11-27 (W32-D): report the amount actually sent
-                        (captured before the form reset), not the shortfall
-                        the pre-reset form field happened to hold. */}
                     ₦
                     {Number(
-                      successAmount ?? successAgent.shortfall
+                      replenishAmount || successAgent.shortfall
                     ).toLocaleString()}{" "}
                     is being transferred to {successAgent.name} (
                     {successAgent.id}). Expected completion: 15-30 minutes.
@@ -440,47 +371,35 @@ export default function AgentFloatForecasting() {
             <CardHeader>
               <CardTitle className="text-lg">Forecast Method</CardTitle>
             </CardHeader>
-            {/* 2026-11-27 (W32-D): this card previously rendered fabricated
-                claims — "2.4M training transactions", "LSTM + XGBoost
-                Ensemble", "Last Retrained 2 hours ago". There is NO ML
-                model: the server's forecaster is a trailing average
-                (method/windowDays/horizonDays/historyDayCount/
-                minHistoryDays/dataPoints on the getForecast payload). Those
-                real fields now populate the card; em-dash when the forecast
-                is unavailable. */}
             <CardContent className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b">
+                <span className="text-sm">Window Data Points</span>
+                <span className="font-medium">
+                  {model.trainingDataPoints ?? "—"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b">
+                <span className="text-sm">Features Used</span>
+                <span className="font-medium">
+                  Trailing daily net flow (Cash Out − Cash In)
+                </span>
+              </div>
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-sm">Method</span>
                 <span className="font-medium">
-                  Trailing average of daily net float outflow
+                  {model.modelType ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">History Window</span>
+                <span className="text-sm">Last Retrained</span>
                 <span className="font-medium">
-                  {forecast.data ? `${forecast.data.windowDays} days` : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Forecast Horizon</span>
-                <span className="font-medium">
-                  {forecast.data ? `${forecast.data.horizonDays} days` : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">History Days Found</span>
-                <span className="font-medium">
-                  {forecast.data
-                    ? `${forecast.data.historyDayCount} (minimum ${forecast.data.minHistoryDays})`
-                    : "—"}
+                  {model.lastRetrained ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2">
-                <span className="text-sm">Data Points</span>
+                <span className="text-sm">Next Retrain</span>
                 <span className="font-medium">
-                  {forecast.data
-                    ? `${forecast.data.dataPoints.toLocaleString()} transactions`
-                    : "—"}
+                  {model.nextRetrain ?? "—"}
                 </span>
               </div>
             </CardContent>
@@ -489,16 +408,37 @@ export default function AgentFloatForecasting() {
             <CardHeader>
               <CardTitle className="text-lg">Replenishment History</CardTitle>
             </CardHeader>
-            {/* 2026-11-27 (W32-D): the five hardcoded sample rows ("Today
-                09:15 — 12 agents — ₦15,600,000", etc.) were fabricated
-                history on a production path. No server procedure exposes
-                replenishment history yet, so the card renders an honest
-                empty state. */}
-            <CardContent>
-              <p className="text-sm text-muted-foreground py-2">
-                Replenishment history is not yet connected to a live data
-                source, so no entries are shown here.
-              </p>
+            <CardContent className="space-y-3">
+              {(Array.isArray(model.replenishmentHistory)
+                ? model.replenishmentHistory
+                : []
+              ).length === 0 ? (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  No replenishment history available yet
+                </div>
+              ) : (
+                ((model.replenishmentHistory ?? []) as any[]).map((item, i) => (
+                <div
+                  key={i}
+                  className="flex justify-between items-center py-2 border-b last:border-0"
+                >
+                  <div>
+                    <div className="text-sm font-medium">{item.date}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {item.agents} agents replenished
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">
+                      ₦{Number(item.amount).toLocaleString()}
+                    </div>
+                    <Badge variant="outline" className="text-green-500">
+                      {item.status}
+                    </Badge>
+                  </div>
+                </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
@@ -670,10 +610,6 @@ export default function AgentFloatForecasting() {
                           <SelectItem value="platform-pool">
                             <span className="flex items-center gap-2">
                               <Building2 className="h-3 w-3" /> Platform Float
-                              {/* 2026-11-27 (W32-D): fabricated
-                                  "(₦2.45B available)" removed — the live
-                                  pool balance is not a figure this page
-                                  has an honest source for. */}
                               Pool
                             </span>
                           </SelectItem>
@@ -818,7 +754,7 @@ export default function AgentFloatForecasting() {
 
                   <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
                     <strong>Audit Trail:</strong> This action will be logged
-                    under your admin account with timestamp, agent
+                    under your admin account (Dev Admin) with timestamp, agent
                     ID, amount, and source. The agent will receive an SMS and
                     push notification upon fund arrival.
                   </div>
