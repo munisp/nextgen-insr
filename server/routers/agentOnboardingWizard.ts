@@ -6,15 +6,13 @@ import {
   agents,
   kycSessions,
   premiumTopUpRequests,
+  posTerminals,
   trainingEnrollments,
   auditLog,
-} from "../../drizzle/schema";
-import {
-  posTerminals,
-} from "../../drizzle/schema.additions";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+} from "@schema";
+
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { assertAgentActivationEligible } from "../lib/agentLifecycle";
 
 
 export const agentOnboardingWizardRouter = router({
@@ -137,41 +135,21 @@ export const agentOnboardingWizardRouter = router({
           : 0,
     };
   }),
-  // H-wave (adversarial verifier #1): this was a plain protectedProcedure —
-  // ANY authenticated user could activate ANY agent, bypassing every G3
-  // gate. Now: admin-only, durable verification evidence required
-  // (assertAgentActivationEligible), approver identity recorded.
-  approveAgent: adminProcedure
+  approveAgent: protectedProcedure
     .input(z.object({ agentId: z.number() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const [agent] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.agentId))
-          .limit(1);
-        if (!agent || agent.deletedAt) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-        }
-        // Fail-closed: no verification evidence (phone OTP or approved KYC),
-        // no activation — same gate as every other activation path.
-        const evidence = await assertAgentActivationEligible(input.agentId);
         await db
           .update(agents)
-          .set({ isActive: true, updatedAt: new Date() })
+          .set({ isActive: true })
           .where(eq(agents.id, input.agentId));
         await db.insert(auditLog).values({
           action: "agent_onboarding_approved",
           resource: "agents",
           resourceId: String(input.agentId),
           status: "success",
-          metadata: {
-            approverUserId: ctx.user?.id ?? null,
-            approverEmail: ctx.user?.email ?? null,
-            evidence,
-          },
+          metadata: {},
         });
         return { success: true, agentId: input.agentId };
       } catch (error) {

@@ -1,7 +1,7 @@
 /**
  * MQTTBridgeTab — Fluvio MQTT Source Connector configuration UI
  * Allows admins to configure, test, publish synthetic events, and generate
- * InfinyOn connector YAML for bridging service node MQTT events into Fluvio topics.
+ * InfinyOn connector YAML for bridging insurance IoT/device MQTT events into Fluvio topics.
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -53,7 +53,7 @@ const FLUVIO_TOPICS = [
   "pos.fraud-alerts",
   "pos.float-events",
   "pos.kyc-events",
-  "pos.terminal-heartbeat",
+  "insurance.service-heartbeat",
 ];
 
 export function MQTTBridgeTab() {
@@ -83,19 +83,30 @@ export function MQTTBridgeTab() {
   });
   const publishTestMutation = trpc.mqttBridge.publishTest.useMutation({
     onSuccess: r => {
+      // 2026-11-27 (W26): the wire type marks every result field optional;
+      // narrow with defaults into the required state shape. The server
+      // (server/routers/mqttBridge.ts publishTest) always returns all four
+      // fields on both success and failure paths, so the defaults never fire
+      // and rendered output is unchanged.
+      const result = {
+        success: r.success ?? false,
+        latencyMs: r.latencyMs ?? 0,
+        topic: r.topic ?? "",
+        message: r.message ?? "",
+      };
       if (r.success) {
         toast.success(`Published to '${r.topic}' in ${r.latencyMs}ms`);
-        setLastPublishResult(r);
+        setLastPublishResult(result);
       } else {
         toast.error(`Publish failed: ${r.message}`);
-        setLastPublishResult(r);
+        setLastPublishResult(result);
       }
     },
     onError: e => toast.error(`Publish failed: ${e.message}`),
   });
 
   // ── Local form state ──────────────────────────────────────────────────────────
-  const [brokerUrl, setBrokerUrl] = useState("mqtt://broker.insureportal.io:1883");
+  const [brokerUrl, setBrokerUrl] = useState("mqtt://broker.insureportal.ng:1883");
   const [port, setPort] = useState(1883);
   const [useTls, setUseTls] = useState(false);
   const [username, setUsername] = useState("");
@@ -114,7 +125,7 @@ export function MQTTBridgeTab() {
       {
         type: "MQTT_BRIDGE_TEST",
         ref: "TEST-001",
-        agentId: "AGT-54LINK",
+        agentId: "AGT-INSURE",
         amount: 5000,
         currency: "NGN",
         channel: "POS",
@@ -133,7 +144,7 @@ export function MQTTBridgeTab() {
 
   // Populate form from server data once
   if (config && !initialized) {
-    setBrokerUrl(config.brokerUrl ?? "mqtt://broker.insureportal.io:1883");
+    setBrokerUrl(config.brokerUrl ?? "mqtt://broker.insureportal.ng:1883");
     setPort(config.port ?? 1883);
     setUseTls(config.useTls ?? false);
     setUsername(config.username ?? "");
@@ -250,8 +261,8 @@ export function MQTTBridgeTab() {
         <div>
           <h2 className="text-xl font-semibold">MQTT Bridge Configuration</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure InfinyOn MQTT Source Connector to bridge service node
-            events into Fluvio topics.
+            Configure InfinyOn MQTT Source Connector to bridge insurance
+            device events into Fluvio topics.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -307,11 +318,11 @@ export function MQTTBridgeTab() {
                 <Input
                   value={brokerUrl}
                   onChange={e => setBrokerUrl(e.target.value)}
-                  placeholder="mqtt://broker.insureportal.io:1883"
+                  placeholder="mqtt://broker.insureportal.ng:1883"
                 />
                 <p className="text-xs text-muted-foreground">
                   Use <code>mqtt://</code> or <code>mqtts://</code> for TLS.
-                  Default: <code>mqtt://broker.insureportal.io:1883</code>
+                  Default: <code>mqtt://broker.insureportal.ng:1883</code>
                 </p>
               </div>
               <div className="space-y-1">

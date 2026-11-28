@@ -6,7 +6,8 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, gte, lte, count, sum, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { glEntries } from "../../drizzle/schema";
+import { glEntries } from "@schema";
+
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 

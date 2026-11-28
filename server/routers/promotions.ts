@@ -618,6 +618,25 @@ export const promotionsRouter = router({
             lifetimePoints: sql`${loyaltyAccounts.lifetimePoints} + ${referralBonus}`,
           })
           .where(eq(loyaltyAccounts.id, claimed[0].id));
+
+        // C1 merge (2026-11-28): preserve the insureportal W32-B delta —
+        // portal-retained referral ledger rows (audit trail pinned by the
+        // W31-D contract), written INSIDE the same transaction so they can
+        // never persist without the credits they describe. Adapted to the
+        // root loyalty_transactions shape (no tenantId column — the root
+        // table is single-tenant).
+        await tx.insert(loyaltyTransactions).values({
+          accountId: referrer.id,
+          points: referralBonus,
+          type: "referral",
+          description: `Referral bonus for customer ${customerId}`,
+        });
+        await tx.insert(loyaltyTransactions).values({
+          accountId: claimed[0].id,
+          points: referralBonus,
+          type: "referral",
+          description: "Welcome referral bonus",
+        });
       });
 
       await writeAuditLog({

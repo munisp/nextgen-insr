@@ -8,7 +8,11 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 export default function MultiCurrencyPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading, refetch } = trpc.multiCurrency.dashboard.useQuery();
+  // W27 (2026-11-27): portal server router exposes this procedure as
+  // `getDashboard` (insureportal/server/routers/multiCurrency.ts); the
+  // `dashboard` name only exists in the main-repo router. Call-site now
+  // matches the portal server contract.
+  const { data, isLoading, refetch } = trpc.multiCurrency.getDashboard.useQuery();
   if (isLoading)
     return (
       <DashboardLayout>

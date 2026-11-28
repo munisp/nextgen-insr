@@ -7,7 +7,8 @@ import {
   systemConfig,
   auditLog,
   transactions,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 

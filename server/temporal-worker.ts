@@ -7,6 +7,7 @@
  * Registers and runs the SettlementWorkflow with all its activities.
  * Connects to Temporal server at TEMPORAL_ADDRESS (default: localhost:7233).
  */
+import fs from "fs";
 import path from "path";
 
 import {
@@ -17,18 +18,6 @@ import {
 } from "@temporalio/worker";
 
 import { logger } from './_core/logger';
-import {
-  J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow,
-  J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow,
-  J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow,
-  J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow,
-  J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow,
-  J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow,
-  J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow,
-  J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow,
-  J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow,
-  J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
-} from "./insurance-journeys-v2";
 import * as journeyActivities from "./journey-activities";
 import * as extendedActivities from "./journey-activities-extended";
 import * as activities from "./temporal-activities";
@@ -108,23 +97,22 @@ async function run() {
   });
 
   // Resolve the workflows file path — works in both CJS and ESM contexts
-  const workflowsPath = path.resolve(
-    __dirname ?? process.cwd(),
-    "temporal-workflows"
-  );
-  // Journey workflows are registered directly as workflow functions
-  const journeyWorkflows = {
-    J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow,
-    J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow,
-    J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow,
-    J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow,
-    J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow,
-    J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow,
-    J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow,
-    J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow,
-    J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow,
-    J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
-  };
+  // W31-C (ported from insureportal temporal-worker.ts): resolve the
+  // workflows file with an explicit extension lookup — @temporalio/worker's
+  // bundler statSync()s workflowsPath verbatim, so a bare directory path
+  // fails when the file exists as temporal-workflows.ts (tsx dev) or
+  // temporal-workflows.js (bundled dist).
+  const workflowsDir = __dirname ?? process.cwd();
+  const workflowsPath =
+    [".js", ".ts"]
+      .map(ext => path.resolve(workflowsDir, `temporal-workflows${ext}`))
+      .find(p => fs.existsSync(p)) ??
+    path.resolve(workflowsDir, "temporal-workflows");
+  // Journey workflows (J01–J20) live in insurance-journeys-v2.ts and are
+  // driven by the journey orchestrator routers; this worker registers only
+  // the workflowsPath bundle (settlement/float/billing/policy-binding).
+  // (The previous dead `journeyWorkflows` object was never passed to
+  // Worker.create — removed as no-unused-vars lint debt in the C1 leg.)
 
   await assertVersionGuard();
 

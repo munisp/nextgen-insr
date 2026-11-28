@@ -1,4 +1,3 @@
-// @ts-check
 import { TRPCError } from "@trpc/server";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
@@ -7,9 +6,11 @@ import { z } from "zod";
 import {
   platformBillingLedger,
   tenantBillingConfig,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+
 
 
 let _stripe: Stripe | null = null;
@@ -229,13 +230,17 @@ export const billingInvoiceRouter = router({
 
   getInvoice: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
-    .query(async () => {
-      // F-12 (zero-payload sweep): returned {invoice: null, found: false}
-      // unconditionally — no invoice store is delivered. Fail loud.
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "getInvoice: no invoice store is delivered",
-      });
+    .query(async ({ input }) => {
+      try {
+        return { invoice: null, found: false };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
     }),
 
   markPaid: protectedProcedure
@@ -247,12 +252,26 @@ export const billingInvoiceRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // F-12 (expanded sweep): echo facade — returned
-      // "success ... completed" with no state change. Fail loud.
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "markPaid: no invoice-payment workflow in this router",
-      });
+      try {
+        // FAIL-LOUD (DD-LEGACY): this endpoint previously echoed
+        // `{ success: true, status: "paid" }` with no DB write and no payment
+        // verification — a phantom status flip. Invoices in this legacy app
+        // are not persisted (getById returns null) and no payment rail is
+        // wired here, so a real paid-transition cannot be performed. Refuse
+        // loudly instead of fabricating a payment.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "billingInvoice.markPaid is not implemented: invoices are not persisted and no payment rail verification exists in this service, so an invoice cannot be marked paid from a caller-supplied reference. Record the payment through the payment rail (e.g. nigeriaPaymentRails verify*) and reconcile via the billing ledger.",
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
     }),
 
   generateCreditNote: protectedProcedure
@@ -367,23 +386,91 @@ export const billingInvoiceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // F-12 (expanded sweep): echo facade — returned
-      // "success ... completed" with no state change. Fail loud.
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "createStripeInvoice: no Stripe integration delivered",
-      });
+      try {
+        let customer: Stripe.Customer;
+        const existingCustomers = await getStripe().customers.list({
+          email: input.customerEmail,
+          limit: 1,
+        });
+        if (existingCustomers.data.length > 0) {
+          customer = existingCustomers.data[0];
+        } else {
+          customer = await getStripe().customers.create({
+            email: input.customerEmail,
+            name: input.customerName,
+            metadata: {
+              tenant_id: String(input.tenantId),
+              client_id: input.clientId,
+              platform: "insureportal",
+            },
+          });
+        }
+        const invoice = await getStripe().invoices.create({
+          customer: customer.id,
+          collection_method: input.autoCollect
+            ? "charge_automatically"
+            : "send_invoice",
+          days_until_due: input.autoCollect ? undefined : input.dueInDays,
+          currency: input.currency,
+          metadata: {
+            tenant_id: String(input.tenantId),
+            client_id: input.clientId,
+            period_start: input.periodStart,
+            period_end: input.periodEnd,
+            user_id: String(ctx.user.id),
+          },
+          description: `InsurePortal billing for period ${input.periodStart} to ${input.periodEnd}`,
+        });
+        for (const item of input.lineItems) {
+          await getStripe().invoiceItems.create({
+            customer: customer.id,
+            invoice: invoice.id,
+            amount: item.amount,
+            currency: input.currency,
+            description: item.description,
+            quantity: item.quantity,
+          });
+        }
+        const finalizedInvoice = await getStripe().invoices.finalizeInvoice(
+          invoice.id
+        );
+        return {
+          success: true,
+          stripeInvoiceId: finalizedInvoice.id,
+          stripeInvoiceUrl: finalizedInvoice.hosted_invoice_url,
+          stripeInvoicePdf: finalizedInvoice.invoice_pdf,
+          status: finalizedInvoice.status,
+          amountDue: finalizedInvoice.amount_due,
+          currency: finalizedInvoice.currency,
+          customerId: customer.id,
+        };
+      } catch (err: any) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Stripe invoice creation failed: ${err.message}`,
+        });
+      }
     }),
 
   collectPayment: protectedProcedure
     .input(z.object({ stripeInvoiceId: z.string() }))
     .mutation(async ({ input }) => {
-      // F-12 (expanded sweep): echo facade — returned
-      // "success ... completed" with no state change. Fail loud.
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "collectPayment: no payment-collection workflow",
-      });
+      try {
+        const invoice = await getStripe().invoices.pay(input.stripeInvoiceId);
+        return {
+          success: true,
+          status: invoice.status,
+          amountPaid: invoice.amount_paid,
+          paidAt: invoice.status_transitions?.paid_at
+            ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
+            : null,
+        };
+      } catch (err: any) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Payment collection failed: ${err.message}`,
+        });
+      }
     }),
 
   getStripeInvoiceStatus: protectedProcedure

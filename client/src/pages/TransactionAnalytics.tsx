@@ -1,5 +1,5 @@
 /**
- * Transaction Analytics — InsurePortal POS Shell (Sprint 89)
+ * Transaction Analytics — InsurePortal (Sprint 89)
  *
  * Real-time analytics dashboard powered by Fluvio→OpenSearch pipeline.
  * Displays transaction volume, time-series charts, search, and pipeline health.
@@ -45,6 +45,16 @@ export default function TransactionAnalytics() {
     trpc.analyticsQuery.searchTransactions.useQuery(searchInput, {
       enabled: searching && searchQuery.length > 0,
     });
+
+  // W32-C (2026-11-27): recentEntries exists ONLY on the "database" arm of
+  // the getTransactionMetrics union — the OpenSearch arm cannot honestly
+  // provide ledger-shaped rows (its documents carry
+  // transactionId/amount/timestamp, not grossAmount/createdAt), so the
+  // "Recent Ledger Entries" section is honestly-empty (not rendered) for
+  // that arm. Narrow via the `source` discriminant instead of accessing the
+  // field on the whole union.
+  const recentEntries =
+    metricsData?.source === "database" ? metricsData.recentEntries : undefined;
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -227,7 +237,7 @@ export default function TransactionAnalytics() {
         )}
 
         {/* Recent Entries (DB fallback) */}
-        {metricsData?.recentEntries && metricsData.recentEntries.length > 0 && (
+        {recentEntries && recentEntries.length > 0 && (
           <div className="rounded-xl border border-border bg-card">
             <div className="p-4 border-b border-border">
               <h3 className="text-sm font-semibold">Recent Ledger Entries</h3>
@@ -257,7 +267,7 @@ export default function TransactionAnalytics() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {metricsData.recentEntries.map((entry: any) => (
+                  {recentEntries.map((entry: any) => (
                     <tr key={entry.id} className="hover:bg-muted/20">
                       <td className="px-3 py-2">{entry.tenantId}</td>
                       <td className="px-3 py-2">{entry.transactionType}</td>

@@ -1,7 +1,8 @@
 import { eq, count, avg, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { guideFeedback } from "../../drizzle/schema";
+import { guideFeedback } from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 

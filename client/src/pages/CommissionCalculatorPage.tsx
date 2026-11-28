@@ -5,7 +5,7 @@ import { trpc } from "@/lib/trpc";
 export default function CommissionCalculatorPage() {
   const [volume, setVolume] = useState(1000000);
   const [txCount, setTxCount] = useState(100);
-  const [txType, setTxType] = useState("cash_in");
+  const [txType, setTxType] = useState("premium_payment");
 
   const tiers = [
     {
@@ -51,8 +51,8 @@ export default function CommissionCalculatorPage() {
   ];
 
   const multipliers: Record<string, number> = {
-    cash_in: 1.0,
-    cash_out: 1.2,
+    premium_payment: 1.0,
+    claim_payout: 1.2,
     transfer: 0.8,
     bill_payment: 0.6,
     airtime: 0.4,

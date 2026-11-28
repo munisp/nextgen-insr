@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 
-import { faceEnrollments, biometricAuditEvents } from "../../drizzle/schema";
+import { faceEnrollments, biometricAuditEvents } from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 

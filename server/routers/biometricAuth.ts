@@ -3,11 +3,10 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { kycSessions } from "../../drizzle/schema";
-import { logger } from '../_core/logger';
+import { kycSessions, faceEnrollments, biometricAuditEvents, users } from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-
 
 // ── Microservice URLs ───────────────────────────────────────────────────────
 const BIOMETRIC_SERVICE_URL =
@@ -37,7 +36,7 @@ async function callService(
     if (!resp.ok) throw new Error(`Service returned ${resp.status}`);
     return await resp.json();
   } catch (err: any) {
-    logger.warn(
+    console.warn(
       `[biometricAuth] Service call failed: ${url} — ${err.message}`
     );
     return null;
@@ -289,7 +288,10 @@ export const biometricAuthRouter = router({
               })
               .where(eq(kycSessions.sessionRef, input.sessionRef));
           } catch (err) {
-            logger.warn("[biometricAuth] Failed to persist to kycSessions:: " + err);
+            console.warn(
+              "[biometricAuth] Failed to persist to kycSessions:",
+              err
+            );
           }
         }
 
@@ -424,20 +426,90 @@ export const biometricAuthRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
-  // F-12 (expanded sweep): fixture rows (BIO-001) — no delivered
-  // store. Fail loud.
+  // W29 (2026-11-27): real implementations against the biometric persistence
+  // layer — faceEnrollments (enrollment registry) + biometricAuditEvents
+  // (verification telemetry), both written by faceEnrollment.ts
+  // (enroll/verify/revoke; eventType "enrollment"|"verification", outcome
+  // "pass"|"fail") — joined to users for display names. The DD-LEGACY note
+  // claiming no registry exists predates those tables.
+  // Shape derivations (consumer: client/src/pages/BiometricAuthPage.tsx):
+  //   type              <- faceEnrollments.enrollmentType ("kyc"|"login"|"payment");
+  //                        page icon map falls back to Fingerprint for other values.
+  //   quality           <- round(faceEnrollments.qualityScore * 100): score is 0..1
+  //                        (faceEnrollment.enroll zod .min(0).max(1)); page renders
+  //                        "{quality}%" with an 80 threshold.
+  //   verificationCount <- count(biometricAuditEvents) per userId, eventType='verification'
+  //   failedAttempts    <- count(biometricAuditEvents) per userId, outcome='fail'
+  //   status            <- isActive ? "active" : "revoked" (page badge variants)
+  //   agentName         <- users.name via faceEnrollments.userId (page "Agent" column)
   list: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "list: no biometric-enrollment store is delivered",
-    });
+    const dbInst = await getDb();
+    if (!dbInst) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "biometricAuth.list requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    const rows = await dbInst
+      .select({
+        id: faceEnrollments.id,
+        userId: faceEnrollments.userId,
+        agentName: users.name,
+        type: faceEnrollments.enrollmentType,
+        qualityScore: faceEnrollments.qualityScore,
+        isActive: faceEnrollments.isActive,
+      })
+      .from(faceEnrollments)
+      .leftJoin(users, eq(faceEnrollments.userId, users.id))
+      .orderBy(desc(faceEnrollments.createdAt))
+      .limit(200);
+    const eventAgg = (await dbInst
+      .select({
+        userId: biometricAuditEvents.userId,
+        verifications: sql<number>`count(*) filter (where ${biometricAuditEvents.eventType} = 'verification')::int`,
+        failures: sql<number>`count(*) filter (where ${biometricAuditEvents.outcome} = 'fail')::int`,
+      })
+      .from(biometricAuditEvents)
+      .groupBy(biometricAuditEvents.userId)) as {
+      userId: number | null;
+      verifications: number | string;
+      failures: number | string;
+    }[];
+    const byUser = new Map(eventAgg.map(e => [e.userId, e] as const));
+    return {
+      records: rows.map(r => ({
+        id: r.id,
+        agentName: r.agentName ?? `User #${r.userId}`,
+        type: r.type,
+        quality:
+          r.qualityScore != null ? Math.round(Number(r.qualityScore) * 100) : 0,
+        verificationCount: Number(byUser.get(r.userId)?.verifications ?? 0),
+        failedAttempts: Number(byUser.get(r.userId)?.failures ?? 0),
+        status: r.isActive ? "active" : "revoked",
+      })),
+    };
   }),
-  // F-12 (expanded sweep): fixture rows (successRate 98.5) — no delivered
-  // store. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "analytics: no biometric telemetry is delivered",
-    });
+    const dbInst = await getDb();
+    if (!dbInst) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "biometricAuth.analytics requires the database; DATABASE_URL is not configured.",
+      });
+    }
+    const [enrolledRow] = await dbInst
+      .select({ total: count() })
+      .from(faceEnrollments);
+    const [eventRow] = await dbInst
+      .select({
+        verifications: sql<number>`count(*) filter (where ${biometricAuditEvents.eventType} = 'verification')::int`,
+        failures: sql<number>`count(*) filter (where ${biometricAuditEvents.outcome} = 'fail')::int`,
+      })
+      .from(biometricAuditEvents);
+    return {
+      enrolled: Number(enrolledRow?.total ?? 0),
+      totalVerifications: Number(eventRow?.verifications ?? 0),
+      totalFailedAttempts: Number(eventRow?.failures ?? 0),
+    };
   }),
 });

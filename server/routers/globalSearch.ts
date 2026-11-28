@@ -17,7 +17,8 @@ import {
   transactions,
   customers,
   disputes,
-} from "../../drizzle/schema";
+} from "@schema";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
