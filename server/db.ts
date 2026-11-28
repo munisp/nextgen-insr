@@ -277,6 +277,36 @@ export async function closeDb(): Promise<void> {
   }
 }
 
+/**
+ * 2026-11-28 (C3 fix-cycle-2, CI e2e flake): TEST-HARNESS-ONLY full reset of
+ * the module-level singleton state, INCLUDING the fail-fast _dbError.
+ *
+ * Why this exists: under vitest.e2e.config.ts (singleFork + isolate:false)
+ * all e2e files share one process. smoke.e2e.test.ts boots a second,
+ * production-mode server to exercise serveStatic; that boot calls getDb()
+ * under NODE_ENV=production, which uses SSL — the PGlite e2e database does
+ * not support SSL, so the failed connect sets _dbError (above), after which
+ * EVERY later getDb() returns null without retrying — sibling suites
+ * (stripeWebhook) then inherit the poisoned state (timing-dependent flake,
+ * ~21% per verifier evidence across ~14 runs). smoke calls this after its
+ * production boot so the shared fork starts clean again.
+ *
+ * Production safety: the fail-fast poison itself is a deliberate fail-closed
+ * production guard (a real DB failure must not be retried into inconsistent
+ * writes) and is UNCHANGED — getDb()/closeDb() behavior is byte-identical.
+ * This function must only ever be invoked from test harness code; wiring it
+ * into a request path would silently mask real outages.
+ */
+export async function __resetDbStateForTests(): Promise<void> {
+  if (_pool) {
+    await _pool.end().catch(() => {});
+  }
+  _pool = null;
+  _db = null;
+  _dbError = null;
+  _dbVerified = false;
+}
+
 /// ─── Users (Keycloak OIDC) ───────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
