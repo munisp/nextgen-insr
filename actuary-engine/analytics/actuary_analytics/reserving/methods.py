@@ -116,7 +116,8 @@ def bornhuetter_ferguson(
 
 
 def _apriori_weight_triangle(tri: cl.Triangle, apriori: np.ndarray) -> cl.Triangle:
-    """Exposure triangle carrying one a priori ultimate per origin (dev 12)."""
+    """Exposure triangle carrying one value per origin (dev 12). Used both
+    for BF a priori ultimates and Cape Cod earned-premium exposure."""
     rows = []
     for origin, a in zip(tri.origin, apriori):
         year = origin.year
@@ -160,6 +161,126 @@ def mack(tri: cl.Triangle, *, average: Literal["volume", "simple", "regression",
         "total_mack_se": float(model.total_mack_std_err_.values.ravel()[0]),
         "average": average,
         "method": "mack",
+    }
+
+
+def bootstrap_odp(
+    tri: cl.Triangle,
+    *,
+    n_sims: int = 1000,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Bootstrap ODP chain-ladder (reserving standard error extension, F2).
+
+    cl.BootstrapODPSample resamples incremental residuals `n_sims` times;
+    each replicate runs the chainladder pipeline (cl.Development +
+    cl.Chainladder). Returns per-origin IBNR mean and bootstrap standard
+    error, plus totals. Deterministic under the fixed `random_state` — the
+    RAA goldens in tests/data/reserving_extensions_raa.json are pinned from
+    this pipeline, with an R-reference bridge documented in the test file.
+    """
+    if n_sims <= 0:
+        raise ValueError(f"n_sims must be positive, got {n_sims}")
+    sampled = cl.BootstrapODPSample(n_sims=n_sims, random_state=random_state).fit_transform(tri)
+    dev = cl.Development().fit_transform(sampled)
+    model = cl.Chainladder().fit(dev)
+    # ibnr_: (n_sims, 1, n_origins, 1); fully-developed origins are NaN.
+    sims = np.asarray(model.ibnr_.values)
+    origins = [str(o) for o in tri.origin]
+
+    def _clean(arr: np.ndarray) -> dict[str, float | None]:
+        out: dict[str, float | None] = {}
+        for o, v in zip(origins, arr):
+            out[o] = None if np.isnan(v) else float(v)
+        return out
+
+    per_mean = np.nanmean(sims, axis=0).ravel()
+    per_std = np.nanstd(sims, axis=0, ddof=1).ravel()
+    totals = np.nansum(sims, axis=tuple(range(1, sims.ndim)))
+    # Bootstrap ultimate = latest + mean IBNR (fully-developed origins get
+    # mean IBNR = NaN from empty sims and fall back to latest).
+    latest = tri.latest_diagonal.values.ravel()
+    ult_mean = latest + np.where(np.isnan(per_mean), 0.0, per_mean)
+    return {
+        "ibnr_mean_by_origin": _clean(per_mean),
+        "ibnr_std_by_origin": _clean(per_std),
+        "ultimate_mean_by_origin": {o: float(v) for o, v in zip(origins, ult_mean)},
+        "total_ibnr_mean": float(np.mean(totals)),
+        "total_ibnr_std": float(np.std(totals, ddof=1)),
+        "n_sims": n_sims,
+        "random_state": random_state,
+        "method": "bootstrap_odp",
+    }
+
+
+def cape_cod(
+    tri: cl.Triangle,
+    earned_premium: np.ndarray,
+) -> dict[str, Any]:
+    """Cape Cod reserving (F2 extension).
+
+    cl.CapeCod derives the a priori loss ratio per origin from the
+    earned-premium exposure and the chain-ladder pattern; ultimates and IBNR
+    follow. `earned_premium` is a per-origin exposure vector (earned
+    premium); it is documented as caller-supplied assumption data, never
+    fabricated inside the module.
+    """
+    n_origins = tri.shape[2]
+    earned_premium = np.asarray(earned_premium, dtype=float)
+    if earned_premium.shape != (n_origins,):
+        raise ValueError(
+            f"earned_premium length {earned_premium.shape} != origins {n_origins}"
+        )
+    if np.any(earned_premium <= 0.0) or np.any(~np.isfinite(earned_premium)):
+        raise ValueError("earned_premium must be positive and finite")
+    model = cl.CapeCod().fit(
+        tri, sample_weight=_apriori_weight_triangle(tri, earned_premium)
+    )
+    origins = [str(o) for o in tri.origin]
+    latest = tri.latest_diagonal.values.ravel()
+    ult_grid = np.array(model.ultimate_.values).reshape(
+        n_origins, model.ultimate_.shape[-1]
+    )
+    ultimate = ult_grid[:, 0]
+    ibnr = ultimate - latest
+    apriori = np.asarray(model.apriori_.values).ravel()
+    return {
+        "ultimate_by_origin": {o: float(u) for o, u in zip(origins, ultimate)},
+        "ibnr_by_origin": {o: float(v) for o, v in zip(origins, ibnr)},
+        "total_ibnr": float(np.nansum(ibnr)),
+        "apriori": float(apriori[0]),
+        "earned_premium": [float(p) for p in earned_premium],
+        "method": "cape_cod",
+    }
+
+
+def clark(tri: cl.Triangle) -> dict[str, Any]:
+    """Clark LDF method (F2 extension).
+
+    cl.ClarkLDF fits a loglogistic growth curve to the incremental losses
+    (chainladder 0.10.1 defaults), producing LDFs that follow the growth
+    curve instead of volume-weighted averages; ultimates come from the
+    chain-ladder application of those LDFs.
+    """
+    clark_tri = cl.ClarkLDF().fit_transform(tri)
+    model = cl.Chainladder().fit(clark_tri)
+    origins = [str(o) for o in tri.origin]
+    latest = tri.latest_diagonal.values.ravel()
+    n_origins = tri.shape[2]
+    ult_grid = np.array(model.ultimate_.values).reshape(
+        n_origins, model.ultimate_.shape[-1]
+    )
+    ultimate = ult_grid[:, 0]
+    ibnr = ultimate - latest
+    return {
+        "growth": "loglogistic",
+        "development_factors": [
+            float(f) for f in np.asarray(clark_tri.ldf_.values).ravel()
+        ],
+        "ultimate_by_origin": {o: float(u) for o, u in zip(origins, ultimate)},
+        "ibnr_by_origin": {o: float(v) for o, v in zip(origins, ibnr)},
+        "total_ibnr": float(np.nansum(ibnr)),
+        "method": "clark",
     }
 
 

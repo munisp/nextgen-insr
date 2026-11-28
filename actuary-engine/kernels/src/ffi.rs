@@ -35,6 +35,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use crate::finmath::{self, PaymentTiming, VaryingKind};
 use crate::montecarlo::{self, LineSimSpec};
 use crate::mortality::{self, ProfitTestInput};
 use crate::premium;
@@ -560,6 +561,369 @@ pub extern "C" fn ak_profit_test(
 #[no_mangle]
 pub extern "C" fn ak_version() -> u32 {
     VERSION_PACKED
+}
+
+// ---------------------------------------------------------------------------
+// F2 amendment (2026-11-28, F2 wave): financial-mathematics exports.
+//
+// ADDITIVE ONLY: the 8 symbols above and their semantics are untouched.
+// New `ak_fin_*` exports mirror the `finmath` core module and follow the
+// same boundary rules (catch_unwind armor, validate-before-compute, no
+// fabricated results). The full amendment is documented in the design
+// addendum (actuary-engine FOSS program, F2, 2026-11-28).
+// ---------------------------------------------------------------------------
+
+/// Wraps a scalar finmath computation in the boundary armor: validates the
+/// out-pointer, runs the computation, and maps errors to status codes.
+fn fin_scalar(out: *mut f64, f: impl FnOnce() -> Result<f64, AkError>) -> i32 {
+    if out.is_null() {
+        return AK_ERR_INPUT;
+    }
+    match f() {
+        Ok(v) => {
+            unsafe {
+                *out = v;
+            }
+            AK_OK
+        }
+        Err(e) => err_code(e),
+    }
+}
+
+fn timing(code: u32) -> Result<PaymentTiming, AkError> {
+    PaymentTiming::from_code(code)
+}
+
+fn kind(code: u32) -> Result<VaryingKind, AkError> {
+    VaryingKind::from_code(code)
+}
+
+/// TVM: present value. `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_pv(
+    rate: f64,
+    nper: f64,
+    pmt: f64,
+    fv: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::pv(rate, nper, pmt, fv, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// TVM: future value. `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_fv(
+    rate: f64,
+    nper: f64,
+    pmt: f64,
+    pv: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::fv(rate, nper, pmt, pv, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// TVM: level payment. `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_pmt(
+    rate: f64,
+    nper: f64,
+    pv: f64,
+    fv: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::pmt(rate, nper, pv, fv, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// TVM: number of periods. `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_nper(
+    rate: f64,
+    pmt: f64,
+    pv: f64,
+    fv: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::nper(rate, pmt, pv, fv, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// TVM: effective rate (Newton + bisection fallback, fail-closed).
+/// `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_rate(
+    nper: f64,
+    pmt: f64,
+    pv: f64,
+    fv: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::tvm_rate(nper, pmt, pv, fv, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Annuity-certain PV, optionally deferred by `defer` whole periods.
+/// `timing`: 0 = arrears (immediate), 1 = advance (due).
+#[no_mangle]
+pub extern "C" fn ak_fin_annuity_pv(
+    rate: f64,
+    nper: f64,
+    payment: f64,
+    timing_code: u32,
+    defer: f64,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::annuity_pv(rate, nper, payment, timing(timing_code)?, defer)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Annuity-certain accumulated value at the last payment date.
+/// `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_annuity_fv(
+    rate: f64,
+    nper: f64,
+    payment: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::annuity_fv(rate, nper, payment, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Perpetuity PV. `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_perpetuity_pv(
+    rate: f64,
+    payment: f64,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::perpetuity_pv(rate, payment, timing(timing_code)?)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Varying annuity-certain PV. `kind`: 0 = arithmetic increasing
+/// (P, P+Q, …), 1 = arithmetic decreasing (P, P−Q, …), 2 = geometric
+/// (P, P(1+step), …). `timing`: 0 = arrears, 1 = advance.
+#[no_mangle]
+pub extern "C" fn ak_fin_varying_annuity_pv(
+    rate: f64,
+    nper: f64,
+    first_payment: f64,
+    step: f64,
+    kind_code: u32,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::varying_annuity_pv(
+                rate,
+                nper,
+                first_payment,
+                step,
+                kind(kind_code)?,
+                timing(timing_code)?,
+            )
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Varying annuity-certain accumulated value at the last payment date.
+/// `kind`/`timing` codes as for `ak_fin_varying_annuity_pv`.
+#[no_mangle]
+pub extern "C" fn ak_fin_varying_annuity_fv(
+    rate: f64,
+    nper: f64,
+    first_payment: f64,
+    step: f64,
+    kind_code: u32,
+    timing_code: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::varying_annuity_fv(
+                rate,
+                nper,
+                first_payment,
+                step,
+                kind(kind_code)?,
+                timing(timing_code)?,
+            )
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Bullet-bond clean price as a percentage of face. `nper_coupons` = coupon
+/// periods remaining; `freq` = coupons per year; `ytm` = bond-equivalent
+/// yield.
+#[no_mangle]
+pub extern "C" fn ak_fin_bond_price(
+    face: f64,
+    coupon_rate: f64,
+    ytm: f64,
+    nper_coupons: u32,
+    freq: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::bond_price(face, coupon_rate, ytm, nper_coupons, freq)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Bond-equivalent yield solved from clean price (percentage of face) via
+/// Newton + bisection fallback; fail-closed on non-convergence.
+#[no_mangle]
+pub extern "C" fn ak_fin_bond_yield(
+    face: f64,
+    coupon_rate: f64,
+    price_pct: f64,
+    nper_coupons: u32,
+    freq: u32,
+    out: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        fin_scalar(out, || {
+            finmath::bond_yield(face, coupon_rate, price_pct, nper_coupons, freq)
+        })
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Bullet-bond Macaulay duration (years), modified duration (years), and
+/// convexity (years²) under its bond-equivalent yield.
+#[no_mangle]
+pub extern "C" fn ak_fin_bond_duration_convexity(
+    face: f64,
+    coupon_rate: f64,
+    ytm: f64,
+    nper_coupons: u32,
+    freq: u32,
+    out_mac_years: *mut f64,
+    out_mod_years: *mut f64,
+    out_conv_years: *mut f64,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_mac_years.is_null() || out_mod_years.is_null() || out_conv_years.is_null() {
+            return AK_ERR_INPUT;
+        }
+        match finmath::bond_duration_convexity(face, coupon_rate, ytm, nper_coupons, freq) {
+            Ok((mac, modd, conv)) => {
+                unsafe {
+                    *out_mac_years = mac;
+                    *out_mod_years = modd;
+                    *out_conv_years = conv;
+                }
+                AK_OK
+            }
+            Err(e) => err_code(e),
+        }
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// IRR of a cash-flow signature at uniform times t = 0..n-1. Newton +
+/// grid-scan bisection fallback; returns AK_ERR_NUMERIC when no root exists
+/// in (-1, 10] — never a guess.
+#[no_mangle]
+pub extern "C" fn ak_fin_irr(cfs: *const f64, n: usize, out: *mut f64) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let c = match unsafe { slice(cfs, n, false) } {
+            Ok(s) => s,
+            Err(c) => return c,
+        };
+        fin_scalar(out, || finmath::irr(c))
+    }))
+    .unwrap_or(AK_ERR_PANIC)
+}
+
+/// Level-payment amortization schedule. `nper` must be integral and equal
+/// to `n` (the length of the three out arrays). Writes the level payment
+/// and per-period interest/principal/balance rows.
+#[no_mangle]
+pub extern "C" fn ak_fin_amort_schedule(
+    principal: f64,
+    rate: f64,
+    nper: f64,
+    out_payment: *mut f64,
+    out_interest: *mut f64,
+    out_principal: *mut f64,
+    out_balance: *mut f64,
+    n: usize,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_payment.is_null()
+            || out_interest.is_null()
+            || out_principal.is_null()
+            || out_balance.is_null()
+        {
+            return AK_ERR_INPUT;
+        }
+        match finmath::amort_schedule(principal, rate, nper) {
+            Ok(rows) => {
+                if rows.len() != n {
+                    return AK_ERR_INPUT;
+                }
+                unsafe {
+                    *out_payment = rows[0].payment;
+                    for (i, r) in rows.iter().enumerate() {
+                        *out_interest.add(i) = r.interest;
+                        *out_principal.add(i) = r.principal;
+                        *out_balance.add(i) = r.balance;
+                    }
+                }
+                AK_OK
+            }
+            Err(e) => err_code(e),
+        }
+    }))
+    .unwrap_or(AK_ERR_PANIC)
 }
 
 #[cfg(test)]

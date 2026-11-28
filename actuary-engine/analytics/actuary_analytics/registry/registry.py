@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 # actuary_analytics.freqsev.tweedie_tools). Both follow the same register/
 # stage/round-trip flow as the existing types so Go/TS layers can discover
 # them through the same registry surface.
+# F2 addition: reserve_model — reserving result artefacts from the extended
+# reserving methods (chainladder CL/BF/Mack plus Bootstrap ODP, Cape Cod,
+# Clark; actuary_analytics.reserving). Same register/stage/round-trip flow.
 MODEL_TYPES = (
     "freq_glm",
     "sev_glm",
@@ -38,6 +41,7 @@ MODEL_TYPES = (
     "fraud_link",
     "agg_dist",
     "tweedie_dist",
+    "reserve_model",
 )
 STAGES = ("candidate", "approved", "retired")
 

@@ -13,6 +13,7 @@ use pyo3::exceptions::{PyArithmeticError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::finmath::{self, PaymentTiming, VaryingKind};
 use crate::montecarlo::{self, LineSimSpec};
 use crate::mortality::{self, ProfitTestInput};
 use crate::premium;
@@ -280,6 +281,201 @@ fn version_py() -> u32 {
     VERSION_PACKED
 }
 
+// ---------------------------------------------------------------------------
+// F2 amendment (2026-11-28): finmath bindings — same core as the C ABI.
+// timing: 0 = arrears, 1 = advance. kind: 0 = arithmetic increasing,
+// 1 = arithmetic decreasing, 2 = geometric.
+// ---------------------------------------------------------------------------
+
+fn py_timing(code: u32) -> Result<PaymentTiming, AkError> {
+    PaymentTiming::from_code(code)
+}
+
+fn py_kind(code: u32) -> Result<VaryingKind, AkError> {
+    VaryingKind::from_code(code)
+}
+
+/// TVM present value.
+#[pyfunction]
+#[pyo3(name = "fin_pv")]
+fn fin_pv_py(rate: f64, nper: f64, pmt: f64, fv: f64, timing: u32) -> PyResult<f64> {
+    finmath::pv(rate, nper, pmt, fv, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// TVM future value.
+#[pyfunction]
+#[pyo3(name = "fin_fv")]
+fn fin_fv_py(rate: f64, nper: f64, pmt: f64, pv: f64, timing: u32) -> PyResult<f64> {
+    finmath::fv(rate, nper, pmt, pv, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// TVM level payment.
+#[pyfunction]
+#[pyo3(name = "fin_pmt")]
+fn fin_pmt_py(rate: f64, nper: f64, pv: f64, fv: f64, timing: u32) -> PyResult<f64> {
+    finmath::pmt(rate, nper, pv, fv, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// TVM number of periods.
+#[pyfunction]
+#[pyo3(name = "fin_nper")]
+fn fin_nper_py(rate: f64, pmt: f64, pv: f64, fv: f64, timing: u32) -> PyResult<f64> {
+    finmath::nper(rate, pmt, pv, fv, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// TVM effective rate (Newton + bisection fallback, fail-closed).
+#[pyfunction]
+#[pyo3(name = "fin_rate")]
+fn fin_rate_py(nper: f64, pmt: f64, pv: f64, fv: f64, timing: u32) -> PyResult<f64> {
+    finmath::tvm_rate(nper, pmt, pv, fv, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// Annuity-certain PV (optionally deferred by `defer` whole periods).
+#[pyfunction]
+#[pyo3(name = "fin_annuity_pv")]
+fn fin_annuity_pv_py(rate: f64, nper: f64, payment: f64, timing: u32, defer: f64) -> PyResult<f64> {
+    finmath::annuity_pv(
+        rate,
+        nper,
+        payment,
+        py_timing(timing).map_err(to_pyerr)?,
+        defer,
+    )
+    .map_err(to_pyerr)
+}
+
+/// Annuity-certain accumulated value at the last payment date.
+#[pyfunction]
+#[pyo3(name = "fin_annuity_fv")]
+fn fin_annuity_fv_py(rate: f64, nper: f64, payment: f64, timing: u32) -> PyResult<f64> {
+    finmath::annuity_fv(rate, nper, payment, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// Perpetuity PV.
+#[pyfunction]
+#[pyo3(name = "fin_perpetuity_pv")]
+fn fin_perpetuity_pv_py(rate: f64, payment: f64, timing: u32) -> PyResult<f64> {
+    finmath::perpetuity_pv(rate, payment, py_timing(timing).map_err(to_pyerr)?).map_err(to_pyerr)
+}
+
+/// Varying annuity-certain PV (arithmetic increasing/decreasing, geometric).
+#[pyfunction]
+#[pyo3(name = "fin_varying_annuity_pv")]
+fn fin_varying_annuity_pv_py(
+    rate: f64,
+    nper: f64,
+    first_payment: f64,
+    step: f64,
+    kind: u32,
+    timing: u32,
+) -> PyResult<f64> {
+    finmath::varying_annuity_pv(
+        rate,
+        nper,
+        first_payment,
+        step,
+        py_kind(kind).map_err(to_pyerr)?,
+        py_timing(timing).map_err(to_pyerr)?,
+    )
+    .map_err(to_pyerr)
+}
+
+/// Varying annuity-certain accumulated value at the last payment date.
+#[pyfunction]
+#[pyo3(name = "fin_varying_annuity_fv")]
+fn fin_varying_annuity_fv_py(
+    rate: f64,
+    nper: f64,
+    first_payment: f64,
+    step: f64,
+    kind: u32,
+    timing: u32,
+) -> PyResult<f64> {
+    finmath::varying_annuity_fv(
+        rate,
+        nper,
+        first_payment,
+        step,
+        py_kind(kind).map_err(to_pyerr)?,
+        py_timing(timing).map_err(to_pyerr)?,
+    )
+    .map_err(to_pyerr)
+}
+
+/// Bullet-bond clean price as a percentage of face at a bond-equivalent yield.
+#[pyfunction]
+#[pyo3(name = "fin_bond_price")]
+fn fin_bond_price_py(
+    face: f64,
+    coupon_rate: f64,
+    ytm: f64,
+    nper_coupons: u32,
+    freq: u32,
+) -> PyResult<f64> {
+    finmath::bond_price(face, coupon_rate, ytm, nper_coupons, freq).map_err(to_pyerr)
+}
+
+/// Bond-equivalent yield solved from clean price (fail-closed).
+#[pyfunction]
+#[pyo3(name = "fin_bond_yield")]
+fn fin_bond_yield_py(
+    face: f64,
+    coupon_rate: f64,
+    price_pct: f64,
+    nper_coupons: u32,
+    freq: u32,
+) -> PyResult<f64> {
+    finmath::bond_yield(face, coupon_rate, price_pct, nper_coupons, freq).map_err(to_pyerr)
+}
+
+/// Bullet-bond duration/convexity. Returns (mac_years, mod_years, conv_years).
+#[pyfunction]
+#[pyo3(name = "fin_bond_duration_convexity")]
+fn fin_bond_duration_convexity_py(
+    face: f64,
+    coupon_rate: f64,
+    ytm: f64,
+    nper_coupons: u32,
+    freq: u32,
+) -> PyResult<(f64, f64, f64)> {
+    finmath::bond_duration_convexity(face, coupon_rate, ytm, nper_coupons, freq).map_err(to_pyerr)
+}
+
+/// IRR of a cash-flow signature at uniform times t = 0..n-1 (fail-closed).
+#[pyfunction]
+#[pyo3(name = "fin_irr")]
+fn fin_irr_py(cfs: PyReadonlyArray1<'_, f64>) -> PyResult<f64> {
+    finmath::irr(cfs.as_slice()?).map_err(to_pyerr)
+}
+
+/// Level-payment amortization schedule. Returns a dict with `payment` and
+/// numpy arrays `interest`, `principal`, `balance` (length = integral nper).
+#[pyfunction]
+#[pyo3(name = "fin_amort_schedule")]
+fn fin_amort_schedule_py<'py>(
+    py: Python<'py>,
+    principal: f64,
+    rate: f64,
+    nper: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let rows = finmath::amort_schedule(principal, rate, nper).map_err(to_pyerr)?;
+    let dict = PyDict::new(py);
+    dict.set_item("payment", rows[0].payment)?;
+    dict.set_item(
+        "interest",
+        PyArray1::from_vec(py, rows.iter().map(|r| r.interest).collect()),
+    )?;
+    dict.set_item(
+        "principal",
+        PyArray1::from_vec(py, rows.iter().map(|r| r.principal).collect()),
+    )?;
+    dict.set_item(
+        "balance",
+        PyArray1::from_vec(py, rows.iter().map(|r| r.balance).collect()),
+    )?;
+    Ok(dict)
+}
+
 /// Python extension module. Import name: `actuary_kernels_py`.
 #[pymodule]
 fn actuary_kernels_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -291,5 +487,20 @@ fn actuary_kernels_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(annuity_pv_py, m)?)?;
     m.add_function(wrap_pyfunction!(profit_test_py, m)?)?;
     m.add_function(wrap_pyfunction!(version_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_pv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_fv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_pmt_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_nper_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_rate_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_annuity_pv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_annuity_fv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_perpetuity_pv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_varying_annuity_pv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_varying_annuity_fv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_bond_price_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_bond_yield_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_bond_duration_convexity_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_irr_py, m)?)?;
+    m.add_function(wrap_pyfunction!(fin_amort_schedule_py, m)?)?;
     Ok(())
 }

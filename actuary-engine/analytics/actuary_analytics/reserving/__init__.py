@@ -1,4 +1,7 @@
-"""Reserving: chainladder-based CL / Bornhuetter-Ferguson / Mack wrappers."""
+"""Reserving: chainladder-based CL / Bornhuetter-Ferguson / Mack wrappers,
+plus F2 extensions: Bootstrap ODP (with standard errors), Cape Cod, and
+Clark LDF. All results come from real chainladder estimator calls — no
+mock reserves."""
 
 from .data_source import (
     ClaimsSourceConfig,
@@ -7,7 +10,10 @@ from .data_source import (
 )
 from .methods import (
     bornhuetter_ferguson,
+    bootstrap_odp,
+    cape_cod,
     chain_ladder,
+    clark,
     hand_bf_blend,
     mack,
     volume_weighted_ldfs,
@@ -23,7 +29,10 @@ __all__ = [
     "ClaimsSourceConfig",
     "DataSourceUnavailableError",
     "bornhuetter_ferguson",
+    "bootstrap_odp",
+    "cape_cod",
     "chain_ladder",
+    "clark",
     "claims_to_incremental_long",
     "cumulative_triangle_dict",
     "cumulative_triangle_from_claims",
