@@ -1047,6 +1047,18 @@ async function startServer() {
       .catch(err =>
         logger.warn("[Fluvio] Topic creation failed:: " + (err as Error).message)
       );
+    // Dapr sidecar warm-up (non-fatal) — ported from insureportal
+    // server/_core/index.ts (2026-11-28, C3 consolidate/insureportal-merge);
+    // adapted to root's daprHealthCheck API.
+    import("../daprClient")
+      .then(({ daprHealthCheck }) => daprHealthCheck())
+      .then(({ healthy }) => {
+        if (healthy) logger.info("[Dapr] Sidecar connected");
+        else logger.warn("[Dapr] Sidecar unavailable (non-fatal)");
+      })
+      .catch(err =>
+        logger.warn("[Dapr] Sidecar unavailable (non-fatal): " + (err as Error).message)
+      );
     // Seed TigerBeetle system accounts (idempotent — safe to call on every startup)
     import("../tbClient")
       .then(({ tbSeedSystemAccounts }) => tbSeedSystemAccounts())

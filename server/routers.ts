@@ -432,6 +432,16 @@ import { posServiceUpdateRouter } from "./routers/posServiceUpdate";
 import { insuranceServiceFleetRouter } from "./routers/insuranceServiceFleet";
 import { predictiveAgentChurnRouter } from "./routers/predictiveAgentChurn";
 import { premiumTopUpRouter } from "./routers/premiumTopUp";
+// ── C3 insureportal-merge ports (2026-11-28, merge plan §2.1; DECON scope ────
+// ── correction 2026-11-28: crossBorderRemittance + ecommerce{Cart,Catalog, ────
+// ── Orders} are DECON REMOVE-class and NOT ported; router count 11 → 7) ──────
+import { nigeriaPaymentRailsRouter } from "./routers/nigeriaPaymentRails";
+import { naicomComplianceRouter } from "./routers/naicomCompliance";
+import { insuranceServiceFleetRouter as posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { posServiceUpdateRouter as posFirmwareOTARouter } from "./routers/posFirmwareOTA";
+import { insuranceCartRouter } from "./routers/insuranceCart";
+import { insuranceCatalogRouter } from "./routers/insuranceCatalog";
+import { policyOrdersRouter } from "./routers/policyOrders";
 import { productionFeaturesRouter } from "./routers/productionFeatures";
 import { promotionsRouter } from "./routers/promotions";
 import { publishReadinessCheckerRouter } from "./routers/publishReadinessChecker";
@@ -655,6 +665,18 @@ export const appRouter = router({
   actuarialEngine: actuarialEngineRouter,
   agentMgmt: agentManagementRouter,
   premiumTopUp: premiumTopUpRouter,
+  // ── C3 insureportal-merge ports (merge plan §2.1/§1.3; DECON scope ──────────
+  // ── correction 2026-11-28: crossBorderRemittance and the ecommerce* ─────────
+  // ── namespaces are DECON REMOVE-class, not registered. The insurance* ──────
+  // ── namespaces are KEEP-class and backed by fail-loud stubs — the real ──────
+  // ── impls lived in the REMOVE-class ecommerce files (see the stubs). ────────
+  nigeriaPaymentRails: nigeriaPaymentRailsRouter,
+  naicomCompliance: naicomComplianceRouter,
+  posTerminalFleet: posTerminalFleetRouter,
+  posFirmwareOTA: posFirmwareOTARouter,
+  insuranceCart: insuranceCartRouter,
+  insuranceCatalog: insuranceCatalogRouter,
+  policyOrders: policyOrdersRouter,
   smsReceipt: smsReceiptRouter,
   export: exportRouter,
   phoneOwnership: phoneOwnershipRouter,
