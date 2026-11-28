@@ -12,16 +12,18 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "insuretech.namespace" . }}
+  # 2026-11-28 (helm-render fix): inside `range` the dot is the element, not root — pass $ so the helper sees .Release/.Values.
+  namespace: {{ include "insuretech.namespace" $ }}
   labels:
     {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
 spec:
-  {{- if $config.pdb.minAvailable }}
+  {{- /* 2026-11-28 (helm-render fix): guard $config.pdb with the chart's nil-safe idiom (parenthesized chain) — services without a pdb: key nil-derefed here. */ -}}
+  {{- if ($config.pdb).minAvailable }}
   minAvailable: {{ $config.pdb.minAvailable }}
   {{- else }}
   minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
   {{- end }}
-  {{- if $config.pdb.maxUnavailable }}
+  {{- if ($config.pdb).maxUnavailable }}
   maxUnavailable: {{ $config.pdb.maxUnavailable }}
   {{- end }}
   selector:

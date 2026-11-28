@@ -145,6 +145,18 @@ apisix:
       memory: 1Gi
       cpu: "1"
 
+# 2026-11-28 (helm-render fix): templates (service.yaml / microservices.yaml /
+# hpa.yaml / pdb.yaml) gate on .Values.apiGateway, but only the `apisix` block
+# above existed — .Values.apiGateway was nil and broke `helm template`.
+# Defaults mirror the `apisix` block so rendered content is unchanged in intent.
+apiGateway:
+  enabled: true
+  replicaCount: 2
+  service:
+    type: LoadBalancer
+    port: 9080
+    adminPort: 9180
+
 # Mojaloop DFS
 mojaloop:
   enabled: true
@@ -659,3 +671,11 @@ commonSecrets:
   # when the key is absent.
   pricing:
     hmacSecret: ""
+
+# 2026-11-28 (helm-render fix): secret.yaml gates the payment block on
+# .Values.secrets.payment.existingSecret, but no `secrets:` block existed —
+# nil deref broke `helm template`. Default preserves prior intent
+# (empty => emit the PAYSTACK/FLUTTERWAVE placeholder keys from commonSecrets.payment).
+secrets:
+  payment:
+    existingSecret: ""

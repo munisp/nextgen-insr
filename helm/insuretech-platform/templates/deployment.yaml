@@ -18,7 +18,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ $fullName }}-{{ $name }}
-  namespace: {{ include "insuretech.namespace" . }}
+  # 2026-11-28 (helm-render fix): inside `range` the dot is the element, not root — pass $ so the helper sees .Release/.Values.
+  namespace: {{ include "insuretech.namespace" $ }}
   labels:
     {{- include "insuretech.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
   annotations:
