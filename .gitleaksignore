@@ -53,3 +53,10 @@ server/lib/envValidation.ts:generic-api-key:300
 # exact fingerprint per the established pattern above.
 768c4fb1798a696945996eb81d7d71ae5a1b7c4c:server/routers/nigeriaPaymentRails.ts:stripe-access-token:51
 768c4fb1798a696945996eb81d7d71ae5a1b7c4c:server/routers/nigeriaPaymentRails.ts:stripe-access-token:594
+# Entry 11 (2026-11-28, C3 PR #364): .gitleaksignore itself in historical
+# branch commit f3e5df6d — the entry-10 justification comment contained the
+# vendor-prefixed literal, creating a self-referential finding. Comment
+# reworded in 0ab23d47 to describe the pattern without reproducing it (working
+# tree verified scan-clean: zero rule-tripping literals). Same false positive
+# class as entry 10; suppressed by exact fingerprint.
+f3e5df6d147ae9c7cde7c82a43bc851073ce4650:.gitleaksignore:stripe-access-token:46
