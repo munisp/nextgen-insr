@@ -34,8 +34,9 @@ fn ffi_panic_safety() {
 
     let mut codes = std::collections::HashMap::new();
     for iter in 0..CALLS {
-        // Rotate through a battery of invalid call shapes.
-        let rc = match iter % 8 {
+        // Rotate through a battery of invalid call shapes. F2 (2026-11-28):
+        // patterns 8–11 added for the additive ak_fin_* exports.
+        let rc = match iter % 12 {
             // null triangle pointer, non-zero dims
             0 => ffi::ak_chainladder(
                 ptr::null(),
@@ -109,7 +110,24 @@ fn ffi_panic_safety() {
                 ptr::null_mut(),
             ),
             // mack on a non-square triangle (structurally valid, semantically not)
-            _ => ffi::ak_mack_se(tri.as_ptr(), 4, 2, &mut se_total, se_origin.as_mut_ptr()),
+            7 => ffi::ak_mack_se(tri.as_ptr(), 4, 2, &mut se_total, se_origin.as_mut_ptr()),
+            // F2: IRR with null cash-flow pointer
+            8 => ffi::ak_fin_irr(ptr::null(), 5, &mut d_out),
+            // F2: annuity with NaN rate and invalid timing code
+            9 => ffi::ak_fin_annuity_pv(f64::NAN, 10.0, 1.0, 3, 0.0, &mut d_out),
+            // F2: bond price with NaN face and invalid frequency
+            10 => ffi::ak_fin_bond_price(f64::NAN, 0.05, 0.06, 10, 0, &mut d_out),
+            // F2: amort schedule with out-array length != integral nper
+            _ => ffi::ak_fin_amort_schedule(
+                120_000.0,
+                0.06,
+                10.0,
+                &mut d_out,
+                f_out.as_mut_ptr(),
+                f_out.as_mut_ptr(),
+                f_out.as_mut_ptr(),
+                3, // arrays hold 3, schedule needs 10
+            ),
         };
         assert_ne!(rc, AK_ERR_PANIC, "AK_ERR_PANIC observed at iter {iter}");
         assert_ne!(
@@ -261,4 +279,64 @@ fn ffi_version_and_mc_smoke() {
     );
     assert_eq!(rc, AK_OK);
     assert!(mean > 0.0 && tvar99 >= var995 && var995 >= mean);
+}
+
+/// F2 (2026-11-28): valid ak_fin_* calls through the C ABI must reproduce
+/// the core results, and the fail-closed IRR path must return
+/// AK_ERR_NUMERIC — never AK_ERR_PANIC — on the unsolvable signature.
+#[test]
+fn ffi_finmath_valid_and_fail_closed() {
+    let mut out = f64::NAN;
+    // a(10, 5%) = (1 − 1.05^-10)/0.05
+    let rc = ffi::ak_fin_annuity_pv(0.05, 10.0, 1.0, 0, 0.0, &mut out);
+    assert_eq!(rc, AK_OK);
+    assert!((out - 7.721_734_929_184_851).abs() < 1e-12, "got {out}");
+    // TVM rate solver through the ABI.
+    let rc = ffi::ak_fin_rate(10.0, -135.868_244_6, 1_000.0, 0.0, 0, &mut out);
+    assert_eq!(rc, AK_OK);
+    assert!((out - 0.06).abs() < 1e-6, "got {out}");
+    // IRR Excel golden through the ABI.
+    let cfs = [
+        -70_000.0f64,
+        12_000.0,
+        15_000.0,
+        18_000.0,
+        21_000.0,
+        26_000.0,
+    ];
+    let rc = ffi::ak_fin_irr(cfs.as_ptr(), cfs.len(), &mut out);
+    assert_eq!(rc, AK_OK);
+    assert!((out - 0.086_630_948_036_5).abs() < 1e-9, "got {out}");
+    // Unsolvable signature → AK_ERR_NUMERIC (never panic, never guess).
+    let bad = [-1.0e8f64, 0.0, 0.0, 0.0];
+    let rc = ffi::ak_fin_irr(bad.as_ptr(), bad.len(), &mut out);
+    assert_eq!(rc, AK_ERR_NUMERIC);
+    // Bond round-trip through the ABI: par bond at coupon=yield.
+    let rc = ffi::ak_fin_bond_price(100.0, 0.075, 0.075, 10, 2, &mut out);
+    assert_eq!(rc, AK_OK);
+    assert!((out - 100.0).abs() < 1e-10);
+    let rc = ffi::ak_fin_bond_yield(100.0, 0.075, 100.0, 10, 2, &mut out);
+    assert_eq!(rc, AK_OK);
+    assert!((out - 0.075).abs() < 1e-9);
+    // Amortization: n must equal integral nper; valid case works.
+    let mut payment = f64::NAN;
+    let mut interest = [f64::NAN; 5];
+    let mut principal = [f64::NAN; 5];
+    let mut balance = [f64::NAN; 5];
+    let rc = ffi::ak_fin_amort_schedule(
+        12_000.0,
+        0.08,
+        5.0,
+        &mut payment,
+        interest.as_mut_ptr(),
+        principal.as_mut_ptr(),
+        balance.as_mut_ptr(),
+        5,
+    );
+    assert_eq!(rc, AK_OK);
+    assert!((interest[0] - 960.0).abs() < 1e-8);
+    assert!(balance[4].abs() < 1e-6);
+    let total_prin: f64 = principal.iter().sum();
+    assert!((total_prin - 12_000.0).abs() < 1e-6);
+    assert!(payment > 0.0);
 }

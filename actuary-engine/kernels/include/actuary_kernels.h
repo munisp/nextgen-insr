@@ -150,6 +150,89 @@ int32_t ak_profit_test(
 
 uint32_t ak_version(void);            /* semver packed (major<<16|minor<<8|patch) */
 
+/*
+ * ---------------------------------------------------------------------------
+ * AMENDMENT 2026-11-28 (F2 wave) — ADDITIVE financial-mathematics exports.
+ *
+ * Adds 15 ak_fin_* symbols mirroring the finmath kernel module (TVM,
+ * annuities-certain, bonds, amortization, IRR). This amendment is strictly
+ * additive: every symbol above this block and its semantics are unchanged,
+ * unchanged AK_ERR_* codes, unchanged struct layouts. The companion design
+ * addendum is the F2 Appendix C amendment document (actuary-engine FOSS
+ * program). All new functions obey the same boundary rules: catch_unwind
+ * armor (AK_ERR_PANIC must be unreachable), validate-before-compute
+ * (AK_ERR_INPUT), fail-closed numerics (AK_ERR_NUMERIC on non-convergence —
+ * never a fabricated result).
+ *
+ * `timing` codes: 0 = arrears (annuity-immediate/ordinary), 1 = advance
+ * (annuity-due). `kind` codes: 0 = arithmetic increasing (P, P+Q, ...),
+ * 1 = arithmetic decreasing (P, P-Q, ...), 2 = geometric (P, P(1+step), ...).
+ * Bond yields are bond-equivalent yields (periodic yield x freq); durations
+ * are returned in years, convexity in years^2.
+ * ---------------------------------------------------------------------------
+ */
+
+/* TVM: pv/fv/pmt/nper/rate solving the identity
+ * pv*(1+i)^n + pmt*(1+i*when)*((1+i)^n - 1)/i + fv = 0 (Excel convention).
+ * ak_fin_rate solves via Newton with bisection fallback; AK_ERR_NUMERIC
+ * when no root exists in (-1, 10]. */
+int32_t ak_fin_pv(double rate, double nper, double pmt, double fv,
+                  uint32_t timing, double* out);
+int32_t ak_fin_fv(double rate, double nper, double pmt, double pv,
+                  uint32_t timing, double* out);
+int32_t ak_fin_pmt(double rate, double nper, double pv, double fv,
+                   uint32_t timing, double* out);
+int32_t ak_fin_nper(double rate, double pmt, double pv, double fv,
+                    uint32_t timing, double* out);
+int32_t ak_fin_rate(double nper, double pmt, double pv, double fv,
+                    uint32_t timing, double* out);
+
+/* Annuity-certain: level immediate/due PV (optionally deferred by defer
+ * whole periods), accumulated value, and perpetuity PV. nper must be
+ * integral for annuity factors. */
+int32_t ak_fin_annuity_pv(double rate, double nper, double payment,
+                          uint32_t timing, double defer, double* out);
+int32_t ak_fin_annuity_fv(double rate, double nper, double payment,
+                          uint32_t timing, double* out);
+int32_t ak_fin_perpetuity_pv(double rate, double payment,
+                             uint32_t timing, double* out);
+
+/* Varying annuity-certain (arithmetic increasing/decreasing, geometric).
+ * step: arithmetic Q or geometric growth rate g. */
+int32_t ak_fin_varying_annuity_pv(double rate, double nper,
+                                  double first_payment, double step,
+                                  uint32_t kind, uint32_t timing, double* out);
+int32_t ak_fin_varying_annuity_fv(double rate, double nper,
+                                  double first_payment, double step,
+                                  uint32_t kind, uint32_t timing, double* out);
+
+/* Bullet bond: clean price (percent of face) at bond-equivalent yield;
+ * yield solved from price (Newton + bisection fallback, AK_ERR_NUMERIC on
+ * non-convergence); Macaulay duration (years), modified duration (years),
+ * convexity (years^2). nper_coupons = coupon periods remaining. */
+int32_t ak_fin_bond_price(double face, double coupon_rate, double ytm,
+                          uint32_t nper_coupons, uint32_t freq, double* out);
+int32_t ak_fin_bond_yield(double face, double coupon_rate, double price_pct,
+                          uint32_t nper_coupons, uint32_t freq, double* out);
+int32_t ak_fin_bond_duration_convexity(double face, double coupon_rate,
+                                       double ytm, uint32_t nper_coupons,
+                                       uint32_t freq, double* out_mac_years,
+                                       double* out_mod_years,
+                                       double* out_conv_years);
+
+/* IRR of a cash-flow signature at uniform times t = 0..n-1
+ * (Newton + grid-scan bisection; root closest to zero when multiple;
+ * AK_ERR_NUMERIC when no root exists in (-1, 10]). */
+int32_t ak_fin_irr(const double* cfs, size_t n, double* out);
+
+/* Level-payment amortization schedule. nper must be integral and equal to
+ * n (out arrays of length n): payment, per-period interest, principal
+ * reduction and closing balance. */
+int32_t ak_fin_amort_schedule(double principal, double rate, double nper,
+                              double* out_payment, double* out_interest,
+                              double* out_principal, double* out_balance,
+                              size_t n);
+
 #ifdef __cplusplus
 }
 #endif

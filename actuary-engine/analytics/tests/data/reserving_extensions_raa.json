@@ -1,0 +1,124 @@
+{
+ "provenance": {
+  "dataset": "chainladder-python 0.10.1 shipped sample 'raa' (RAA triangle, same dataset as the existing bf/mack goldens in this repo)",
+  "bootstrap": "cl.BootstrapODPSample(n_sims=1000, random_state=42) + cl.Development + cl.Chainladder; deterministic outputs pinned from chainladder-python itself. R-reference bridge: total mean IBNR within 5% of the R ChainLadder MackChainLadder(RAA) total IBNR already pinned in tests/data/mack_golden.json (52,135.23) \u2014 R's BootChainLadder is stochastic, so the bridge is asserted at loose tolerance, honestly documented.",
+  "cape_cod": "cl.CapeCod() fit with a DOCUMENTED SYNTHETIC earned-premium vector (F2 assumption, caller-supplied exposure \u2014 not reference data): [30607, 28840, 24384, 24202, 28953, 26804, 23948, 23531, 21948, 22347]. Outputs pinned from chainladder-python.",
+  "clark": "cl.ClarkLDF() (loglogistic growth, chainladder 0.10.1 defaults) + cl.Chainladder. Outputs pinned from chainladder-python."
+ },
+ "ibnr_mean_per_origin": [
+  null,
+  174.99553157005926,
+  595.018917600322,
+  1675.4712408774233,
+  2729.430593220445,
+  3662.5191396558457,
+  5639.588285175845,
+  11307.623329488875,
+  10950.396134476749,
+  17735.864729530447
+ ],
+ "ibnr_std_per_origin": [
+  null,
+  722.887228782571,
+  1240.6968756959682,
+  1954.44473670975,
+  2186.553373532138,
+  2398.3442193844485,
+  3165.624173853569,
+  5154.73717577624,
+  6157.332337418837,
+  14432.367022798942
+ ],
+ "ultimate_mean_per_origin": [
+  18834.0,
+  16878.99553157006,
+  24061.018917600322,
+  28742.471240877425,
+  28909.430593220444,
+  19514.519139655844,
+  17953.588285175843,
+  24419.623329488873,
+  16345.396134476749,
+  19798.864729530447
+ ],
+ "total_ibnr_mean": 54459.49809060685,
+ "total_ibnr_std": 19399.27189413605,
+ "cape_cod": {
+  "premium": [
+   30607.0,
+   28840.0,
+   24384.0,
+   24202.0,
+   28953.0,
+   26804.0,
+   23948.0,
+   23531.0,
+   21948.0,
+   22347.0
+  ],
+  "ultimate": [
+   18834.0,
+   16704.0,
+   23466.0,
+   27067.0,
+   26180.0,
+   15852.0,
+   12314.0,
+   13112.0,
+   5395.0,
+   2063.0
+  ],
+  "ibnr": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "apriori": 0.8336883244086114,
+  "total_ibnr": 0.0
+ },
+ "clark": {
+  "ldf": [
+   3.4471395757231638,
+   1.5601184683019387,
+   1.2598405479374353,
+   1.1496343390150474,
+   1.0964686399410293,
+   1.0668229660527369,
+   1.0486884711481048,
+   1.0368449070351682,
+   1.0287194416687033
+  ],
+  "ultimate": [
+   18834.0,
+   17183.72955363402,
+   25029.363910291722,
+   30275.92096770242,
+   31240.59081466434,
+   20741.00876173278,
+   18522.716856653158,
+   24847.92121277666,
+   15950.347446925929,
+   21025.03827976072
+  ],
+  "ibnr": [
+   0.0,
+   479.7295536340207,
+   1563.3639102917223,
+   3208.920967702419,
+   5060.590814664341,
+   4889.008761732781,
+   6208.716856653158,
+   11735.921212776659,
+   10555.347446925929,
+   18962.03827976072
+  ],
+  "total_ibnr": 62663.63780414175
+ }
+}

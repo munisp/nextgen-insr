@@ -10,6 +10,7 @@
 //! | [`triangle`]  | Chain-ladder (volume-weighted and simple-average factor paths), Bornhuetter–Ferguson, Mack parameter/process standard errors. |
 //! | [`montecarlo`]| Aggregate-loss economic-capital simulation: frequency–severity per line, Gaussian copula, VaR 99.5 / TVaR 99 and per-line TVaR. Deterministic under seed. |
 //! | [`mortality`] | qx-grid survival, annuity present values with flat improvement scalar and caller-supplied discount curve, profit-testing projection (margin + IRR). |
+//! | [`finmath`]   | Time value of money (pv/fv/pmt/nper/rate), annuities-certain (immediate/due, deferred, varying), bonds (price/yield/duration/convexity), amortization, IRR solver. F2 additive module. |
 //!
 //! The C ABI surface lives in [`ffi`] and mirrors `include/actuary_kernels.h`
 //! exactly (frozen cross-leg contract, design doc Appendix C). Every
@@ -33,6 +34,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod ffi;
+pub mod finmath;
 pub mod montecarlo;
 pub mod mortality;
 pub mod premium;

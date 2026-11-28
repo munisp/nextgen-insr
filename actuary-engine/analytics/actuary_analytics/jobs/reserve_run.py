@@ -23,7 +23,14 @@ from ..reserving.data_source import (
     ClaimsSourceConfig,
     load_claims,
 )
-from ..reserving.methods import bornhuetter_ferguson, chain_ladder, mack
+from ..reserving.methods import (
+    bornhuetter_ferguson,
+    bootstrap_odp,
+    cape_cod,
+    chain_ladder,
+    clark,
+    mack,
+)
 from ..reserving.triangles import (
     cumulative_triangle_from_claims,
     legacy_cells_to_triangle_dict,
@@ -174,16 +181,23 @@ def run_monthly_reserve(
     *,
     config: ClaimsSourceConfig | None = None,
     apriori_ultimates: np.ndarray | None = None,
+    earned_premium: np.ndarray | None = None,
+    n_sims: int = 1000,
     assumption_set_id: int | None = None,
 ) -> ReserveRunResult:
     """Run the monthly reserve job end to end and persist results.
 
-    method: 'chainladder' | 'bf' | 'mack'. BF requires apriori_ultimates
-    (priced LR × earned premium per origin — closes the price↔reserve loop).
-    Raises DataSourceUnavailableError when the claims source is absent.
+    method: 'chainladder' | 'bf' | 'mack' | 'bootstrap_odp' | 'cape_cod' |
+    'clark'. BF requires apriori_ultimates (priced LR × earned premium per
+    origin — closes the price↔reserve loop). Cape Cod requires
+    earned_premium (per-origin exposure). Bootstrap ODP reports the
+    bootstrap mean IBNR and standard error; Clark uses the loglogistic
+    growth-curve LDFs. Raises DataSourceUnavailableError when the claims
+    source is absent.
     """
-    if method not in ("chainladder", "bf", "mack"):
-        raise ValueError(f"method must be chainladder|bf|mack, got {method!r}")
+    methods = ("chainladder", "bf", "mack", "bootstrap_odp", "cape_cod", "clark")
+    if method not in methods:
+        raise ValueError(f"method must be {'|'.join(methods)}, got {method!r}")
     cfg = config or ClaimsSourceConfig.from_env()
     rows, source = load_claims(cfg, what="monthly reserve run")
 
@@ -195,6 +209,22 @@ def run_monthly_reserve(
         mk = mack(tri)
         result = mk
         mack_sd = mk["mack_se_by_origin"]
+    elif method == "bootstrap_odp":
+        bo = bootstrap_odp(tri, n_sims=n_sims, random_state=42)
+        result = {
+            "ultimate_by_origin": bo["ultimate_mean_by_origin"],
+            "total_ibnr": bo["total_ibnr_mean"],
+            "bootstrap_odp": bo,
+        }
+        mack_sd = None
+    elif method == "cape_cod":
+        if earned_premium is None:
+            raise ValueError("cape_cod requires earned_premium (per-origin exposure)")
+        result = cape_cod(tri, np.asarray(earned_premium, dtype=float))
+        mack_sd = None
+    elif method == "clark":
+        result = clark(tri)
+        mack_sd = None
     else:
         if apriori_ultimates is None:
             raise ValueError("bf requires apriori_ultimates (priced LR × earned premium)")
