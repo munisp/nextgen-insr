@@ -1,6 +1,6 @@
 // Sprint 87: Full domain logic — auto-matching, variance detection, exception handling
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { floatReconciliations } from "@schema";

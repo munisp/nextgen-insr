@@ -1,7 +1,7 @@
-import { desc, eq, sql, and, count, inArray } from "drizzle-orm";
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, agents, auditLog } from "@schema";
+import { auditLog } from "@schema";
 
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";

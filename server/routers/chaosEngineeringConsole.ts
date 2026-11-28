@@ -20,13 +20,13 @@
  *  - payment_gateway_blackout: Simulate payment provider outage
  */
 import { TRPCError } from "@trpc/server";
-import { desc, eq, and, gte, sql, count } from "drizzle-orm";
+import { desc, and, gte, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "@schema";
 
 import { logger } from "../_core/logger";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { router, adminProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 
 

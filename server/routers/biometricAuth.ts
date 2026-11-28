@@ -1,6 +1,6 @@
 // Sprint 90: Production biometric auth router with real microservice integration
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { kycSessions, faceEnrollments, biometricAuditEvents, users } from "@schema";

@@ -1,6 +1,6 @@
 // Sprint 87: Chart of accounts hierarchy, balance validation
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, sql } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { gl_accounts } from "@schema";

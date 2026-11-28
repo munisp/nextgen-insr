@@ -61,7 +61,7 @@
 // 13. Open Source — Drizzle ORM, tRPC, Zod
 // ─────────────────────────────────────────────────────────────────────────────
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
+import { eq, ne, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -1036,44 +1036,86 @@ export const commissionEngineRouter = router({
           .limit(1);
         if (!payout) return { success: false, error: "Payout not found" };
 
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({
-            status: "approved",
-            approvedBy: ctx.user?.id ?? 0,
-            updatedAt: new Date(),
-          })
-          .where(eq(commissionPayouts.id, numericId))
-          .returning();
+        // 2026-11-28 (C1 fix-cycle 2, FG-7): funds-path fail-close hardening.
+        // Previously the status flip to "approved" committed BEFORE the
+        // TigerBeetle double-entry record was attempted, outside any
+        // transaction, so a TB outage threw AFTER the row was already
+        // approved — a ledger-less approved payout, masked by a vestigial
+        // `?? "offline"` log (tbRecordCommissionCredit never returns null;
+        // it throws fail-closed on sidecar outage). Now the ledger record
+        // and the approval are ATOMIC in one transaction: a TB outage rolls
+        // the approval back, the payout stays pending, and the operator can
+        // retry safely. Re-approval is an honest CONFLICT (idempotent —
+        // tbCreateTransfer also dedups by deterministic ref/id).
+        if (payout.status === "approved") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Payout is already approved",
+          });
+        }
 
-        // [TigerBeetle] Record double-entry credit via Go sidecar
-        const tbResult = await tbRecordCommissionCredit({
-          transactionId: 0,
-          transactionRef: input.id,
-          agentId: payout.agentId,
-          amount: parseFloat(payout.amount as string),
-          entryType: "direct",
-          hierarchyLevel: 0,
+        const { row: updated, tbResult } = await db.transaction(async (tx) => {
+          // [TigerBeetle] Record double-entry credit via Go sidecar — first
+          // and inside the transaction, so a sidecar outage rolls back the
+          // approval instead of leaving a ledger-less approved row.
+          const tbResult = await tbRecordCommissionCredit({
+            transactionId: 0,
+            transactionRef: input.id,
+            agentId: payout.agentId,
+            amount: parseFloat(payout.amount as string),
+            entryType: "direct",
+            hierarchyLevel: 0,
+          });
+          if (!tbResult) {
+            // Declared type is `| null` but the implementation is fail-closed
+            // (throws on outage); guard the unreachable null so the approval
+            // can never proceed without a ledger transfer id.
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Commission ledger record returned no transfer id",
+            });
+          }
+          const [row] = await tx
+            .update(commissionPayouts)
+            .set({
+              status: "approved",
+              approvedBy: ctx.user?.id ?? 0,
+              updatedAt: new Date(),
+            })
+            // Concurrent-approval guard: exactly one approver flips the row.
+            .where(
+              and(
+                eq(commissionPayouts.id, numericId),
+                ne(commissionPayouts.status, "approved")
+              )
+            )
+            .returning();
+          if (!row) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Payout is already approved",
+            });
+          }
+          logger.info(
+            `[Commission] Payout ${input.id} approved, TB: ${tbResult.transferId}`
+          );
+          await logAudit(
+            "payout",
+            input.id,
+            "approved",
+            ctx.user?.name ?? "admin",
+            payout,
+            row
+          );
+          return { row, tbResult };
         });
-        logger.info(
-          `[Commission] Payout ${input.id} approved, TB: ${tbResult?.transferId ?? "offline"}`
-        );
-
-        await logAudit(
-          "payout",
-          input.id,
-          "approved",
-          ctx.user?.name ?? "admin",
-          payout,
-          updated
-        );
 
         // [Kafka] Publish payout approved event
         await publishCommissionEvent({
           eventType: "commission.payout.approved" as any,
           agentId: payout.agentId,
           amount: parseFloat(payout.amount as string),
-          metadata: { payoutId: input.id, tbTransferId: tbResult?.transferId },
+          metadata: { payoutId: input.id, tbTransferId: tbResult.transferId },
         });
         // [Fluvio] Stream payout event
         await streamCommissionEvent({
@@ -1090,7 +1132,7 @@ export const commissionEngineRouter = router({
             agentId: payout.agentId,
             totalCommission: parseFloat(payout.amount as string),
           },
-          tbTransferId: tbResult?.transferId ?? null,
+          tbTransferId: tbResult.transferId,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

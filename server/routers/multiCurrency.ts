@@ -19,8 +19,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "../_core/logger";
-import { router, protectedProcedure, adminProcedure, publicProcedure } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { writeAuditLog } from "../db";
 
 const OER_APP_ID = process.env.OPEN_EXCHANGE_RATES_APP_ID ?? "";
 const OER_BASE_URL = "https://openexchangerates.org/api";

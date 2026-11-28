@@ -6,10 +6,10 @@
  * for the TransactionAnalytics dashboard.
  */
 import { TRPCError } from "@trpc/server";
-import { desc, count, sql, gte, and, eq } from "drizzle-orm";
+import { desc, count, sql, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { platformBillingLedger, billingAuditLog } from "@schema";
+import { platformBillingLedger } from "@schema";
 
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";

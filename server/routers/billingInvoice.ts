@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { z } from "zod";
 

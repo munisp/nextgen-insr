@@ -1,6 +1,6 @@
 // Sprint 87: Regenerated — kycDocumentManagement with real DB queries
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { kycDocuments } from "@schema";

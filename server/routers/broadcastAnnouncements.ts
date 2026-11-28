@@ -1,5 +1,5 @@
 // Seed announcements: ann_001 (Welcome), ann_002 (Update), ann_003 (Maintenance), ann_004 (Feature), ann_005 (Policy)
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "@schema";

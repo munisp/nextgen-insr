@@ -1,4 +1,4 @@
-import { desc, eq, count } from "drizzle-orm";
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "@schema";

@@ -1,4 +1,4 @@
-import { eq, count, avg, desc, sql } from "drizzle-orm";
+import { eq, count, avg, desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { guideFeedback } from "@schema";

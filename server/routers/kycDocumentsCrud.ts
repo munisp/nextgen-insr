@@ -1,6 +1,6 @@
 // Sprint 87: Full domain logic — document verification workflow, expiry tracking, compliance scoring
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { kycDocuments } from "@schema";

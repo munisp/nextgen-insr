@@ -1,6 +1,6 @@
 // Sprint 87: Polygon validation, overlap detection, agent assignment
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { geoFences } from "@schema";

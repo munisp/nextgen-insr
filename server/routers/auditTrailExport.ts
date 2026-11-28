@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { desc, eq, and, count, gte, lte, inArray } from "drizzle-orm";
+import { desc, and, count, gte, lte, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "@schema";

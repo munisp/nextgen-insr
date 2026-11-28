@@ -10,7 +10,7 @@
  * Uses the Fluvio client when available; falls back to static metadata.
  */
 import { TRPCError } from "@trpc/server";
-import { desc, eq, count, sql, and, lt } from "drizzle-orm";
+import { desc, eq, count, and, lt } from "drizzle-orm";
 import { z } from "zod";
 
 import { dlqMessages } from "@schema";
