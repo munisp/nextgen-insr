@@ -20,10 +20,8 @@ export default defineConfig({
     alias: {
       "@": path.resolve(templateRoot, "client", "src"),
       "@shared": path.resolve(templateRoot, "shared"),
-      // C1 fix-cycle (2026-11-28): mirror the @schema alias from
-      // vitest.config.ts/vite.config.ts (C0) — ported server files import
-      // "@schema"; without it these suites fail ERR_MODULE_NOT_FOUND at
-      // module resolution (hosted CI, PR #362).
+      // 2026-11-28 (C3): @schema alias (C0) extended to this config — ported
+      // routers import schema via @schema.
       "@schema": path.resolve(templateRoot, "drizzle", "schema.ts"),
       "@assets": path.resolve(templateRoot, "attached_assets"),
     },
@@ -31,6 +29,24 @@ export default defineConfig({
   test: {
     name: "integration",
     include: ["tests/integration/**/*.integration.test.ts"],
+    // 2026-11-28 (C3): the 10 insureportal-ported suites are excluded here and
+    // run via vitest.integration.isolated.config.ts. They follow ip's
+    // per-suite PGlite respawn harness (own spawned instance + DDL + pool
+    // end), which is incompatible with this config's shared single-fork module
+    // state (a pool error poisons server/db's cached error for every later
+    // file). The isolated config gives each ported file a fresh fork.
+    exclude: [
+      "tests/integration/commissionApproveK.integration.test.ts",
+      "tests/integration/disputeResolutionW31.integration.test.ts",
+      "tests/integration/merchantPayoutH2.integration.test.ts",
+      "tests/integration/w29Analytics.integration.test.ts",
+      "tests/integration/w30SavingsPension.integration.test.ts",
+      "tests/integration/w31FloatStatsReplenishment.integration.test.ts",
+      "tests/integration/w31SavingsPensionTax.integration.test.ts",
+      "tests/integration/w31dLoyaltyReferral.integration.test.ts",
+      "tests/integration/w32FloatReplenishmentHardening.integration.test.ts",
+      "tests/integration/w32cContractDrift.integration.test.ts",
+    ],
     environment: "node",
     fileParallelism: false,
     pool: "forks",

@@ -193,6 +193,17 @@ export const posTerminals = pgTable(
     ipAddress: varchar("ipAddress", { length: 64 }),
     location: jsonb("location"),
     groupId: integer("groupId"),
+    // 2026-11-28 (C3 consolidate/insureportal-merge, 0094): additive fleet/OTA
+    // columns required by the ported KEEP-class posTerminalFleet + posFirmwareOTA
+    // routers (ip's enhanced fleet schema — soft-delete, SIM identity, app
+    // version, command tracking). Nullable: existing rows unaffected.
+    imei: varchar("imei", { length: 20 }),
+    simIccid: varchar("simIccid", { length: 22 }),
+    appVersion: varchar("appVersion", { length: 64 }),
+    lastSeenAt: timestamp("lastSeenAt"),
+    lastCommand: varchar("lastCommand", { length: 256 }),
+    lastCommandAt: timestamp("lastCommandAt"),
+    deletedAt: timestamp("deletedAt"),
     tenantId: varchar("tenantId", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),

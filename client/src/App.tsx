@@ -820,6 +820,18 @@ const InsuranceMerchantKycOnboarding = lazy(
 const InsuranceMerchantPayoutSettlement = lazy(
   () => import("./pages/InsuranceMerchantPayoutSettlement")
 );
+// ── C3 insureportal-merge ported pages (2026-11-28, merge plan §2.2; DECON ───
+// ── scope correction 2026-11-28: the 5 Ecommerce* pages are DECON ────────────
+// ── REMOVE-class — excluded, not wired. Page count 14 → 9.) ──────────────────
+const MerchantAcquirerGateway = lazy(() => import("./pages/MerchantAcquirerGateway"));
+const MerchantAnalyticsDash = lazy(() => import("./pages/MerchantAnalyticsDash"));
+const MerchantKycOnboardingPage = lazy(() => import("./pages/MerchantKycOnboardingPage"));
+const MerchantOnboardingPortal = lazy(() => import("./pages/MerchantOnboardingPortal"));
+const MerchantPaymentsPage = lazy(() => import("./pages/MerchantPaymentsPage"));
+const MerchantPayoutSettlementPage = lazy(() => import("./pages/MerchantPayoutSettlementPage"));
+const MerchantPortal = lazy(() => import("./pages/MerchantPortal"));
+const MerchantRiskScoring = lazy(() => import("./pages/MerchantRiskScoring"));
+const MerchantSettlementDashboard = lazy(() => import("./pages/MerchantSettlementDashboard"));
 const ComplianceFilingPage = lazy(() => import("./pages/ComplianceFilingPage"));
 const TenantFeatureTogglePage = lazy(
   () => import("./pages/TenantFeatureTogglePage")
@@ -1860,6 +1872,20 @@ function AuthenticatedApp() {
           path="/merchant-analytics-dash"
           component={InsuranceMerchantAnalytics}
         />
+        {/* C3 insureportal-merge ported pages (merge plan §2.2; DECON scope
+            correction 2026-11-28: 5 Ecommerce* routes removed — REMOVE-class).
+            Paths chosen to avoid collisions with root's existing
+            InsuranceMerchant* routes; /merchant/:section swallows /merchant/*,
+            so top-level paths only. */}
+        <Route path="/merchant-acquirer-gateway" component={MerchantAcquirerGateway} />
+        <Route path="/merchant-analytics-dashboard" component={MerchantAnalyticsDash} />
+        <Route path="/merchant-kyc-onboarding-page" component={MerchantKycOnboardingPage} />
+        <Route path="/merchant-portal-onboarding" component={MerchantOnboardingPortal} />
+        <Route path="/merchant-payments-page" component={MerchantPaymentsPage} />
+        <Route path="/merchant-payout-settlement-page" component={MerchantPayoutSettlementPage} />
+        <Route path="/merchant-portal" component={MerchantPortal} />
+        <Route path="/merchant-risk-scoring-page" component={MerchantRiskScoring} />
+        <Route path="/merchant-settlement-dashboard" component={MerchantSettlementDashboard} />
         <Route path="/pos-service-update" component={POSServiceUpdate} />
         <Route
           path="/transaction-receipt-generator"

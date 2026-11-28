@@ -25,12 +25,14 @@ export default function MerchantPayoutSettlementPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedPayout, setSelectedPayout] = useState<any>(null);
 
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const payoutsQuery = trpc.merchantPayoutSettlement.listPayouts.useQuery({
+  // 2026-11-28 (T-C1/C3-1 fix, consolidate/insureportal-merge): aligned to the
+  // server contract — the router exposes `list` (paginated {items,total}) and
+  // `summary`; `listPayouts`/`getStats` never existed server-side (the stale
+  // @ts-ignore directives hid the drift). Server contract wins.
+  const payoutsQuery = trpc.merchantPayoutSettlement.list.useQuery({
     limit: 100,
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const statsQuery = trpc.merchantPayoutSettlement.getStats.useQuery();
+  const statsQuery = trpc.merchantPayoutSettlement.summary.useQuery();
   const approveMutation =
     trpc.merchantPayoutSettlement.approvePayout.useMutation({
       onSuccess: () => {
@@ -40,11 +42,11 @@ export default function MerchantPayoutSettlementPage() {
       onError: (e: any) => toast.error(e.message),
     });
 
-  const payouts = (payoutsQuery.data ?? []).filter((p: any) => {
+  const payouts = (payoutsQuery.data?.items ?? []).filter((p: any) => {
     if (
       search &&
-      !p.merchant_id?.toString().includes(search) &&
-      !p.bank_name?.toLowerCase().includes(search.toLowerCase())
+      !p.merchantId?.toString().includes(search) &&
+      !p.bankCode?.toLowerCase().includes(search.toLowerCase())
     )
       return false;
     if (statusFilter !== "all" && p.status !== statusFilter) return false;
@@ -52,6 +54,13 @@ export default function MerchantPayoutSettlementPage() {
   });
 
   const stats = statsQuery.data;
+  // Derived from the summary contract (server wins): settlement rate =
+  // completed / total amounts; pending surfaced as an amount (the summary
+  // contract has no pending count).
+  const totalAmountNum = Number(stats?.totalAmount ?? 0);
+  const completedAmountNum = Number(stats?.completedAmount ?? 0);
+  const settlementRate =
+    totalAmountNum > 0 ? (completedAmountNum / totalAmountNum) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -130,19 +139,19 @@ export default function MerchantPayoutSettlementPage() {
           },
           {
             label: "Total Settled",
-            value: `₦${((stats?.totalSettled ?? 0) / 1000000).toFixed(1)}M`,
+            value: `₦${(completedAmountNum / 1000000).toFixed(1)}M`,
             icon: TrendingUp,
             color: "text-blue-400",
           },
           {
-            label: "Pending",
-            value: stats?.pending ?? 0,
+            label: "Pending Amount",
+            value: `₦${Number(stats?.pendingAmount ?? 0).toLocaleString()}`,
             icon: Clock,
             color: "text-yellow-400",
           },
           {
-            label: "Success Rate",
-            value: `${(stats?.successRate ?? 0).toFixed(1)}%`,
+            label: "Settlement Rate",
+            value: `${settlementRate.toFixed(1)}%`,
             icon: ArrowUpRight,
             color: "text-emerald-400",
           },
@@ -219,14 +228,14 @@ export default function MerchantPayoutSettlementPage() {
                   key={p.id}
                   className="border-b border-zinc-700/30 hover:bg-zinc-700/20"
                 >
-                  <td className="p-4 text-white font-mono">{p.merchant_id}</td>
+                  <td className="p-4 text-white font-mono">{p.merchantId}</td>
                   <td className="p-4 text-emerald-400 font-bold">
                     ₦{Number(p.amount || 0).toLocaleString()}
                   </td>
-                  <td className="p-4 text-zinc-300">{p.bank_name || "—"}</td>
+                  <td className="p-4 text-zinc-300">{p.bankCode || "—"}</td>
                   <td className="p-4 text-zinc-400 font-mono">
-                    {p.account_number
-                      ? `****${p.account_number.slice(-4)}`
+                    {p.accountNumber
+                      ? `****${p.accountNumber.slice(-4)}`
                       : "—"}
                   </td>
                   <td className="p-4">
@@ -237,8 +246,8 @@ export default function MerchantPayoutSettlementPage() {
                     </span>
                   </td>
                   <td className="p-4 text-zinc-400 text-xs">
-                    {p.settlement_date
-                      ? new Date(p.settlement_date).toLocaleDateString()
+                    {p.processedAt
+                      ? new Date(p.processedAt).toLocaleDateString()
                       : "—"}
                   </td>
                   <td className="p-4">
@@ -253,7 +262,7 @@ export default function MerchantPayoutSettlementPage() {
                         // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                         <button
                           // @ts-ignore Sprint 85
-                          onClick={() => approveMutation.mutate({ id: p.id })}
+                          onClick={() => approveMutation.mutate({ payoutId: p.id })}
                           className="p-1.5 hover:bg-emerald-700/30 rounded-lg"
                         >
                           <CheckCircle className="h-4 w-4 text-emerald-400" />

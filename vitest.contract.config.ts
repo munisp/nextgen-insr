@@ -31,10 +31,8 @@ export default defineConfig({
     alias: {
       "@": path.resolve(templateRoot, "client", "src"),
       "@shared": path.resolve(templateRoot, "shared"),
-      // C1 fix-cycle (2026-11-28): mirror the @schema alias from
-      // vitest.config.ts/vite.config.ts (C0) — ported server files import
-      // "@schema"; without it these suites fail ERR_MODULE_NOT_FOUND at
-      // module resolution (hosted CI, PR #362).
+      // 2026-11-28 (C3): @schema alias (C0) extended to this config — ported
+      // routers import schema via @schema.
       "@schema": path.resolve(templateRoot, "drizzle", "schema.ts"),
       "@assets": path.resolve(templateRoot, "attached_assets"),
     },
