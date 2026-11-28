@@ -18,6 +18,17 @@ minio==7.2.20
 httpx==0.28.1
 uvicorn==0.34.2
 pytest==9.2.0
+# 2026-11-28 (W34-E fix cycle 2, PR #358 run 46087428865): the MinIO
+# registry round-trip test imports testcontainers.minio INSIDE the test,
+# guarded only by a docker-availability skipif. On docker-capable runners
+# (GitHub ubuntu) the skip does not trigger and the import must succeed —
+# testcontainers was never in this file, so the analytics CI job failed.
+# Pinned exact like every other entry; satisfies pyproject's test extra
+# (testcontainers>=4,<5). The default MinIO image is itself pinned by the
+# library (minio/minio:RELEASE.2022-12-02T19-19-22Z), so the runner pull is
+# deterministic. In no-docker environments the skipif still applies and the
+# test skips cleanly (verified locally).
+testcontainers==4.15.0
 # F1 adoptions (capability map F1 row):
 #   aggregate 2.1.0 (BSD-3, mynl)  — analytic aggregate-loss distributions
 #     (FFT), VaR/TVaR, distortion pricing; actuary_analytics.aggdist.
