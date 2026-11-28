@@ -15,11 +15,16 @@
  *     env, see vitest.config.ts)
  *   - rejectReversal is gated identically (parity).
  *
- * Note: the Permify-DENIES leg of financialProcedure is not reproducible in
- * the unit suite (vitest.config.ts sets PERMIFY_FAIL_OPEN=true — documented
- * there as a disclosed gap); that leg is covered in the portal's sibling
- * test (insureportal/server/transactions.approveReversal.authz.test.ts) and
- * by ./_core/permify.ts's own fail-closed tests.
+ * 2026-11-28 (insureportal→root merge): the Permify-DENIES leg, previously
+ * only covered in the portal's sibling test
+ * (insureportal/server/transactions.approveReversal.authz.test.ts), is now
+ * merged INTO this suite — ./_core/permify is stubbed at the module
+ * boundary (same convention as ./transactions.pendingReversals.test.ts), so
+ * the deny (fail-closed) verdict is reproducible here without depending on
+ * the PERMIFY_FAIL_OPEN unit-env setting. The suite is the union of both
+ * sides' cases; no assertion was weakened (the stronger contract — portal's
+ * mounted-router harness replaced by this suite's full appRouter harness —
+ * was kept).
  *
  * Mock pattern mirrors ./transactions.pendingReversals.test.ts (W24-B): the
  * db double is a query-builder chain standing in ONLY for the DB transport.
@@ -28,6 +33,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import { getDb, writeAuditLog, updateAgentFloat } from "./db";
 import { getAgentFromCookie } from "./middleware/agentAuth";
+import { permifyCheck, permifyCheckCached } from "./_core/permify";
 import type { TrpcContext } from "./_core/context";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -78,6 +84,19 @@ const ADMIN_AGENT = {
 vi.mock("./middleware/agentAuth", () => ({
   getAgentFromCookie: vi.fn(),
 }));
+
+// 2026-11-28 (merge, from the portal sibling suite): Permify is stubbed at
+// the module boundary so BOTH the allow and the deny (fail-closed) legs of
+// financialProcedure are exercised in-repo. Real exports are preserved;
+// only the two verdict functions are pinned per test.
+vi.mock("./_core/permify", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./_core/permify")>();
+  return {
+    ...mod,
+    permifyCheck: vi.fn().mockResolvedValue(true),
+    permifyCheckCached: vi.fn().mockResolvedValue(true),
+  };
+});
 
 vi.mock("./_core/platformClient", () => ({
   floatPlatform: {
@@ -179,6 +198,8 @@ function makeApproveDb(txRow: any) {
 describe("transactions.approveReversal — financialProcedure authz (W25-B)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(permifyCheck).mockResolvedValue(true);
+    vi.mocked(permifyCheckCached).mockResolvedValue(true);
     vi.mocked(getAgentFromCookie).mockResolvedValue(ADMIN_AGENT as any);
     const { db } = makeApproveDb(PENDING_TX);
     vi.mocked(getDb).mockResolvedValue(db as any);
@@ -200,6 +221,17 @@ describe("transactions.approveReversal — financialProcedure authz (W25-B)", ()
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     // Denied at the financialProcedure role matrix — the handler body (and
     // its own admin gate) must never run.
+    expect(getAgentFromCookie).not.toHaveBeenCalled();
+  });
+
+  // 2026-11-28 (merge): case unioned in from the portal sibling suite —
+  // pins the Permify-DENIES leg of financialProcedure (fail-closed).
+  it("rejects admin when Permify denies the financial check (fail-closed)", async () => {
+    vi.mocked(permifyCheckCached).mockResolvedValue(false);
+    const caller = appRouter.createCaller(makeCtx(ADMIN_USER));
+    await expect(
+      caller.transactions.approveReversal({ transactionId: 42 })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(getAgentFromCookie).not.toHaveBeenCalled();
   });
 
